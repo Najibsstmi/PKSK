@@ -108,6 +108,7 @@ const defaultAppSettings: AppSettings = {
   free_preview_section_b_limit: 5,
   free_preview_section_c_enabled: false,
 };
+const databaseSetupMessage = "Sistem akses premium sedang disiapkan. Sila cuba semula sebentar lagi.";
 
 function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
   const role = profile?.role ?? "user";
@@ -2180,6 +2181,21 @@ function formatDate(value: string): string {
 }
 
 function toMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (
+    message.includes("get_my_access_status") ||
+    message.includes("record_last_login") ||
+    message.includes("get_public_app_settings") ||
+    message.includes("get_guest_preview_questions") ||
+    message.includes("score_guest_preview") ||
+    message.includes("schema cache") ||
+    message.includes("PGRST202") ||
+    message.includes("Could not find the function")
+  ) {
+    return databaseSetupMessage;
+  }
+
   if (error instanceof Error) {
     return error.message;
   }

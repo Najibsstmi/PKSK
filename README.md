@@ -96,6 +96,18 @@ Migration komersial menambah:
 - RPC premium/access/admin
 - settings free preview
 
+## Jika Muncul Mesej Sistem Akses Premium
+
+Jika aplikasi memaparkan mesej "Sistem akses premium sedang disiapkan", maksudnya kod production sudah dikemaskini tetapi SQL komersial belum siap di Supabase.
+
+Jalankan fail ini dalam Supabase SQL Editor:
+
+```text
+supabase/migrations/20260808_add_commercial_access.sql
+```
+
+Selepas SQL berjaya dijalankan, tunggu 1-2 minit dan refresh laman production.
+
 ## Create First Super Admin
 
 1. Daftar akaun sendiri melalui aplikasi PKSK.
