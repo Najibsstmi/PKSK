@@ -103,6 +103,7 @@ const validRoutes = new Set<AppRoute>(
 );
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
+const rememberedEmailKey = "pksk-remembered-email";
 const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 5,
   free_preview_section_b_limit: 5,
@@ -141,6 +142,7 @@ function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isRecoveryLink());
   const [message, setMessage] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
@@ -169,19 +171,32 @@ function App() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (isRecoveryLink()) {
+        setAuthMode("login");
+        setIsPasswordRecovery(true);
+        window.history.replaceState({}, "", "/login");
+        setCurrentRoute("/login");
+      }
       setLoading(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("login");
+        setIsPasswordRecovery(true);
+        window.history.replaceState({}, "", "/login");
+        setCurrentRoute("/login");
+      }
       if (!nextSession) {
         setProfile(null);
         setAccessStatus(null);
         setAttempts([]);
         setBadges([]);
         setActivePayload(null);
+        setIsPasswordRecovery(false);
         window.localStorage.removeItem("pksk-active-attempt");
       }
     });
@@ -250,6 +265,7 @@ function App() {
   }
 
   function openAuth(mode: AuthMode) {
+    setIsPasswordRecovery(false);
     setAuthMode(mode);
     navigate(mode === "login" ? "/login" : "/register");
   }
@@ -266,18 +282,19 @@ function App() {
     navigate("/");
   }
 
-  async function handleAuth(email: string, password: string, displayName: string) {
+  async function handleAuth(email: string, password: string, displayName: string, rememberMe = false) {
     if (!supabase) {
       setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
+    const cleanEmail = email.trim().toLowerCase();
     setBusy(true);
     setMessage(null);
     try {
       if (authMode === "register") {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
           options: {
             emailRedirectTo: window.location.origin,
@@ -306,12 +323,70 @@ function App() {
           setAuthMode("login");
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (error) {
           throw new Error(error.message);
         }
+        if (rememberMe) {
+          window.localStorage.setItem(rememberedEmailKey, cleanEmail);
+        } else {
+          window.localStorage.removeItem(rememberedEmailKey);
+        }
         navigate("/");
       }
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePasswordResetRequest(email: string) {
+    if (!supabase) {
+      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setMessage("Masukkan e-mel akaun dahulu.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      window.localStorage.setItem(rememberedEmailKey, cleanEmail);
+      setMessage("Pautan tukar kata laluan sudah dihantar. Sila semak e-mel anda.");
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePasswordUpdate(password: string) {
+    if (!supabase) {
+      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) {
+        throw new Error(error.message);
+      }
+      setIsPasswordRecovery(false);
+      setMessage("Kata laluan baharu berjaya disimpan.");
+      navigate("/");
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
@@ -478,6 +553,19 @@ function App() {
       return <SetupNotice />;
     }
 
+    if (currentRoute === "/login" || currentRoute === "/register") {
+      return (
+        <AuthPage
+          mode={authMode}
+          busy={busy}
+          isPasswordRecovery={isPasswordRecovery}
+          onMode={openAuth}
+          onSubmit={handleAuth}
+          onPasswordResetRequest={handlePasswordResetRequest}
+          onPasswordUpdate={handlePasswordUpdate}
+        />
+      );
+    }
     if (isLoggedIn && !accessStatus) {
       return <LoadingPage />;
     }
@@ -501,9 +589,6 @@ function App() {
         />
       );
     }
-    if (currentRoute === "/login" || currentRoute === "/register") {
-      return <AuthPage mode={authMode} busy={busy} onMode={openAuth} onSubmit={handleAuth} />;
-    }
     if (currentRoute === "/preview") {
       return (
         <GuestPreviewPage
@@ -523,7 +608,17 @@ function App() {
     }
     if (adminRoutes.includes(currentRoute)) {
       if (!isLoggedIn) {
-        return <AuthPage mode="login" busy={busy} onMode={openAuth} onSubmit={handleAuth} />;
+        return (
+          <AuthPage
+            mode="login"
+            busy={busy}
+            isPasswordRecovery={isPasswordRecovery}
+            onMode={openAuth}
+            onSubmit={handleAuth}
+            onPasswordResetRequest={handlePasswordResetRequest}
+            onPasswordUpdate={handlePasswordUpdate}
+          />
+        );
       }
       if (!access.isAdmin) {
         return <AccessDeniedPage onNavigate={navigate} />;
@@ -772,28 +867,78 @@ function AuthPanel({
   mode,
   busy,
   onMode,
+  onPasswordResetRequest,
   onSubmit,
 }: {
   mode: AuthMode;
   busy: boolean;
   onMode: (mode: AuthMode) => void;
-  onSubmit: (email: string, password: string, displayName: string) => void;
+  onPasswordResetRequest: (email: string) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean) => void;
 }) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => window.localStorage.getItem(rememberedEmailKey) ?? "");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => Boolean(window.localStorage.getItem(rememberedEmailKey)));
+  const [isResetRequestOpen, setIsResetRequestOpen] = useState(false);
+
+  useEffect(() => {
+    if (mode === "register") {
+      setIsResetRequestOpen(false);
+    }
+  }, [mode]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit(email, password, displayName || email.split("@")[0]);
+    onSubmit(email, password, displayName || email.split("@")[0], rememberMe);
+  }
+
+  function handleResetRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onPasswordResetRequest(email);
+  }
+
+  if (mode === "login" && isResetRequestOpen) {
+    return (
+      <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
+        <div className="mb-5">
+          <h2 className="text-xl font-black">Lupa Kata Laluan</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Masukkan e-mel akaun. Kami akan hantar pautan untuk tetapkan kata laluan baharu.</p>
+        </div>
+        <form className="grid gap-4" onSubmit={handleResetRequest}>
+          <Label text="E-mel">
+            <input
+              className="field"
+              type="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="nama@email.com"
+              required
+            />
+          </Label>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <button type="submit" disabled={busy} className="primary-button">
+              {busy ? "Menghantar..." : "Hantar Pautan"}
+            </button>
+            <button type="button" className="secondary-button" onClick={() => setIsResetRequestOpen(false)}>
+              Kembali
+            </button>
+          </div>
+        </form>
+      </section>
+    );
   }
 
   return (
-    <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft">
+    <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
-          <p className="text-sm text-slate-500">Simpan markah, perkembangan dan lencana sendiri.</p>
+          <p className="text-sm leading-6 text-slate-500">
+            {mode === "login" ? "Sambung latihan tanpa perlu isi e-mel berulang kali." : "Cipta akaun untuk simpan rekod latihan sendiri."}
+          </p>
         </div>
         <button
           type="button"
@@ -803,22 +948,127 @@ function AuthPanel({
           {mode === "login" ? "Daftar" : "Log masuk"}
         </button>
       </div>
-      <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleSubmit}>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
         {mode === "register" ? (
-          <input className="field" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Nama paparan" />
+          <Label text="Nama paparan">
+            <input
+              className="field"
+              name="displayName"
+              autoComplete="name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Nama calon"
+            />
+          </Label>
         ) : null}
-        <input className="field" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="E-mel" required />
-        <input
-          className="field"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Kata laluan"
-          minLength={6}
-          required
-        />
-        <button type="submit" disabled={busy} className="inline-flex h-12 items-center justify-center rounded-xl bg-ocean-600 px-5 text-sm font-bold text-white">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Label text="E-mel">
+            <input
+              className="field"
+              type="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="nama@email.com"
+              required
+            />
+          </Label>
+          <Label text="Kata laluan">
+            <input
+              className="field"
+              type="password"
+              name="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Masukkan kata laluan"
+              minLength={6}
+              required
+            />
+          </Label>
+        </div>
+        {mode === "login" ? (
+          <div className="flex flex-col gap-3 text-sm font-bold text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 accent-ocean-600"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Ingat saya
+            </label>
+            <button type="button" className="text-left text-ocean-700 hover:text-ocean-900" onClick={() => setIsResetRequestOpen(true)}>
+              Lupa kata laluan?
+            </button>
+          </div>
+        ) : null}
+        <button type="submit" disabled={busy} className="primary-button w-full">
           {busy ? "Tunggu..." : mode === "login" ? "Masuk" : "Daftar"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function PasswordRecoveryPanel({ busy, onSubmit }: { busy: boolean; onSubmit: (password: string) => void }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password.length < 6) {
+      setError("Kata laluan mesti sekurang-kurangnya 6 aksara.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Kata laluan baharu tidak sepadan.");
+      return;
+    }
+    setError(null);
+    onSubmit(password);
+  }
+
+  return (
+    <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
+      <div className="mb-5">
+        <h2 className="text-xl font-black">Tetapkan Kata Laluan Baharu</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Masukkan kata laluan baharu untuk akaun PKSK anda.</p>
+      </div>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Label text="Kata laluan baharu">
+            <input
+              className="field"
+              type="password"
+              name="new-password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Minimum 6 aksara"
+              minLength={6}
+              required
+            />
+          </Label>
+          <Label text="Sahkan kata laluan">
+            <input
+              className="field"
+              type="password"
+              name="confirm-password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Taip semula"
+              minLength={6}
+              required
+            />
+          </Label>
+        </div>
+        {error ? <p className="rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{error}</p> : null}
+        <button type="submit" disabled={busy} className="primary-button w-full">
+          {busy ? "Menyimpan..." : "Simpan Kata Laluan"}
         </button>
       </form>
     </section>
@@ -828,22 +1078,38 @@ function AuthPanel({
 function AuthPage({
   mode,
   busy,
+  isPasswordRecovery,
   onMode,
+  onPasswordResetRequest,
+  onPasswordUpdate,
   onSubmit,
 }: {
   mode: AuthMode;
   busy: boolean;
+  isPasswordRecovery: boolean;
   onMode: (mode: AuthMode) => void;
-  onSubmit: (email: string, password: string, displayName: string) => void;
+  onPasswordResetRequest: (email: string) => void;
+  onPasswordUpdate: (password: string) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean) => void;
 }) {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        icon={UserRound}
-        title={mode === "login" ? "Log Masuk" : "Daftar Akaun"}
-        text={mode === "login" ? "Masuk untuk sambung latihan premium dan lihat rekod kemajuan." : "Daftar akaun untuk membuka akses premium apabila langganan diaktifkan."}
+        icon={isPasswordRecovery ? LockKeyhole : UserRound}
+        title={isPasswordRecovery ? "Tukar Kata Laluan" : mode === "login" ? "Log Masuk" : "Daftar Akaun"}
+        text={
+          isPasswordRecovery
+            ? "Tetapkan kata laluan baharu sebelum kembali ke latihan."
+            : mode === "login"
+              ? "Masuk untuk sambung latihan premium dan lihat rekod kemajuan."
+              : "Daftar akaun untuk membuka akses premium apabila langganan diaktifkan."
+        }
       />
-      <AuthPanel mode={mode} busy={busy} onMode={onMode} onSubmit={onSubmit} />
+      {isPasswordRecovery ? (
+        <PasswordRecoveryPanel busy={busy} onSubmit={onPasswordUpdate} />
+      ) : (
+        <AuthPanel mode={mode} busy={busy} onMode={onMode} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
+      )}
     </div>
   );
 }
@@ -2200,6 +2466,10 @@ function toMessage(error: unknown): string {
     return error.message;
   }
   return "Ralat tidak dijangka. Cuba semula.";
+}
+
+function isRecoveryLink(): boolean {
+  return window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
 }
 
 function getCurrentRoute(): AppRoute {
