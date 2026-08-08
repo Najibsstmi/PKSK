@@ -23,6 +23,7 @@ import {
   Star,
   Target,
   Trophy,
+  Users,
   UserRound,
   X,
   Zap,
@@ -32,7 +33,21 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { pkskSections, states } from "./data/pksk";
+import { useAccess } from "./hooks/useAccess";
+import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
+import {
+  blockUser,
+  extendPremium,
+  fetchAdminKpis,
+  fetchAdminQuestions,
+  fetchAdminUsers,
+  grantPremium,
+  revokePremium,
+  setUserRole,
+  unblockUser,
+} from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
+import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
 import {
   completeAttempt,
@@ -42,27 +57,81 @@ import {
   getAttemptPayload,
   submitAnswer,
 } from "./services/questionService";
+import type { AccessStatus, AdminKpis, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
-type AppRoute = "/" | "/simulasi" | "/latihan" | "/quiz" | "/profile" | "/performance" | "/history" | "/achievements" | "/guide";
+type AppRoute =
+  | "/"
+  | "/preview"
+  | "/premium"
+  | "/login"
+  | "/register"
+  | "/simulasi"
+  | "/latihan"
+  | "/quiz"
+  | "/profile"
+  | "/performance"
+  | "/history"
+  | "/achievements"
+  | "/guide"
+  | "/admin"
+  | "/admin/users"
+  | "/admin/subscriptions"
+  | "/admin/questions"
+  | "/admin/settings";
 type AuthMode = "login" | "register";
 
-const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean }> = [
+const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/simulasi", label: "Simulasi", icon: Target, authOnly: true },
-  { to: "/performance", label: "Pencapaian", icon: Award, authOnly: true },
-  { to: "/achievements", label: "Lencana", icon: Trophy, authOnly: true },
-  { to: "/history", label: "Sejarah", icon: History, authOnly: true },
+  { to: "/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
+  { to: "/latihan", label: "Latihan", icon: Brain, authOnly: true, premiumOnly: true },
+  { to: "/performance", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
+  { to: "/achievements", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
+  { to: "/history", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
   { to: "/guide", label: "Panduan", icon: BookOpen },
+  { to: "/admin", label: "Admin Panel", icon: Users, authOnly: true, adminOnly: true },
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/", "/simulasi", "/performance", "/achievements", "/guide"].includes(item.to));
-const validRoutes = new Set<AppRoute>(navItems.map((item) => item.to).concat(["/latihan", "/quiz", "/profile"]));
+const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/settings"];
+const premiumRoutes = new Set<AppRoute>(["/simulasi", "/latihan", "/performance", "/history", "/achievements"]);
+const validRoutes = new Set<AppRoute>(
+  navItems.map((item) => item.to).concat(["/preview", "/premium", "/login", "/register", "/quiz", "/profile", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/settings"]),
+);
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
+const defaultAppSettings: AppSettings = {
+  free_preview_section_a_limit: 5,
+  free_preview_section_b_limit: 5,
+  free_preview_section_c_enabled: false,
+};
+
+function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
+  const role = profile?.role ?? "user";
+  const subscriptionStatus = profile?.is_blocked ? "blocked" : (profile?.subscription_status ?? "free");
+  const endsAt = profile?.subscription_ends_at ?? null;
+  const hasEnded = endsAt ? new Date(endsAt).getTime() <= Date.now() : false;
+  const isExpired = subscriptionStatus === "expired" || (subscriptionStatus === "premium" && hasEnded);
+  const isBlocked = subscriptionStatus === "blocked" || Boolean(profile?.is_blocked);
+  const isPremium = subscriptionStatus === "premium" && !isExpired && !isBlocked;
+
+  return {
+    is_guest: !profile,
+    role,
+    subscription_status: isBlocked ? "blocked" : isExpired ? "expired" : subscriptionStatus,
+    subscription_plan: profile?.subscription_plan ?? null,
+    subscription_started_at: profile?.subscription_started_at ?? null,
+    subscription_ends_at: endsAt,
+    is_premium: isPremium,
+    is_admin: (role === "admin" || role === "super_admin") && !isBlocked,
+    is_super_admin: role === "super_admin" && !isBlocked,
+    is_blocked: isBlocked,
+    is_expired: isExpired,
+  };
+}
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -73,12 +142,18 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
   const [attempts, setAttempts] = useState<QuizAttemptRow[]>([]);
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
+  const [guestPayload, setGuestPayload] = useState<GuestPreviewPayload | null>(null);
+  const [guestResult, setGuestResult] = useState<GuestPreviewResult | null>(null);
+  const [guestAnswers, setGuestAnswers] = useState<Record<string, string>>({});
 
   const isLoggedIn = Boolean(session?.user);
+  const access = useAccess(session, profile, accessStatus);
   const profileReady = Boolean(profile?.display_name && profile?.school && profile?.state && profile?.class_name);
   const earnedBadgeCount = badges.filter((badge) => badge.earned).length;
   const performance = useMemo(() => calculatePerformance(profile, attempts, earnedBadgeCount), [attempts, earnedBadgeCount, profile]);
@@ -88,6 +163,8 @@ function App() {
       setLoading(false);
       return;
     }
+
+    fetchAppSettings().then(setAppSettings).catch(() => setAppSettings(defaultAppSettings));
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -100,6 +177,7 @@ function App() {
       setSession(nextSession);
       if (!nextSession) {
         setProfile(null);
+        setAccessStatus(null);
         setAttempts([]);
         setBadges([]);
         setActivePayload(null);
@@ -126,11 +204,19 @@ function App() {
 
     try {
       setMessage(null);
+      await recordLastLogin();
       const nextProfile = await fetchProfile(userId);
+      let nextAccessStatus = accessStatusFromProfile(nextProfile);
+      try {
+        nextAccessStatus = await fetchAccessStatus();
+      } catch (accessError) {
+        setMessage(toMessage(accessError));
+      }
       const nextAttempts = await fetchAttemptHistory();
       const nextBadges = await fetchBadgesWithProgress(nextProfile, nextAttempts);
-      const activeAttempt = await fetchActiveAttempt();
+      const activeAttempt = nextAccessStatus.is_premium ? await fetchActiveAttempt() : null;
       setProfile(nextProfile);
+      setAccessStatus(nextAccessStatus);
       setAttempts(nextAttempts);
       setBadges(nextBadges);
 
@@ -162,6 +248,15 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function openAuth(mode: AuthMode) {
+    setAuthMode(mode);
+    navigate(mode === "login" ? "/login" : "/register");
+  }
+
+  function openPaywall() {
+    navigate("/premium");
+  }
+
   async function handleSignOut() {
     if (!supabase) {
       return;
@@ -184,6 +279,7 @@ function App() {
           email,
           password,
           options: {
+            emailRedirectTo: window.location.origin,
             data: {
               display_name: displayName,
             },
@@ -244,7 +340,13 @@ function App() {
 
   async function handleStartQuiz(mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) {
     if (!isLoggedIn) {
-      setMessage("Sila log masuk dahulu untuk memulakan simulasi.");
+      openAuth("login");
+      setMessage("Sila log masuk untuk membuka latihan premium.");
+      return;
+    }
+
+    if (!access.canUsePremiumFeature()) {
+      openPaywall();
       return;
     }
 
@@ -312,6 +414,60 @@ function App() {
     }
   }
 
+  async function handleStartGuestPreview(section: "A" | "B") {
+    const storageKey = `pksk-guest-preview-completed-${section}`;
+    if (window.localStorage.getItem(storageKey) === "true") {
+      openPaywall();
+      return;
+    }
+
+    const limit = section === "A" ? appSettings.free_preview_section_a_limit : appSettings.free_preview_section_b_limit;
+    setBusy(true);
+    setMessage(null);
+    setGuestResult(null);
+    setGuestAnswers({});
+    try {
+      const payload = await fetchGuestPreview(section, limit);
+      setGuestPayload(payload);
+      navigate("/preview");
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleGuestAnswer(questionId: string, optionId: string) {
+    setGuestAnswers((current) => ({
+      ...current,
+      [questionId]: optionId,
+    }));
+  }
+
+  async function handleCompleteGuestPreview() {
+    if (!guestPayload) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      const answers = guestPayload.questions
+        .map((question) => ({
+          question_id: question.id,
+          selected_option_id: guestAnswers[question.id],
+        }))
+        .filter((answer) => Boolean(answer.selected_option_id));
+      const previewResult = await scoreGuestPreview(answers);
+      setGuestResult(previewResult);
+      window.localStorage.setItem(`pksk-guest-preview-completed-${guestPayload.section}`, "true");
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const page = (() => {
     if (loading) {
       return <LoadingPage />;
@@ -321,20 +477,72 @@ function App() {
       return <SetupNotice />;
     }
 
+    if (isLoggedIn && !accessStatus) {
+      return <LoadingPage />;
+    }
+
     if (currentRoute === "/") {
       return (
         <Dashboard
           isLoggedIn={isLoggedIn}
+          access={access}
           profile={profile}
           profileReady={profileReady}
           performance={performance}
           activePayload={activePayload}
+          settings={appSettings}
           onNavigate={navigate}
           onResume={handleResumeQuiz}
           onStartQuiz={handleStartQuiz}
-          onAuthMode={setAuthMode}
+          onStartGuestPreview={handleStartGuestPreview}
+          onAuthMode={openAuth}
+          onShowPaywall={openPaywall}
         />
       );
+    }
+    if (currentRoute === "/login" || currentRoute === "/register") {
+      return <AuthPage mode={authMode} busy={busy} onMode={openAuth} onSubmit={handleAuth} />;
+    }
+    if (currentRoute === "/preview") {
+      return (
+        <GuestPreviewPage
+          payload={guestPayload}
+          answers={guestAnswers}
+          result={guestResult}
+          busy={busy}
+          onAnswer={handleGuestAnswer}
+          onComplete={handleCompleteGuestPreview}
+          onNavigate={navigate}
+          onShowPaywall={openPaywall}
+        />
+      );
+    }
+    if (currentRoute === "/premium") {
+      return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
+    }
+    if (adminRoutes.includes(currentRoute)) {
+      if (!isLoggedIn) {
+        return <AuthPage mode="login" busy={busy} onMode={openAuth} onSubmit={handleAuth} />;
+      }
+      if (!access.isAdmin) {
+        return <AccessDeniedPage onNavigate={navigate} />;
+      }
+      if (currentRoute === "/admin/users") {
+        return <AdminUsersPage isSuperAdmin={access.isSuperAdmin} onMessage={setMessage} />;
+      }
+      if (currentRoute === "/admin/questions") {
+        return <AdminQuestionsPage onMessage={setMessage} />;
+      }
+      if (currentRoute === "/admin/subscriptions") {
+        return <AdminSubscriptionsPage />;
+      }
+      if (currentRoute === "/admin/settings") {
+        return <AdminSettingsPage settings={appSettings} />;
+      }
+      return <AdminDashboardPage onNavigate={navigate} onMessage={setMessage} />;
+    }
+    if (premiumRoutes.has(currentRoute) && !access.canUsePremiumFeature()) {
+      return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
     }
     if (currentRoute === "/simulasi" || currentRoute === "/latihan") {
       return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onNavigate={navigate} />;
@@ -371,6 +579,7 @@ function App() {
       <TopBar
         currentRoute={currentRoute}
         isLoggedIn={isLoggedIn}
+        access={access}
         isMenuOpen={isMenuOpen}
         profile={profile}
         onNavigate={navigate}
@@ -380,13 +589,10 @@ function App() {
 
       <main className="mx-auto max-w-7xl px-4 pb-28 pt-24 sm:px-6 lg:px-8 lg:pb-16">
         {message ? <MessageBanner message={message} onDismiss={() => setMessage(null)} /> : null}
-        {!isLoggedIn && isSupabaseConfigured && currentRoute === "/" ? (
-          <AuthPanel mode={authMode} busy={busy} onMode={setAuthMode} onSubmit={handleAuth} />
-        ) : null}
         {page}
       </main>
 
-      <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} onNavigate={navigate} />
+      <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} onNavigate={navigate} />
     </div>
   );
 }
@@ -394,6 +600,7 @@ function App() {
 function TopBar({
   currentRoute,
   isLoggedIn,
+  access,
   isMenuOpen,
   profile,
   onNavigate,
@@ -402,6 +609,7 @@ function TopBar({
 }: {
   currentRoute: AppRoute;
   isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
   isMenuOpen: boolean;
   profile: ProfileRow | null;
   onNavigate: (route: AppRoute) => void;
@@ -424,6 +632,12 @@ function TopBar({
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Navigasi utama">
           {navItems.map((item) => {
             if (item.authOnly && !isLoggedIn) {
+              return null;
+            }
+            if (item.premiumOnly && !access.isPremium) {
+              return null;
+            }
+            if (item.adminOnly && !access.isAdmin) {
               return null;
             }
             return (
@@ -484,6 +698,12 @@ function TopBar({
               if (item.authOnly && !isLoggedIn) {
                 return null;
               }
+              if (item.premiumOnly && !access.isPremium) {
+                return null;
+              }
+              if (item.adminOnly && !access.isAdmin) {
+                return null;
+              }
               return (
                 <button
                   key={item.to}
@@ -514,17 +734,19 @@ function TopBar({
 function BottomNav({
   currentRoute,
   isLoggedIn,
+  access,
   onNavigate,
 }: {
   currentRoute: AppRoute;
   isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
   onNavigate: (route: AppRoute) => void;
 }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur lg:hidden" aria-label="Navigasi bawah">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
         {bottomNavItems.map((item) => {
-          const disabled = item.authOnly && !isLoggedIn;
+          const disabled = (item.authOnly && !isLoggedIn) || (item.premiumOnly && !access.isPremium) || (item.adminOnly && !access.isAdmin);
           return (
             <button
               key={item.to}
@@ -602,26 +824,57 @@ function AuthPanel({
   );
 }
 
+function AuthPage({
+  mode,
+  busy,
+  onMode,
+  onSubmit,
+}: {
+  mode: AuthMode;
+  busy: boolean;
+  onMode: (mode: AuthMode) => void;
+  onSubmit: (email: string, password: string, displayName: string) => void;
+}) {
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        icon={UserRound}
+        title={mode === "login" ? "Log Masuk" : "Daftar Akaun"}
+        text={mode === "login" ? "Masuk untuk sambung latihan premium dan lihat rekod kemajuan." : "Daftar akaun untuk membuka akses premium apabila langganan diaktifkan."}
+      />
+      <AuthPanel mode={mode} busy={busy} onMode={onMode} onSubmit={onSubmit} />
+    </div>
+  );
+}
+
 function Dashboard({
   isLoggedIn,
+  access,
   profile,
   profileReady,
   performance,
   activePayload,
+  settings,
   onNavigate,
   onResume,
   onStartQuiz,
+  onStartGuestPreview,
   onAuthMode,
+  onShowPaywall,
 }: {
   isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
   profile: ProfileRow | null;
   profileReady: boolean;
   performance: ReturnType<typeof calculatePerformance>;
   activePayload: AttemptPayload | null;
+  settings: AppSettings;
   onNavigate: (route: AppRoute) => void;
   onResume: () => void;
   onStartQuiz: (mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) => void;
+  onStartGuestPreview: (section: "A" | "B") => void;
   onAuthMode: (mode: AuthMode) => void;
+  onShowPaywall: () => void;
 }) {
   const displayName = profile?.display_name ?? "Calon PKSK";
   const level = getLevelProgress(profile?.xp ?? 0);
@@ -641,13 +894,15 @@ function Dashboard({
             </div>
             <div className="max-w-[330px] space-y-4 sm:max-w-xl">
               <h1 className="break-words text-3xl font-black leading-tight text-slate-950 sm:text-5xl">
-                {isLoggedIn ? `Selamat kembali, ${displayName}` : "Simulator PKSK profesional"}
+                {isLoggedIn ? `Selamat kembali, ${displayName}` : "Cuba Simulator PKSK Percuma"}
               </h1>
               <p className="break-words text-base leading-7 text-slate-600 sm:text-lg">
-                Jalankan latihan rawak, simpan rekod kemajuan dan buka lencana pencapaian.
+                {isLoggedIn
+                  ? "Jalankan latihan rawak, simpan rekod kemajuan dan buka lencana pencapaian."
+                  : "Terus cuba soalan contoh tanpa daftar akaun. Akses penuh boleh dibuka apabila bersedia."}
               </p>
             </div>
-            {isLoggedIn ? (
+            {isLoggedIn && access.isPremium ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-2 flex items-center justify-between text-sm font-bold text-slate-700">
                   <span>Level {level.level}</span>
@@ -663,8 +918,8 @@ function Dashboard({
             <div className="flex max-w-[330px] flex-col gap-3 sm:max-w-none sm:flex-row">
               {isLoggedIn ? (
                 <>
-                  <button type="button" onClick={() => onNavigate(profileReady ? "/simulasi" : "/profile")} className="primary-button">
-                    {profileReady ? "Mula Latihan" : "Lengkapkan Profil"}
+                  <button type="button" onClick={() => (access.isPremium ? onNavigate(profileReady ? "/simulasi" : "/profile") : onShowPaywall())} className="primary-button">
+                    {access.isPremium ? (profileReady ? "Mula Latihan" : "Lengkapkan Profil") : "Buka Akses Premium"}
                     <ChevronRight size={18} aria-hidden="true" />
                   </button>
                   {activePayload ? (
@@ -675,8 +930,8 @@ function Dashboard({
                 </>
               ) : (
                 <>
-                  <button type="button" onClick={() => onAuthMode("register")} className="primary-button">
-                    Daftar Akaun
+                  <button type="button" onClick={() => onStartGuestPreview("A")} className="primary-button">
+                    Cuba Percuma
                   </button>
                   <button type="button" onClick={() => onAuthMode("login")} className="secondary-button">
                     Log Masuk
@@ -688,19 +943,586 @@ function Dashboard({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <StatCard icon={Rocket} label="Jumlah Cubaan" value={`${performance.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
-        <StatCard icon={Star} label="Skor Terbaik" value={`${performance.bestScore}%`} tone="bg-sun-50 text-amber-700" />
-        <StatCard icon={Zap} label="Jumlah Mata" value={`${performance.totalXp}`} tone="bg-coral-50 text-coral-600" />
-        <StatCard icon={Trophy} label="Lencana" value={`${performance.badgeCount}`} tone="bg-leaf-50 text-leaf-600" />
-      </section>
+      {!isLoggedIn ? (
+        <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onLogin={() => onAuthMode("login")} />
+      ) : null}
 
-      <section className="grid gap-5 lg:grid-cols-3">
-        <ModeCard title="Simulasi Penuh" text="Campuran Bahagian A dan B secara rawak." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 30)} />
-        <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A atau B untuk fokus." icon={Brain} onClick={() => onNavigate("/latihan")} />
-        <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
-      </section>
+      {isLoggedIn && !access.isPremium ? <InlinePaywall access={access} onShowPaywall={onShowPaywall} /> : null}
+
+      {isLoggedIn && access.isPremium ? (
+        <>
+          <section className="grid gap-4 md:grid-cols-4">
+            <StatCard icon={Rocket} label="Jumlah Cubaan" value={`${performance.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
+            <StatCard icon={Star} label="Skor Terbaik" value={`${performance.bestScore}%`} tone="bg-sun-50 text-amber-700" />
+            <StatCard icon={Zap} label="Jumlah Mata" value={`${performance.totalXp}`} tone="bg-coral-50 text-coral-600" />
+            <StatCard icon={Trophy} label="Lencana" value={`${performance.badgeCount}`} tone="bg-leaf-50 text-leaf-600" />
+          </section>
+
+          <section className="grid gap-5 lg:grid-cols-3">
+            <ModeCard title="Simulasi Penuh" text="Campuran Bahagian A dan B secara rawak." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 30)} />
+            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A atau B untuk fokus." icon={Brain} onClick={() => onNavigate("/latihan")} />
+            <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
+          </section>
+        </>
+      ) : null}
     </div>
+  );
+}
+
+function FreePreviewSection({
+  settings,
+  onStartGuestPreview,
+  onLogin,
+}: {
+  settings: AppSettings;
+  onStartGuestPreview: (section: "A" | "B") => void;
+  onLogin: () => void;
+}) {
+  return (
+    <section className="grid gap-5 lg:grid-cols-[1fr_1fr_0.9fr]">
+      <PreviewCard
+        title="Bahagian A"
+        text="Cuba soalan Kecerdasan Insaniah secara percuma."
+        count={settings.free_preview_section_a_limit}
+        icon={HeartHandshake}
+        onClick={() => onStartGuestPreview("A")}
+      />
+      <PreviewCard
+        title="Bahagian B"
+        text="Cuba soalan Kecerdasan Intelek secara percuma."
+        count={settings.free_preview_section_b_limit}
+        icon={Brain}
+        onClick={() => onStartGuestPreview("B")}
+      />
+      <article className="rounded-2xl bg-white p-6 shadow-soft">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sun-100 text-amber-700">
+          <Crown size={23} aria-hidden="true" />
+        </span>
+        <h2 className="mt-5 text-xl font-black">Akses Penuh</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">Log masuk apabila akses premium telah diaktifkan oleh pentadbir.</p>
+        <button type="button" className="secondary-button mt-5 w-full" onClick={onLogin}>
+          Log Masuk
+        </button>
+      </article>
+    </section>
+  );
+}
+
+function PreviewCard({
+  title,
+  text,
+  count,
+  icon: Icon,
+  onClick,
+}: {
+  title: string;
+  text: string;
+  count: number;
+  icon: LucideIcon;
+  onClick: () => void;
+}) {
+  return (
+    <article className="rounded-2xl bg-white p-6 shadow-soft">
+      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+        <Icon size={23} aria-hidden="true" />
+      </span>
+      <p className="mt-5 text-sm font-black uppercase text-ocean-700">Cuba {count} Soalan Percuma</p>
+      <h2 className="mt-2 text-2xl font-black text-slate-950">{title}</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
+      <button type="button" className="primary-button mt-5 w-full" onClick={onClick}>
+        Mula Preview
+      </button>
+    </article>
+  );
+}
+
+function InlinePaywall({ access, onShowPaywall }: { access: ReturnType<typeof useAccess>; onShowPaywall: () => void }) {
+  const title = access.isBlocked ? "Akaun memerlukan semakan" : access.isExpired ? "Akses premium telah tamat" : "Akses penuh belum aktif";
+  const text = access.isBlocked
+    ? "Sila hubungi pentadbir untuk membuka semula akses latihan."
+    : "Buka akses premium untuk menggunakan bank soalan penuh, sejarah cubaan dan analisis prestasi.";
+
+  return (
+    <section className="rounded-2xl border border-ocean-100 bg-white p-6 shadow-soft">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-2xl font-black">{title}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{text}</p>
+        </div>
+        <button type="button" className="primary-button" onClick={onShowPaywall}>
+          Lihat Premium
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function GuestPreviewPage({
+  payload,
+  answers,
+  result,
+  busy,
+  onAnswer,
+  onComplete,
+  onNavigate,
+  onShowPaywall,
+}: {
+  payload: GuestPreviewPayload | null;
+  answers: Record<string, string>;
+  result: GuestPreviewResult | null;
+  busy: boolean;
+  onAnswer: (questionId: string, optionId: string) => void;
+  onComplete: () => void;
+  onNavigate: (route: AppRoute) => void;
+  onShowPaywall: () => void;
+}) {
+  if (!payload) {
+    return <EmptyState title="Preview belum dimulakan" text="Pilih Bahagian A atau B untuk mencuba soalan percuma." onNavigate={onNavigate} />;
+  }
+
+  const allAnswered = payload.questions.every((question) => Boolean(answers[question.id]));
+
+  return (
+    <div className="space-y-6">
+      <PageHeader icon={Sparkles} title={`Preview Percuma Bahagian ${payload.section}`} text="Jawab soalan contoh ini dahulu. Tiada akaun diperlukan." />
+      <section className="grid gap-4">
+        {payload.questions.map((question, index) => (
+          <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
+            <p className="text-sm font-black text-ocean-700">Soalan {index + 1}</p>
+            <h2 className="mt-2 text-lg font-black leading-7 text-slate-950">{question.question_text}</h2>
+            <div className="mt-5 grid gap-3">
+              {question.options.map((option) => {
+                const selected = answers[question.id] === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onAnswer(question.id, option.id)}
+                    className={`rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${
+                      selected ? "border-ocean-500 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-white text-slate-700 hover:border-ocean-200"
+                    }`}
+                  >
+                    {option.option_text}
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+        ))}
+      </section>
+      {result ? (
+        <section className="rounded-2xl border border-sun-200 bg-sun-50 p-6 shadow-soft">
+          <h2 className="text-2xl font-black">Anda telah menyelesaikan versi percuma.</h2>
+          <p className="mt-2 text-lg font-black text-ocean-700">
+            Skor ringkas: {result.correct_answers}/{result.total_questions} betul ({result.percentage}%)
+          </p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">Buka akses penuh untuk simulasi tanpa had, bank soalan penuh, sejarah cubaan dan lencana pencapaian.</p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button type="button" className="primary-button" onClick={onShowPaywall}>
+              Daftar & Dapatkan Premium
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
+              Kembali
+            </button>
+          </div>
+        </section>
+      ) : (
+        <button type="button" className="primary-button w-full sm:w-auto" disabled={busy || !allAnswered} onClick={onComplete}>
+          {busy ? "Menyemak..." : "Semak Jawapan"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PaywallPage({
+  isLoggedIn,
+  access,
+  onAuth,
+  onNavigate,
+}: {
+  isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
+  onAuth: (mode: AuthMode) => void;
+  onNavigate: (route: AppRoute) => void;
+}) {
+  const statusText = access.isBlocked
+    ? "Akaun ini sedang disemak oleh pentadbir."
+    : access.isExpired
+      ? "Akses premium telah tamat."
+      : isLoggedIn
+        ? "Akaun anda belum mempunyai akses premium."
+        : "Cuba preview percuma dahulu, kemudian daftar untuk membuka akses penuh.";
+
+  return (
+    <section className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-soft sm:p-8">
+      <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+        <div>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+            <Crown size={28} aria-hidden="true" />
+          </span>
+          <h1 className="mt-6 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Unlock PKSK Premium</h1>
+          <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <h2 className="text-xl font-black">Premium includes:</h2>
+          <div className="mt-5 grid gap-3">
+            {["Unlimited Simulations", "Full Question Bank", "Performance Tracking", "Attempt History", "Mata & Level", "Professional Badges", "Randomized Practice"].map((item) => (
+              <div key={item} className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-700">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
+                {item}
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <button type="button" className="primary-button" onClick={() => onAuth("register")}>
+              Get Premium
+            </button>
+            <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/") : onAuth("login"))}>
+              {isLoggedIn ? "Kembali" : "Login"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AdminShell({ title, text, children }: { title: string; text: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-6">
+      <PageHeader icon={Users} title={title} text={text} />
+      <AdminNav />
+      {children}
+    </div>
+  );
+}
+
+function AdminNav() {
+  const items: Array<{ to: AppRoute; label: string }> = [
+    { to: "/admin", label: "Admin Dashboard" },
+    { to: "/admin/users", label: "Users" },
+    { to: "/admin/subscriptions", label: "Subscriptions" },
+    { to: "/admin/questions", label: "Question Bank" },
+    { to: "/admin/settings", label: "System Settings" },
+  ];
+  function navigateAdmin(to: AppRoute) {
+    window.history.pushState({}, "", to);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  return (
+    <nav className="flex gap-2 overflow-x-auto rounded-2xl bg-white p-2 shadow-soft" aria-label="Admin navigation">
+      {items.map((item) => (
+        <button key={item.to} type="button" className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 hover:bg-ocean-50 hover:text-ocean-700" onClick={() => navigateAdmin(item.to)}>
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: AppRoute) => void; onMessage: (message: string | null) => void }) {
+  const [kpis, setKpis] = useState<AdminKpis | null>(null);
+
+  useEffect(() => {
+    fetchAdminKpis()
+      .then(setKpis)
+      .catch((error) => onMessage(toMessage(error)));
+  }, [onMessage]);
+
+  return (
+    <AdminShell title="Admin Dashboard" text="Pantau pengguna, akses premium dan aktiviti latihan.">
+      <section className="grid gap-4 md:grid-cols-4">
+        <StatCard icon={Users} label="Registered Users" value={`${kpis?.total_registered_users ?? 0}`} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard icon={Crown} label="Premium Users" value={`${kpis?.premium_users ?? 0}`} tone="bg-sun-50 text-amber-700" />
+        <StatCard icon={UserRound} label="Free Users" value={`${kpis?.free_users ?? 0}`} tone="bg-slate-100 text-slate-700" />
+        <StatCard icon={LockKeyhole} label="Blocked Users" value={`${kpis?.blocked_users ?? 0}`} tone="bg-coral-50 text-coral-600" />
+        <StatCard icon={Clock3} label="Expired Users" value={`${kpis?.expired_users ?? 0}`} tone="bg-slate-100 text-slate-700" />
+        <StatCard icon={Zap} label="Active Today" value={`${kpis?.active_users_today ?? 0}`} tone="bg-leaf-50 text-leaf-600" />
+        <StatCard icon={ClipboardList} label="Total Attempts" value={`${kpis?.total_quiz_attempts ?? 0}`} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard icon={Target} label="Attempts Today" value={`${kpis?.attempts_today ?? 0}`} tone="bg-sun-50 text-amber-700" />
+      </section>
+      <section className="grid gap-5 md:grid-cols-3">
+        <ModeCard title="Manage Users" text="Cari pengguna, buka akses premium dan block akaun." icon={Users} onClick={() => onNavigate("/admin/users")} />
+        <ModeCard title="Question Bank" text="Semak soalan aktif dan status bank soalan." icon={BookOpen} onClick={() => onNavigate("/admin/questions")} />
+        <ModeCard title="System Settings" text="Semak had preview percuma dan pelan subscription." icon={ShieldCheck} onClick={() => onNavigate("/admin/settings")} />
+      </section>
+    </AdminShell>
+  );
+}
+
+function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; onMessage: (message: string | null) => void }) {
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
+  const [plan, setPlan] = useState<SubscriptionPlan>("monthly");
+  const [busyAction, setBusyAction] = useState(false);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const nextUsers = await fetchAdminUsers(search, filter);
+      setUsers(nextUsers);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [filter, onMessage, search]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  async function runAction(action: () => Promise<void>, successMessage: string) {
+    setBusyAction(true);
+    onMessage(null);
+    try {
+      await action();
+      setSelectedUser(null);
+      await loadUsers();
+      onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  return (
+    <AdminShell title="Users" text="Urus akses premium tanpa mendedahkan data auth secara terus kepada React.">
+      <section className="rounded-2xl bg-white p-5 shadow-soft">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
+          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama, e-mel atau sekolah" />
+          <select className="field" value={filter} onChange={(event) => setFilter(event.target.value)}>
+            {["all", "premium", "free", "expired", "blocked", "admin"].map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="secondary-button" onClick={loadUsers}>
+            Search
+          </button>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+              <tr>
+                {["Name", "Email", "School", "State", "Role", "Subscription", "Plan", "Ends", "Last Login", "Actions"].map((header) => (
+                  <th key={header} className="px-4 py-3">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {users.map((user) => (
+                <tr key={user.id} className="align-top">
+                  <td className="px-4 py-3 font-bold text-slate-900">{user.display_name || user.full_name || "User"}</td>
+                  <td className="px-4 py-3 text-slate-600">{user.email}</td>
+                  <td className="px-4 py-3 text-slate-600">{user.school || "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{user.state || "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{roleLabel(user.role)}</td>
+                  <td className="px-4 py-3 text-slate-600">{subscriptionLabel(user.subscription_status)}</td>
+                  <td className="px-4 py-3 text-slate-600">{user.subscription_plan ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(user.subscription_ends_at)}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(user.last_login_at)}</td>
+                  <td className="px-4 py-3">
+                    <button type="button" className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700" onClick={() => setSelectedUser(user)}>
+                      Manage
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={10}>
+                    Tiada pengguna ditemui.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {selectedUser ? (
+        <section className="fixed inset-0 z-40 grid place-items-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-soft">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black">{selectedUser.display_name || selectedUser.email}</h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedUser.email}</p>
+              </div>
+              <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={() => setSelectedUser(null)}>
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <Label text="Subscription plan">
+                <select className="field" value={plan} onChange={(event) => setPlan(event.target.value as SubscriptionPlan)}>
+                  <option value="monthly">monthly</option>
+                  <option value="6_months">6_months</option>
+                  <option value="yearly">yearly</option>
+                  <option value="lifetime">lifetime</option>
+                </select>
+              </Label>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                <p className="font-black">Current</p>
+                <p className="mt-1 text-slate-600">
+                  {subscriptionLabel(selectedUser.subscription_status)} / {selectedUser.subscription_plan ?? "no plan"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <button disabled={busyAction} className="primary-button" onClick={() => runAction(() => grantPremium(selectedUser.id, plan), "Premium diberikan.")}>
+                Grant Premium
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => extendPremium(selectedUser.id, "monthly"), "Dilanjutkan 30 hari.")}>
+                Extend 30 Days
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => extendPremium(selectedUser.id, "6_months"), "Dilanjutkan 6 bulan.")}>
+                Extend 6 Months
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => extendPremium(selectedUser.id, "yearly"), "Dilanjutkan 1 tahun.")}>
+                Extend 1 Year
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => extendPremium(selectedUser.id, "lifetime"), "Lifetime diaktifkan.")}>
+                Set Lifetime
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => revokePremium(selectedUser.id), "Premium dibatalkan.")}>
+                Revoke Premium
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => blockUser(selectedUser.id), "Akaun disekat.")}>
+                Block User
+              </button>
+              <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => unblockUser(selectedUser.id), "Akaun dibuka semula.")}>
+                Unblock User
+              </button>
+              {isSuperAdmin ? (
+                <>
+                  <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => setUserRole(selectedUser.id, "admin"), "Role admin diberikan.")}>
+                    Promote Admin
+                  </button>
+                  <button disabled={busyAction} className="secondary-button" onClick={() => runAction(() => setUserRole(selectedUser.id, "user"), "Role admin dibuang.")}>
+                    Remove Admin
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+    </AdminShell>
+  );
+}
+
+function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null) => void }) {
+  const [questions, setQuestions] = useState<AdminQuestionRow[]>([]);
+  const [search, setSearch] = useState("");
+
+  const loadQuestions = useCallback(async () => {
+    try {
+      const nextQuestions = await fetchAdminQuestions(search);
+      setQuestions(nextQuestions);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [onMessage, search]);
+
+  useEffect(() => {
+    loadQuestions();
+  }, [loadQuestions]);
+
+  return (
+    <AdminShell title="Question Bank" text="Paparan asas bank soalan. Edit dan activate/deactivate boleh dikembangkan fasa seterusnya.">
+      <section className="rounded-2xl bg-white p-5 shadow-soft">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari soalan, kategori atau bahagian" />
+          <button type="button" className="secondary-button" onClick={loadQuestions}>
+            Search
+          </button>
+        </div>
+      </section>
+      <section className="grid gap-4">
+        {questions.map((question) => (
+          <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase text-ocean-700">
+                  Bahagian {question.section} / {question.category ?? "Umum"} / {question.difficulty}
+                </p>
+                <h2 className="mt-2 text-base font-black leading-6 text-slate-950">{question.question_text}</h2>
+              </div>
+              <div className="flex gap-2">
+                <span className={`rounded-lg px-3 py-2 text-xs font-black ${question.is_active ? "bg-leaf-50 text-leaf-700" : "bg-slate-100 text-slate-500"}`}>
+                  {question.is_active ? "Active" : "Inactive"}
+                </span>
+                <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+                  Edit
+                </button>
+                <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+                  Activate / Deactivate
+                </button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+    </AdminShell>
+  );
+}
+
+function AdminSubscriptionsPage() {
+  return (
+    <AdminShell title="Subscriptions" text="Pelan disediakan untuk workflow manual premium. Payment gateway belum ditambah.">
+      <section className="grid gap-5 md:grid-cols-4">
+        {(["monthly", "6_months", "yearly", "lifetime"] as SubscriptionPlan[]).map((plan) => (
+          <article key={plan} className="rounded-2xl bg-white p-5 shadow-soft">
+            <h2 className="text-xl font-black">{plan}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600">Pelan ini boleh digunakan oleh admin semasa grant atau extend premium.</p>
+          </article>
+        ))}
+      </section>
+    </AdminShell>
+  );
+}
+
+function AdminSettingsPage({ settings }: { settings: AppSettings }) {
+  return (
+    <AdminShell title="System Settings" text="Tetapan utama aplikasi yang dibaca oleh frontend.">
+      <section className="grid gap-4 md:grid-cols-3">
+        <SummaryPanel title="Preview Bahagian A" value={`${settings.free_preview_section_a_limit} soalan`} />
+        <SummaryPanel title="Preview Bahagian B" value={`${settings.free_preview_section_b_limit} soalan`} />
+        <SummaryPanel title="Preview Bahagian C" value={settings.free_preview_section_c_enabled ? "Aktif" : "Tidak aktif"} />
+      </section>
+    </AdminShell>
+  );
+}
+
+function AccessDeniedPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
+  return (
+    <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-coral-50 text-coral-600">
+        <LockKeyhole size={26} aria-hidden="true" />
+      </div>
+      <h1 className="mt-5 text-3xl font-black">403 Access Denied</h1>
+      <p className="mt-3 text-sm leading-6 text-slate-600">Halaman ini hanya untuk admin yang diberi kebenaran.</p>
+      <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/")}>
+        Kembali ke Dashboard
+      </button>
+    </section>
+  );
+}
+
+function SummaryPanel({ title, value }: { title: string; value: string }) {
+  return (
+    <article className="rounded-2xl bg-white p-5 shadow-soft">
+      <p className="text-sm font-bold text-slate-500">{title}</p>
+      <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+    </article>
   );
 }
 
@@ -718,7 +1540,6 @@ function ModePage({
   if (!isLoggedIn) {
     return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan mata latihan." onNavigate={onNavigate} />;
   }
-
   return (
     <div className="space-y-6">
       <PageHeader icon={Target} title="Pilih Latihan" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
@@ -1313,6 +2134,39 @@ function tierLabel(tier: BadgeWithProgress["tier"]): string {
   };
 
   return labels[tier];
+}
+
+function roleLabel(role: ProfileRow["role"]): string {
+  const labels: Record<ProfileRow["role"], string> = {
+    user: "User",
+    admin: "Admin",
+    super_admin: "Super Admin",
+  };
+
+  return labels[role];
+}
+
+function subscriptionLabel(status: ProfileRow["subscription_status"]): string {
+  const labels: Record<ProfileRow["subscription_status"], string> = {
+    free: "Free",
+    premium: "Premium",
+    expired: "Expired",
+    blocked: "Blocked",
+  };
+
+  return labels[status];
+}
+
+function formatShortDate(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ms-MY", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 function formatDate(value: string): string {

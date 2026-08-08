@@ -10,6 +10,15 @@ export type ProfileRow = {
   avatar: string | null;
   xp: number;
   level: number;
+  role: "user" | "admin" | "super_admin";
+  subscription_status: "free" | "premium" | "expired" | "blocked";
+  subscription_plan: "monthly" | "6_months" | "yearly" | "lifetime" | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  access_granted_at: string | null;
+  access_granted_by: string | null;
+  last_login_at: string | null;
+  is_blocked: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -62,6 +71,26 @@ export type XpHistoryRow = {
   created_at: string;
 };
 
+export type SubscriptionPlanRow = {
+  id: string;
+  code: "monthly" | "6_months" | "yearly" | "lifetime";
+  name: string;
+  description: string | null;
+  duration_days: number | null;
+  price: number | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AppSettingRow = {
+  key: string;
+  value: Json;
+  description: string | null;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -77,6 +106,15 @@ export type Database = {
           avatar?: string | null;
           xp?: number;
           level?: number;
+          role?: "user" | "admin" | "super_admin";
+          subscription_status?: "free" | "premium" | "expired" | "blocked";
+          subscription_plan?: "monthly" | "6_months" | "yearly" | "lifetime" | null;
+          subscription_started_at?: string | null;
+          subscription_ends_at?: string | null;
+          access_granted_at?: string | null;
+          access_granted_by?: string | null;
+          last_login_at?: string | null;
+          is_blocked?: boolean;
         };
         Update: Partial<Omit<ProfileRow, "id" | "created_at">>;
         Relationships: [];
@@ -101,6 +139,18 @@ export type Database = {
       };
       xp_history: {
         Row: XpHistoryRow;
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      subscription_plans: {
+        Row: SubscriptionPlanRow;
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      app_settings: {
+        Row: AppSettingRow;
         Insert: Record<string, never>;
         Update: Record<string, never>;
         Relationships: [];
@@ -133,6 +183,91 @@ export type Database = {
       complete_attempt: {
         Args: {
           p_attempt_id: string;
+        };
+        Returns: Json;
+      };
+      get_my_access_status: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      record_last_login: {
+        Args: Record<string, never>;
+        Returns: undefined;
+      };
+      get_public_app_settings: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      get_guest_preview_questions: {
+        Args: {
+          p_section: "A" | "B";
+          p_limit?: number | null;
+        };
+        Returns: Json;
+      };
+      score_guest_preview: {
+        Args: {
+          p_answers: Json;
+        };
+        Returns: Json;
+      };
+      admin_get_kpis: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_list_users: {
+        Args: {
+          search_text?: string | null;
+          status_filter?: string | null;
+          page_number?: number;
+          page_size?: number;
+        };
+        Returns: Json;
+      };
+      admin_grant_premium: {
+        Args: {
+          target_user_id: string;
+          plan?: string;
+        };
+        Returns: Json;
+      };
+      admin_extend_premium: {
+        Args: {
+          target_user_id: string;
+          plan?: string;
+        };
+        Returns: Json;
+      };
+      admin_revoke_premium: {
+        Args: {
+          target_user_id: string;
+        };
+        Returns: Json;
+      };
+      admin_block_user: {
+        Args: {
+          target_user_id: string;
+        };
+        Returns: Json;
+      };
+      admin_unblock_user: {
+        Args: {
+          target_user_id: string;
+        };
+        Returns: Json;
+      };
+      super_admin_set_role: {
+        Args: {
+          target_user_id: string;
+          new_role: "user" | "admin" | "super_admin";
+        };
+        Returns: Json;
+      };
+      admin_list_questions: {
+        Args: {
+          search_text?: string | null;
+          page_number?: number;
+          page_size?: number;
         };
         Returns: Json;
       };

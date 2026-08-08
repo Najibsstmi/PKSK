@@ -1,46 +1,150 @@
 # Simulator PKSK
 
-Simulator PKSK ialah aplikasi web Fasa 1 untuk membantu murid Tahun 6 bersedia menghadapi Pentaksiran Kemasukan Sekolah Khusus.
+Simulator PKSK ialah aplikasi web latihan PKSK untuk murid Tahun 6 dengan guest preview, akses premium dan admin panel.
 
-Fasa ini fokus kepada aplikasi yang stabil, cerah, moden, dan boleh deploy:
+Domain production:
 
-- Dashboard calon
-- Log masuk dan daftar akaun melalui Supabase Auth
-- Profil murid
-- Mod latihan penuh, latihan mengikut bahagian, dan cabaran pantas
-- Soalan objektif yang dibaca daripada Supabase
-- Pemilihan soalan secara rawak setiap kali simulasi bermula
-- Susunan pilihan jawapan rawak dan disimpan untuk setiap percubaan
-- Skor, XP, level, sejarah latihan, dan lencana pencapaian
-- Struktur database yang boleh menyokong ribuan soalan
+```text
+https://pksk.cikgustem.com
+```
 
-Soalan tidak disimpan dalam source React. PDF pertama hanya digunakan untuk menghasilkan seed data Supabase.
+Stack:
 
-## Struktur Supabase
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- Supabase
+- Vercel
+
+## Commercial Access Model
+
+Sistem menggunakan dua konsep berasingan:
+
+- `role`: `user`, `admin`, `super_admin`
+- `subscription_status`: `free`, `premium`, `expired`, `blocked`
+
+Guest tanpa akaun bukan subscription user. Guest hanya boleh menggunakan Free Preview.
+
+## Guest Preview
+
+Pelawat boleh terus mencuba tanpa daftar dan tanpa log masuk:
+
+- Bahagian A: maksimum 5 soalan
+- Bahagian B: maksimum 5 soalan
+- Tiada sejarah cubaan
+- Tiada mata/level
+- Tiada lencana
+- Tiada dashboard prestasi penuh
+
+Selepas preview selesai, aplikasi memaparkan paywall premium.
+
+## Premium Subscription
+
+Akaun premium mesti:
+
+- berdaftar
+- log masuk
+- mempunyai `subscription_status = 'premium'`
+- tidak blocked
+- tarikh tamat masih aktif, atau lifetime
+
+Premium mendapat akses kepada simulasi penuh, latihan mengikut bahagian, cabaran pantas, sejarah cubaan, pencapaian, mata, level dan lencana.
+
+## Admin Panel
+
+Route admin:
+
+- `/admin`
+- `/admin/users`
+- `/admin/subscriptions`
+- `/admin/questions`
+- `/admin/settings`
+
+Admin actions dibuat melalui secure RPC, bukan update terus dari frontend.
+
+Admin boleh:
+
+- melihat KPI pengguna dan cubaan
+- melihat senarai pengguna termasuk email melalui RPC secure
+- grant premium
+- extend 30 hari, 6 bulan, 1 tahun atau lifetime
+- revoke premium
+- block/unblock user
+
+Super admin sahaja boleh:
+
+- promote user kepada admin
+- remove admin role
+- set role melalui `super_admin_set_role`
+
+## Supabase SQL Order
 
 Jalankan SQL ini dalam Supabase SQL Editor mengikut turutan:
 
 1. `supabase/schema.sql`
 2. `supabase/seed.sql`
+3. `supabase/migrations/20260808_add_commercial_access.sql`
 
-`schema.sql` membina table, polisi keselamatan, fungsi rawak soalan, fungsi semak jawapan, dan sistem lencana.
-`seed.sql` memasukkan bank soalan pertama daripada `tips pksk 2026.pdf`.
+Migration komersial menambah:
 
-Table utama:
+- column access dalam `profiles`
+- `subscription_plans`
+- `subscription_history`
+- `admin_audit_logs`
+- `app_settings`
+- RPC premium/access/admin
+- settings free preview
 
-- `questions`
-- `question_options`
-- `question_sources`
-- `quiz_attempts`
-- `attempt_questions`
-- `attempt_question_options`
-- `attempt_answers`
-- `profiles`
-- `badges`
-- `user_badges`
-- `xp_history`
+## Create First Super Admin
 
-Jawapan betul disimpan dalam `question_options.is_correct`, tetapi React tidak membaca column itu secara terus. App menggunakan fungsi Supabase untuk menghantar jawapan dan menerima markah.
+1. Daftar akaun sendiri melalui aplikasi PKSK.
+2. Buka Supabase Dashboard.
+3. Pergi `Authentication` -> `Users`.
+4. Klik user akaun anda.
+5. Copy `User UID`.
+6. Jalankan SQL ini dalam Supabase SQL Editor:
+
+```sql
+update public.profiles
+set
+  role = 'super_admin',
+  subscription_status = 'premium',
+  subscription_plan = 'lifetime',
+  subscription_started_at = now(),
+  subscription_ends_at = null,
+  access_granted_at = now(),
+  is_blocked = false
+where id = 'PASTE_USER_UUID_DI_SINI';
+```
+
+Jangan hardcode UUID sebenar dalam GitHub.
+
+## Supabase Auth Redirect
+
+Untuk custom domain, tetapkan di Supabase:
+
+`Authentication` -> `URL Configuration`
+
+Site URL:
+
+```text
+https://pksk.cikgustem.com
+```
+
+Redirect URLs:
+
+```text
+https://pksk.cikgustem.com
+https://pksk.cikgustem.com/**
+https://pksk-nu.vercel.app
+https://pksk-nu.vercel.app/**
+http://localhost:5173
+http://localhost:5173/**
+http://localhost:5174/**
+http://localhost:5175/**
+http://localhost:5176/**
+```
 
 ## Environment Variables
 
@@ -55,10 +159,12 @@ Dalam Vercel, masukkan nilai yang sama di:
 
 `Project Settings` -> `Environment Variables`
 
-Nama variable yang diperlukan:
+Nama variable:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+
+Selepas menambah environment variables, redeploy Vercel.
 
 ## Jalankan Projek
 
@@ -83,8 +189,6 @@ Tetapan Vercel:
 - Install command: `npm install`
 - Build command: `npm run build`
 - Output directory: `dist`
-
-Selepas SQL Supabase dijalankan dan environment variables dimasukkan, push ke branch `main` akan mencetuskan production deployment baharu.
 
 ## Import PDF Seterusnya
 

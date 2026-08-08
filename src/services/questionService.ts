@@ -99,6 +99,12 @@ export function mapSupabaseMessage(message: string): string {
   if (message.includes("LOGIN_REQUIRED")) {
     return "Sila log masuk dahulu.";
   }
+  if (message.includes("PREMIUM_REQUIRED")) {
+    return "Akses premium diperlukan untuk latihan penuh.";
+  }
+  if (message.includes("ACCOUNT_BLOCKED")) {
+    return "Akaun ini belum boleh menggunakan fungsi utama. Sila hubungi pentadbir.";
+  }
   if (message.includes("EMPTY_QUESTION_BANK")) {
     return "Bank soalan belum tersedia. Sila maklumkan kepada pentadbir.";
   }
