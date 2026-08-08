@@ -18,7 +18,7 @@ export const supabase: SupabaseClient<Database> | null = isSupabaseConfigured
 
 export function requireSupabase(): SupabaseClient<Database> {
   if (!supabase) {
-    throw new Error("Supabase belum dikonfigurasi. Masukkan VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY.");
+    throw new Error("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
   }
 
   return supabase;

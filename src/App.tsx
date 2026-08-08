@@ -172,7 +172,7 @@ function App() {
 
   async function handleAuth(email: string, password: string, displayName: string) {
     if (!supabase) {
-      setMessage("Supabase belum dikonfigurasi.");
+      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
@@ -417,7 +417,7 @@ function TopBar({
           </span>
           <span className="min-w-0">
             <span className="block text-base font-bold leading-tight">Simulator PKSK</span>
-            <span className="block truncate text-xs font-medium text-slate-500">Supabase Edition</span>
+            <span className="block truncate text-xs font-medium text-slate-500">Latihan Tahun 6</span>
           </span>
         </button>
 
@@ -570,7 +570,7 @@ function AuthPanel({
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
-          <p className="text-sm text-slate-500">Simpan markah, XP dan lencana sendiri.</p>
+          <p className="text-sm text-slate-500">Simpan markah, perkembangan dan lencana sendiri.</p>
         </div>
         <button
           type="button"
@@ -637,14 +637,14 @@ function Dashboard({
           <div className="order-2 flex min-w-0 flex-col justify-center gap-6 p-6 sm:p-8 lg:p-10">
             <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-sun-100 px-3 py-2 text-sm font-bold text-amber-700">
               <Sparkles size={17} aria-hidden="true" />
-              Soalan kini dibaca dari Supabase
+              Latihan rawak setiap kali mula
             </div>
             <div className="max-w-[330px] space-y-4 sm:max-w-xl">
               <h1 className="break-words text-3xl font-black leading-tight text-slate-950 sm:text-5xl">
                 {isLoggedIn ? `Selamat kembali, ${displayName}` : "Simulator PKSK profesional"}
               </h1>
               <p className="break-words text-base leading-7 text-slate-600 sm:text-lg">
-                Jalankan latihan rawak, simpan sejarah cubaan, kumpul XP dan buka lencana pencapaian.
+                Jalankan latihan rawak, simpan rekod kemajuan dan buka lencana pencapaian.
               </p>
             </div>
             {isLoggedIn ? (
@@ -652,7 +652,7 @@ function Dashboard({
                 <div className="mb-2 flex items-center justify-between text-sm font-bold text-slate-700">
                   <span>Level {level.level}</span>
                   <span>
-                    {level.progressXp} / {level.neededXp} XP
+                    {level.progressXp} / {level.neededXp} mata
                   </span>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-slate-200">
@@ -691,7 +691,7 @@ function Dashboard({
       <section className="grid gap-4 md:grid-cols-4">
         <StatCard icon={Rocket} label="Jumlah Cubaan" value={`${performance.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard icon={Star} label="Skor Terbaik" value={`${performance.bestScore}%`} tone="bg-sun-50 text-amber-700" />
-        <StatCard icon={Zap} label="Jumlah XP" value={`${performance.totalXp}`} tone="bg-coral-50 text-coral-600" />
+        <StatCard icon={Zap} label="Jumlah Mata" value={`${performance.totalXp}`} tone="bg-coral-50 text-coral-600" />
         <StatCard icon={Trophy} label="Lencana" value={`${performance.badgeCount}`} tone="bg-leaf-50 text-leaf-600" />
       </section>
 
@@ -716,12 +716,12 @@ function ModePage({
   onNavigate: (route: AppRoute) => void;
 }) {
   if (!isLoggedIn) {
-    return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan XP." onNavigate={onNavigate} />;
+    return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan mata latihan." onNavigate={onNavigate} />;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Target} title="Pilih Latihan" text="Setiap cubaan akan memilih soalan dan pilihan jawapan secara rawak dari Supabase." />
+      <PageHeader icon={Target} title="Pilih Latihan" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
       <div className="grid gap-5 lg:grid-cols-3">
         <ModeCard title="Simulasi Penuh" text="30 soalan rawak Bahagian A dan B." icon={ShieldCheck} disabled={busy} onClick={() => onStartQuiz("full", null, 30)} />
         <ModeCard title="Bahagian A" text="10 soalan Kecerdasan Insaniah." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 10)} />
@@ -842,7 +842,7 @@ function ResultPanel({ result, onNavigate }: { result: CompleteAttemptResult; on
       <p className="mt-3 text-slate-600">
         {result.correct_answers} / {result.total_questions} betul - {result.percentage}%
       </p>
-      <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} XP</p>
+      <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         <button type="button" className="primary-button" onClick={() => onNavigate("/performance")}>
           Lihat Prestasi
@@ -888,7 +888,7 @@ function ProfilePage({
   return (
     <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
       <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <PageHeader icon={UserRound} title="Profil Calon" text="Maklumat ini disimpan dalam table profiles di Supabase." compact />
+        <PageHeader icon={UserRound} title="Profil Calon" text="Lengkapkan maklumat ringkas supaya kemajuan latihan lebih tersusun." compact />
         <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
           <Label text="Nama penuh">
             <input className="field" value={fullName} onChange={(event) => setFullName(event.target.value)} required />
@@ -941,7 +941,7 @@ function ProfilePage({
           <SummaryRow label="Sekolah" value={school || "Belum diisi"} />
           <SummaryRow label="Negeri" value={state || "Belum diisi"} />
           <SummaryRow label="Kelas" value={className || "Belum diisi"} />
-          <SummaryRow label="XP" value={`${profile?.xp ?? 0}`} />
+          <SummaryRow label="Mata" value={`${profile?.xp ?? 0}`} />
         </div>
       </section>
     </div>
@@ -960,17 +960,17 @@ function PerformancePage({
   onNavigate: (route: AppRoute) => void;
 }) {
   if (!isLoggedIn) {
-    return <LockedState title="Prestasi peribadi dikunci" text="Log masuk untuk melihat sejarah markah dan XP." onNavigate={onNavigate} />;
+    return <LockedState title="Prestasi peribadi dikunci" text="Log masuk untuk melihat sejarah markah dan mata latihan." onNavigate={onNavigate} />;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Award} title="Prestasi Saya" text="Semua statistik dikira daripada table quiz_attempts dan user_badges." />
+      <PageHeader icon={Award} title="Prestasi Saya" text="Lihat perkembangan latihan, markah terbaik dan lencana yang telah dibuka." />
       <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={ClipboardList} label="Simulasi" value={`${stats.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard icon={Star} label="Terbaik" value={`${stats.bestScore}%`} tone="bg-sun-50 text-amber-700" />
         <StatCard icon={Target} label="Purata" value={`${stats.averageScore}%`} tone="bg-leaf-50 text-leaf-600" />
-        <StatCard icon={Zap} label="XP" value={`${stats.totalXp}`} tone="bg-coral-50 text-coral-600" />
+        <StatCard icon={Zap} label="Mata" value={`${stats.totalXp}`} tone="bg-coral-50 text-coral-600" />
         <StatCard icon={Rocket} label="Level" value={`${stats.level}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard icon={Trophy} label="Lencana" value={`${stats.badgeCount}`} tone="bg-sun-50 text-amber-700" />
       </section>
@@ -1008,7 +1008,7 @@ function HistoryPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={History} title="Sejarah Cubaan" text="Setiap cubaan yang selesai akan disimpan di Supabase." />
+      <PageHeader icon={History} title="Sejarah Cubaan" text="Semak semula rekod latihan yang telah selesai." />
       <section className="grid gap-4">
         {attempts.map((attempt, index) => (
           <article key={attempt.id} className="rounded-2xl bg-white p-5 shadow-soft">
@@ -1020,7 +1020,7 @@ function HistoryPage({
               <div className="grid grid-cols-3 gap-3 text-center">
                 <Metric label="Skor" value={`${attempt.percentage}%`} />
                 <Metric label="Betul" value={`${attempt.correct_answers}/${attempt.total_questions}`} />
-                <Metric label="XP" value={`+${attempt.xp_earned}`} />
+                <Metric label="Mata" value={`+${attempt.xp_earned}`} />
               </div>
             </div>
           </article>
@@ -1046,7 +1046,7 @@ function AchievementsPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Trophy} title="Lencana" text="Badge profesional dengan tier Bronze, Silver, Gold dan Platinum." />
+      <PageHeader icon={Trophy} title="Lencana" text="Kumpul lencana apabila berjaya mencapai sasaran latihan." />
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {badges.map((badge) => {
           const Icon = iconForBadge(badge.icon);
@@ -1060,14 +1060,14 @@ function AchievementsPage({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-black">{badge.name}</h2>
-                    <span className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">{badge.tier}</span>
+                    <span className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600">{tierLabel(badge.tier)}</span>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{badge.description}</p>
                 </div>
               </div>
               <div className="mt-5">
                 <div className="mb-2 flex justify-between text-xs font-bold text-slate-500">
-                  <span>Progress</span>
+                  <span>Kemajuan</span>
                   <span>{badge.progress_label}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -1086,7 +1086,7 @@ function AchievementsPage({
 function GuidePage() {
   return (
     <div className="space-y-6">
-      <PageHeader icon={BookOpen} title="Panduan" text="Soalan boleh diimport ke Supabase tanpa hardcode dalam React." />
+      <PageHeader icon={BookOpen} title="Panduan" text="Kenali bahagian utama PKSK dan pilih latihan yang sesuai." />
       <section className="grid gap-5 lg:grid-cols-3">
         {pkskSections.map((section) => (
           <article key={section.title} className="rounded-2xl bg-white p-6 shadow-soft">
@@ -1104,10 +1104,12 @@ function GuidePage() {
         ))}
       </section>
       <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <h2 className="text-xl font-black">Import PDF Seterusnya</h2>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          Gunakan script `scripts/extract_pdf_seed.py` untuk hasilkan SQL seed baharu daripada PDF lain. Kod React tidak perlu diubah kerana app membaca bank soalan dari Supabase.
-        </p>
+        <h2 className="text-xl font-black">Cara Guna Simulator</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <StepCard number="1" title="Lengkapkan profil" text="Masukkan nama, sekolah dan kelas supaya rekod latihan tersimpan dengan kemas." />
+          <StepCard number="2" title="Pilih latihan" text="Cuba simulasi penuh, ulang kaji mengikut bahagian atau cabaran pantas harian." />
+          <StepCard number="3" title="Lihat kemajuan" text="Semak markah, sejarah cubaan dan lencana untuk tahu bahagian yang perlu dikuatkan." />
+        </div>
       </section>
     </div>
   );
@@ -1121,10 +1123,8 @@ function SetupNotice() {
           <LockKeyhole size={23} aria-hidden="true" />
         </span>
         <div>
-          <h1 className="text-2xl font-black">Supabase belum dikonfigurasi</h1>
-          <p className="mt-2 leading-7 text-slate-700">
-            Masukkan `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY` dalam `.env.local` untuk local, dan dalam Vercel Environment Variables untuk production.
-          </p>
+          <h1 className="text-2xl font-black">Sistem latihan belum bersedia</h1>
+          <p className="mt-2 leading-7 text-slate-700">Bank soalan sedang disambungkan. Sila cuba semula sebentar lagi atau maklumkan kepada pentadbir.</p>
         </div>
       </div>
     </section>
@@ -1265,6 +1265,16 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function StepCard({ number, title, text }: { number: string; title: string; text: string }) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <span className="grid h-9 w-9 place-items-center rounded-xl bg-ocean-600 text-sm font-black text-white">{number}</span>
+      <h3 className="mt-4 text-base font-black text-slate-950">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    </article>
+  );
+}
+
 function iconForBadge(icon: string): LucideIcon {
   const icons: Record<string, LucideIcon> = {
     footprints: Footprints,
@@ -1292,6 +1302,17 @@ function tierTone(tier: BadgeWithProgress["tier"]): string {
     return "bg-sun-100 text-amber-700";
   }
   return "bg-ocean-50 text-ocean-700";
+}
+
+function tierLabel(tier: BadgeWithProgress["tier"]): string {
+  const labels: Record<BadgeWithProgress["tier"], string> = {
+    BRONZE: "Gangsa",
+    SILVER: "Perak",
+    GOLD: "Emas",
+    PLATINUM: "Platinum",
+  };
+
+  return labels[tier];
 }
 
 function formatDate(value: string): string {

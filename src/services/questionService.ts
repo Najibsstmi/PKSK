@@ -100,7 +100,7 @@ export function mapSupabaseMessage(message: string): string {
     return "Sila log masuk dahulu.";
   }
   if (message.includes("EMPTY_QUESTION_BANK")) {
-    return "Bank soalan masih kosong. Jalankan SQL seed di Supabase dahulu.";
+    return "Bank soalan belum tersedia. Sila maklumkan kepada pentadbir.";
   }
   if (message.includes("ATTEMPT_NOT_FINISHED")) {
     return "Jawab semua soalan dahulu sebelum hantar keputusan.";
