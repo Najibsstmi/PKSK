@@ -1,4 +1,4 @@
-import {
+﻿import {
   Award,
   BookOpen,
   Brain,
@@ -691,21 +691,23 @@ function App() {
       return;
     }
 
+    const attemptId = activePayload.attempt.id;
     setMessage(null);
+    setActivePayload((currentPayload) =>
+      currentPayload
+        ? {
+            ...currentPayload,
+            questions: currentPayload.questions.map((question) =>
+              question.id === questionId ? { ...question, selected_option_id: optionId, answer_status: "answered" } : question,
+            ),
+          }
+        : currentPayload,
+    );
+
     try {
-      await submitAnswer(activePayload.attempt.id, questionId, optionId);
-      setActivePayload((currentPayload) =>
-        currentPayload
-          ? {
-              ...currentPayload,
-              questions: currentPayload.questions.map((question) =>
-                question.id === questionId ? { ...question, selected_option_id: optionId, answer_status: "answered" } : question,
-              ),
-            }
-          : currentPayload,
-      );
+      await submitAnswer(attemptId, questionId, optionId);
     } catch (error) {
-      setMessage(toMessage(error));
+      setMessage(`Jawapan ditanda pada skrin, tetapi belum dapat disimpan ke Supabase. ${toMessage(error)}`);
     }
   }
 
@@ -714,23 +716,25 @@ function App() {
       return false;
     }
 
+    const attemptId = activePayload.attempt.id;
     setMessage(null);
+    setActivePayload((currentPayload) =>
+      currentPayload
+        ? {
+            ...currentPayload,
+            questions: currentPayload.questions.map((question) =>
+              question.id === questionId ? { ...question, selected_option_id: null, answer_status: "skipped" } : question,
+            ),
+          }
+        : currentPayload,
+    );
+
     try {
-      await skipAnswer(activePayload.attempt.id, questionId);
-      setActivePayload((currentPayload) =>
-        currentPayload
-          ? {
-              ...currentPayload,
-              questions: currentPayload.questions.map((question) =>
-                question.id === questionId ? { ...question, selected_option_id: null, answer_status: "skipped" } : question,
-              ),
-            }
-          : currentPayload,
-      );
+      await skipAnswer(attemptId, questionId);
       return true;
     } catch (error) {
-      setMessage(toMessage(error));
-      return false;
+      setMessage(`Soalan sudah ditanda skip pada skrin, tetapi belum dapat disimpan ke Supabase. ${toMessage(error)}`);
+      return true;
     }
   }
 
@@ -957,15 +961,15 @@ function App() {
           payload={activeEssayPayload}
           result={essayResult}
           busy={busy}
+          onStartEssay={handleStartEssay}
           onAutosave={handleEssayAutosave}
           onSubmit={handleEssaySubmit}
           onNavigate={navigate}
-          onStartEssay={handleStartEssay}
         />
       );
     }
     if (currentRoute === "/app/profile") {
-      return <ProfilePage profile={profile} busy={busy} onSave={handleProfileSave} />;
+      return <ProfilePage profile={profile} onSave={handleProfileSave} busy={busy} />;
     }
     if (currentRoute === "/app/pencapaian") {
       return <PerformancePage stats={performance} attempts={attempts} isLoggedIn={isLoggedIn} onNavigate={navigate} />;
@@ -3556,8 +3560,14 @@ function QuizPage({
       : current.section === "A"
         ? "Skor rasmi Bahagian A: 20%"
         : "Skor rasmi Bahagian B: 70%";
+  const currentStatus = getQuestionStatus(current);
+  const currentReady = currentStatus !== "unanswered";
 
   function handleNext() {
+    if (!currentReady) {
+      return;
+    }
+
     if (index < orderedQuestions.length - 1) {
       if (!nextLocked) {
         setIndex((currentIndex) => currentIndex + 1);
@@ -3633,13 +3643,14 @@ function QuizPage({
             </button>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            {!currentReady ? <p className="text-sm font-black text-coral-600">Pilih jawapan atau tekan Skip Soalan Ini untuk teruskan.</p> : null}
             {nextLocked ? <p className="text-sm font-black text-coral-600">Lengkapkan semua soalan Bahagian A dahulu.</p> : null}
             {index === orderedQuestions.length - 1 && !complete ? <p className="text-sm font-black text-coral-600">Jawab atau skip semua soalan sebelum hantar.</p> : null}
             <button
               type="button"
               className="primary-button"
               onClick={handleNext}
-              disabled={busy || nextLocked || (index === orderedQuestions.length - 1 && !complete)}
+              disabled={busy || nextLocked || !currentReady || (index === orderedQuestions.length - 1 && !complete)}
             >
               {index < orderedQuestions.length - 1 ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
             </button>
