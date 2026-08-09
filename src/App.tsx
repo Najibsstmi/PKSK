@@ -89,15 +89,17 @@ type AppRoute =
   | "/premium"
   | "/login"
   | "/register"
-  | "/simulasi"
-  | "/latihan"
-  | "/quiz"
-  | "/essay"
-  | "/profile"
-  | "/performance"
-  | "/history"
-  | "/achievements"
-  | "/guide"
+  | "/checkout"
+  | "/app"
+  | "/app/simulasi"
+  | "/app/latihan"
+  | "/app/quiz"
+  | "/app/essay"
+  | "/app/profile"
+  | "/app/pencapaian"
+  | "/app/sejarah"
+  | "/app/lencana"
+  | "/app/panduan"
   | "/admin"
   | "/admin/users"
   | "/admin/subscriptions"
@@ -108,28 +110,41 @@ type AppRoute =
 type AuthMode = "login" | "register";
 
 const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
-  { to: "/latihan", label: "Latihan", icon: Brain, authOnly: true, premiumOnly: true },
-  { to: "/performance", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
-  { to: "/achievements", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
-  { to: "/history", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
-  { to: "/guide", label: "Panduan", icon: BookOpen },
+  { to: "/app", label: "Dashboard", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
+  { to: "/app/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
+  { to: "/app/latihan", label: "Latihan", icon: Brain, authOnly: true, premiumOnly: true },
+  { to: "/app/pencapaian", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
+  { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
+  { to: "/app/sejarah", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
+  { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true, premiumOnly: true },
   { to: "/admin", label: "Admin Panel", icon: Users, authOnly: true, adminOnly: true },
 ];
 
-const bottomNavItems = navItems.filter((item) => ["/", "/simulasi", "/performance", "/achievements", "/guide"].includes(item.to));
+const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
-const premiumRoutes = new Set<AppRoute>(["/simulasi", "/latihan", "/quiz", "/essay", "/performance", "/history", "/achievements"]);
+const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout"]);
+const premiumRoutes = new Set<AppRoute>([
+  "/app",
+  "/app/simulasi",
+  "/app/latihan",
+  "/app/quiz",
+  "/app/essay",
+  "/app/profile",
+  "/app/pencapaian",
+  "/app/sejarah",
+  "/app/lencana",
+  "/app/panduan",
+]);
 const validRoutes = new Set<AppRoute>(
   navItems.map((item) => item.to).concat([
     "/preview",
     "/premium",
     "/login",
     "/register",
-    "/quiz",
-    "/essay",
-    "/profile",
+    "/checkout",
+    "/app/quiz",
+    "/app/essay",
+    "/app/profile",
     "/admin/users",
     "/admin/subscriptions",
     "/admin/questions",
@@ -138,6 +153,17 @@ const validRoutes = new Set<AppRoute>(
     "/admin/settings",
   ]),
 );
+const legacyRouteMap: Record<string, AppRoute> = {
+  "/simulasi": "/app/simulasi",
+  "/latihan": "/app/latihan",
+  "/quiz": "/app/quiz",
+  "/essay": "/app/essay",
+  "/profile": "/app/profile",
+  "/performance": "/app/pencapaian",
+  "/history": "/app/sejarah",
+  "/achievements": "/app/lencana",
+  "/guide": "/app/panduan",
+};
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
 const rememberedEmailKey = "pksk-remembered-email";
@@ -369,13 +395,13 @@ function App() {
             avatar: avatars[0],
           });
           setProfile(nextProfile);
-          navigate("/profile");
+          navigate("/premium");
         } else {
           setMessage("Akaun berjaya didaftarkan. Sila semak e-mel jika pengesahan diperlukan, kemudian log masuk.");
           setAuthMode("login");
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (error) {
           throw new Error(error.message);
         }
@@ -384,7 +410,19 @@ function App() {
         } else {
           window.localStorage.removeItem(rememberedEmailKey);
         }
-        navigate("/");
+        const nextStatus = await fetchAccessStatus().catch(() => null);
+        if (data.user?.id) {
+          await refreshData(data.user.id).catch(() => undefined);
+        }
+        if (nextStatus?.is_blocked || nextStatus?.is_expired) {
+          navigate("/premium");
+        } else if (nextStatus?.is_admin && !nextStatus?.is_premium) {
+          navigate("/admin");
+        } else if (nextStatus?.is_premium) {
+          navigate("/app");
+        } else {
+          navigate("/premium");
+        }
       }
     } catch (error) {
       setMessage(toMessage(error));
@@ -458,7 +496,7 @@ function App() {
       const nextProfile = await saveProfile({ ...input, id: session.user.id });
       setProfile(nextProfile);
       setMessage("Profil berjaya disimpan.");
-      navigate("/");
+      navigate("/app");
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
@@ -486,7 +524,7 @@ function App() {
       const payload = await getAttemptPayload(attemptId);
       setActivePayload(payload);
       window.localStorage.setItem("pksk-active-attempt", attemptId);
-      navigate("/quiz");
+      navigate("/app/quiz");
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
@@ -507,7 +545,7 @@ function App() {
     }
 
     if (activeEssayPayload?.attempt.status === "in_progress") {
-      navigate("/essay");
+      navigate("/app/essay");
       return;
     }
 
@@ -519,7 +557,7 @@ function App() {
       const payload = await getEssayAttemptPayload(attemptId);
       setActiveEssayPayload(payload);
       window.localStorage.setItem("pksk-active-essay", attemptId);
-      navigate("/essay");
+      navigate("/app/essay");
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
@@ -576,12 +614,12 @@ function App() {
     }
     const payload = await getAttemptPayload(activePayload.attempt.id);
     setActivePayload(payload);
-    navigate("/quiz");
+    navigate("/app/quiz");
   }
 
   function handleResumeEssay() {
     if (activeEssayPayload) {
-      navigate("/essay");
+      navigate("/app/essay");
     }
   }
 
@@ -713,19 +751,11 @@ function App() {
 
     if (currentRoute === "/") {
       return (
-        <Dashboard
+        <LandingPage
           isLoggedIn={isLoggedIn}
           access={access}
-          profile={profile}
-          profileReady={profileReady}
-          performance={performance}
-          activePayload={activePayload}
-          activeEssayPayload={activeEssayPayload}
           settings={appSettings}
           onNavigate={navigate}
-          onResume={handleResumeQuiz}
-          onResumeEssay={handleResumeEssay}
-          onStartQuiz={handleStartQuiz}
           onStartGuestPreview={handleStartGuestPreview}
           onAuthMode={openAuth}
           onShowPaywall={openPaywall}
@@ -750,6 +780,9 @@ function App() {
     }
     if (currentRoute === "/premium") {
       return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
+    }
+    if (currentRoute === "/checkout") {
+      return <CheckoutPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
     }
     if (adminRoutes.includes(currentRoute)) {
       if (!isLoggedIn) {
@@ -788,13 +821,49 @@ function App() {
       }
       return <AdminDashboardPage onNavigate={navigate} onMessage={setMessage} />;
     }
+    if (premiumRoutes.has(currentRoute) && access.isGuest) {
+      return <PremiumRouteGate onStartGuestPreview={handleStartGuestPreview} onAuth={openAuth} onShowPaywall={openPaywall} />;
+    }
+    if (premiumRoutes.has(currentRoute) && access.isBlocked) {
+      return (
+        <AccessDeniedPage
+          title="Akses tidak dibenarkan"
+          text="Akaun ini sedang disemak. Sila hubungi pentadbir untuk mendapatkan bantuan."
+          buttonLabel="Lihat Premium"
+          buttonRoute="/premium"
+          onNavigate={navigate}
+        />
+      );
+    }
     if (premiumRoutes.has(currentRoute) && !access.canUsePremiumFeature()) {
       return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
     }
-    if (currentRoute === "/simulasi" || currentRoute === "/latihan") {
+    if (currentRoute === "/app") {
+      return (
+        <Dashboard
+          isLoggedIn={isLoggedIn}
+          access={access}
+          profile={profile}
+          profileReady={profileReady}
+          performance={performance}
+          activePayload={activePayload}
+          activeEssayPayload={activeEssayPayload}
+          settings={appSettings}
+          onNavigate={navigate}
+          onResume={handleResumeQuiz}
+          onResumeEssay={handleResumeEssay}
+          onStartQuiz={handleStartQuiz}
+          onStartEssay={handleStartEssay}
+          onStartGuestPreview={handleStartGuestPreview}
+          onAuthMode={openAuth}
+          onShowPaywall={openPaywall}
+        />
+      );
+    }
+    if (currentRoute === "/app/simulasi" || currentRoute === "/app/latihan") {
       return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onStartEssay={handleStartEssay} onNavigate={navigate} />;
     }
-    if (currentRoute === "/quiz") {
+    if (currentRoute === "/app/quiz") {
       return (
         <QuizPage
           payload={activePayload}
@@ -806,7 +875,7 @@ function App() {
         />
       );
     }
-    if (currentRoute === "/essay") {
+    if (currentRoute === "/app/essay") {
       return (
         <EssayPage
           payload={activeEssayPayload}
@@ -819,16 +888,16 @@ function App() {
         />
       );
     }
-    if (currentRoute === "/profile") {
+    if (currentRoute === "/app/profile") {
       return <ProfilePage profile={profile} busy={busy} onSave={handleProfileSave} />;
     }
-    if (currentRoute === "/performance") {
+    if (currentRoute === "/app/pencapaian") {
       return <PerformancePage stats={performance} attempts={attempts} isLoggedIn={isLoggedIn} onNavigate={navigate} />;
     }
-    if (currentRoute === "/history") {
+    if (currentRoute === "/app/sejarah") {
       return <HistoryPage attempts={attempts} isLoggedIn={isLoggedIn} onNavigate={navigate} />;
     }
-    if (currentRoute === "/achievements") {
+    if (currentRoute === "/app/lencana") {
       return <AchievementsPage badges={badges} isLoggedIn={isLoggedIn} onNavigate={navigate} />;
     }
     return <GuidePage />;
@@ -852,7 +921,7 @@ function App() {
         {page}
       </main>
 
-      <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} onNavigate={navigate} />
+      {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} onNavigate={navigate} /> : null}
     </div>
   );
 }
@@ -876,54 +945,78 @@ function TopBar({
   onMenu: () => void;
   onSignOut: () => void;
 }) {
+  const isPublicShell = publicRoutes.has(currentRoute);
+  const marketingLinks: Array<{ to: AppRoute; label: string; tone?: "primary" | "secondary" }> = isLoggedIn
+    ? access.canUsePremiumFeature()
+      ? [{ to: "/app", label: "Buka PKSK Academy", tone: "primary" }]
+      : [{ to: "/premium", label: "Dapatkan Premium", tone: "primary" }]
+    : [
+        { to: "/preview", label: "Cuba Percuma" },
+        { to: "/premium", label: "Premium" },
+        { to: "/login", label: "Log Masuk", tone: "secondary" },
+      ];
+
   return (
     <div className="fixed inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onNavigate("/")}>
+        <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onNavigate(isPublicShell ? "/" : "/app")}>
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ocean-600 text-white shadow-soft">
             <GraduationCap size={22} aria-hidden="true" />
           </span>
           <span className="min-w-0">
-            <span className="block text-base font-bold leading-tight">Simulator PKSK</span>
-            <span className="block truncate text-xs font-medium text-slate-500">Latihan Tahun 6</span>
+            <span className="block text-base font-bold leading-tight">PKSK Academy</span>
+            <span className="block truncate text-xs font-medium text-slate-500">oleh CikguSTEM</span>
           </span>
         </button>
 
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Navigasi utama">
-          {navItems.map((item) => {
-            if (item.authOnly && !isLoggedIn) {
-              return null;
-            }
-            if (item.premiumOnly && !access.isPremium) {
-              return null;
-            }
-            if (item.adminOnly && !access.isAdmin) {
-              return null;
-            }
-            return (
-              <button
-                key={item.to}
-                type="button"
-                onClick={() => onNavigate(item.to)}
-                className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
-                  currentRoute === item.to
-                    ? "bg-ocean-50 text-ocean-700"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                }`}
-              >
-                <item.icon size={17} aria-hidden="true" />
-                {item.label}
-              </button>
-            );
-          })}
+          {isPublicShell
+            ? currentRoute === "/"
+              ? null
+              : marketingLinks.map((item) => (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={() => onNavigate(item.to)}
+                    className={item.tone === "primary" ? "primary-button h-10 px-4 py-0" : "secondary-button h-10 px-4 py-0"}
+                  >
+                    {item.label}
+                  </button>
+                ))
+            : navItems.map((item) => {
+                if (item.authOnly && !isLoggedIn) {
+                  return null;
+                }
+                if (item.premiumOnly && !access.canUsePremiumFeature()) {
+                  return null;
+                }
+                if (item.adminOnly && !access.isAdmin) {
+                  return null;
+                }
+                return (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={() => onNavigate(item.to)}
+                    className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
+                      currentRoute === item.to
+                        ? "bg-ocean-50 text-ocean-700"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    }`}
+                  >
+                    <item.icon size={17} aria-hidden="true" />
+                    {item.label}
+                  </button>
+                );
+              })}
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          {isLoggedIn ? (
+          {isLoggedIn && !isPublicShell ? (
             <>
               <button
                 type="button"
-                onClick={() => onNavigate("/profile")}
+                onClick={() => onNavigate("/app/profile")}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-700"
               >
                 <UserRound size={17} aria-hidden="true" />
@@ -954,30 +1047,43 @@ function TopBar({
       {isMenuOpen ? (
         <nav className="border-t border-slate-100 bg-white px-4 py-3 lg:hidden" aria-label="Navigasi mudah alih">
           <div className="mx-auto grid max-w-7xl gap-2">
-            {navItems.map((item) => {
-              if (item.authOnly && !isLoggedIn) {
-                return null;
-              }
-              if (item.premiumOnly && !access.isPremium) {
-                return null;
-              }
-              if (item.adminOnly && !access.isAdmin) {
-                return null;
-              }
-              return (
-                <button
-                  key={item.to}
-                  type="button"
-                  onClick={() => onNavigate(item.to)}
-                  className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold ${
-                    currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-600"
-                  }`}
-                >
-                  <item.icon size={17} aria-hidden="true" />
-                  {item.label}
-                </button>
-              );
-            })}
+            {isPublicShell
+              ? marketingLinks.map((item) => (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={() => onNavigate(item.to)}
+                    className={`flex h-11 items-center rounded-xl px-3 text-left text-sm font-semibold ${
+                      currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-600"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))
+              : navItems.map((item) => {
+                  if (item.authOnly && !isLoggedIn) {
+                    return null;
+                  }
+                  if (item.premiumOnly && !access.canUsePremiumFeature()) {
+                    return null;
+                  }
+                  if (item.adminOnly && !access.isAdmin) {
+                    return null;
+                  }
+                  return (
+                    <button
+                      key={item.to}
+                      type="button"
+                      onClick={() => onNavigate(item.to)}
+                      className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold ${
+                        currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-600"
+                      }`}
+                    >
+                      <item.icon size={17} aria-hidden="true" />
+                      {item.label}
+                    </button>
+                  );
+                })}
             {isLoggedIn ? (
               <button type="button" onClick={onSignOut} className="flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold text-slate-600">
                 <LogOut size={17} aria-hidden="true" />
@@ -1006,7 +1112,7 @@ function BottomNav({
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur lg:hidden" aria-label="Navigasi bawah">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
         {bottomNavItems.map((item) => {
-          const disabled = (item.authOnly && !isLoggedIn) || (item.premiumOnly && !access.isPremium) || (item.adminOnly && !access.isAdmin);
+          const disabled = (item.authOnly && !isLoggedIn) || (item.premiumOnly && !access.canUsePremiumFeature()) || (item.adminOnly && !access.isAdmin);
           return (
             <button
               key={item.to}
@@ -1265,8 +1371,8 @@ function AuthPage({
           isPasswordRecovery
             ? "Tetapkan kata laluan baharu sebelum kembali ke latihan."
             : mode === "login"
-              ? "Masuk untuk sambung latihan premium dan lihat rekod kemajuan."
-              : "Daftar akaun untuk membuka akses premium apabila langganan diaktifkan."
+              ? "Sudah mempunyai akaun Premium? Log masuk untuk meneruskan latihan."
+              : "Daftar akaun untuk meneruskan proses Premium. Akses penuh hanya aktif selepas subscription diberikan."
         }
       />
       {isPasswordRecovery ? (
@@ -1275,6 +1381,117 @@ function AuthPage({
         <AuthPanel mode={mode} busy={busy} onMode={onMode} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
       )}
     </div>
+  );
+}
+
+function LandingPage({
+  isLoggedIn,
+  access,
+  settings,
+  onNavigate,
+  onStartGuestPreview,
+  onAuthMode,
+  onShowPaywall,
+}: {
+  isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
+  settings: AppSettings;
+  onNavigate: (route: AppRoute) => void;
+  onStartGuestPreview: (section: "A" | "B") => void;
+  onAuthMode: (mode: AuthMode) => void;
+  onShowPaywall: () => void;
+}) {
+  return (
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="grid lg:min-h-[520px] lg:grid-cols-[1.02fr_0.98fr]">
+          <div className="relative min-h-[260px] lg:min-h-[520px]">
+            <img src="/assets/pksk-hero.png" alt="Murid Tahun 6 berlatih secara tersusun" className="h-full w-full object-cover object-left" />
+          </div>
+          <div className="flex min-w-0 flex-col justify-center gap-6 p-6 sm:p-8 lg:p-12">
+            <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
+              <GraduationCap size={17} aria-hidden="true" />
+              PKSK Academy oleh CikguSTEM
+            </div>
+            <div className="max-w-2xl space-y-4">
+              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Persediaan PKSK yang lebih yakin dan tersusun.</h1>
+              <p className="text-base leading-7 text-slate-600 sm:text-lg">
+                Berlatih melalui simulasi, soalan rawak dan rekod pencapaian dalam platform yang sesuai untuk calon Tahun 6 dan ibu bapa.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
+                Cuba Percuma
+              </button>
+              <button type="button" className="secondary-button" onClick={onShowPaywall}>
+                Dapatkan Premium
+              </button>
+            </div>
+            <button
+              type="button"
+              className="w-fit text-sm font-black text-ocean-700 hover:text-ocean-900"
+              onClick={() => (isLoggedIn && access.canUsePremiumFeature() ? onNavigate("/app") : onAuthMode("login"))}
+            >
+              {isLoggedIn && access.canUsePremiumFeature() ? "Buka PKSK Academy" : "Log Masuk"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
+
+      <section className="grid gap-5 md:grid-cols-3">
+        <FeatureCard icon={ShieldCheck} title="Simulasi Berstruktur" text="Latihan penuh dan latihan mengikut bahagian membantu murid membiasakan diri dengan format PKSK." />
+        <FeatureCard icon={Zap} title="Soalan Rawak" text="Setiap cubaan menyusun soalan dan pilihan jawapan supaya ulang kaji tidak terasa sama." />
+        <FeatureCard icon={Award} title="Rekod Kemajuan" text="Premium menyimpan sejarah, prestasi, XP, level dan lencana pencapaian murid." />
+      </section>
+    </div>
+  );
+}
+
+function FeatureCard({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
+  return (
+    <article className="rounded-2xl bg-white p-6 shadow-soft">
+      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+        <Icon size={23} aria-hidden="true" />
+      </span>
+      <h2 className="mt-5 text-xl font-black text-slate-950">{title}</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
+    </article>
+  );
+}
+
+function PremiumRouteGate({
+  onStartGuestPreview,
+  onAuth,
+  onShowPaywall,
+}: {
+  onStartGuestPreview: (section: "A" | "B") => void;
+  onAuth: (mode: AuthMode) => void;
+  onShowPaywall: () => void;
+}) {
+  return (
+    <section className="mx-auto max-w-3xl rounded-2xl bg-white p-8 text-center shadow-soft">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+        <LockKeyhole size={26} aria-hidden="true" />
+      </div>
+      <p className="mt-5 text-sm font-black uppercase text-ocean-700">PKSK Academy oleh CikguSTEM</p>
+      <h1 className="mt-2 text-3xl font-black text-slate-950">Akses Premium diperlukan</h1>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+        Halaman ini ialah sebahagian daripada aplikasi premium. Sila pilih preview percuma, log masuk atau dapatkan akses Premium.
+      </p>
+      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+        <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
+          Cuba Percuma
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onAuth("login")}>
+          Log Masuk
+        </button>
+        <button type="button" className="secondary-button" onClick={onShowPaywall}>
+          Dapatkan Premium
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1291,6 +1508,7 @@ function Dashboard({
   onResume,
   onResumeEssay,
   onStartQuiz,
+  onStartEssay,
   onStartGuestPreview,
   onAuthMode,
   onShowPaywall,
@@ -1307,6 +1525,7 @@ function Dashboard({
   onResume: () => void;
   onResumeEssay: () => void;
   onStartQuiz: (mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) => void;
+  onStartEssay: () => void;
   onStartGuestPreview: (section: "A" | "B") => void;
   onAuthMode: (mode: AuthMode) => void;
   onShowPaywall: () => void;
@@ -1329,11 +1548,11 @@ function Dashboard({
             </div>
             <div className="max-w-[330px] space-y-4 sm:max-w-xl">
               <h1 className="break-words text-3xl font-black leading-tight text-slate-950 sm:text-5xl">
-                {isLoggedIn ? `Selamat kembali, ${displayName}` : "Cuba Simulator PKSK Percuma"}
+                {isLoggedIn ? `Selamat kembali, ${displayName}` : "PKSK Academy oleh CikguSTEM"}
               </h1>
               <p className="break-words text-base leading-7 text-slate-600 sm:text-lg">
                 {isLoggedIn
-                  ? "Jalankan latihan rawak, simpan rekod kemajuan dan buka lencana pencapaian."
+                  ? "Jalankan simulasi, latihan rawak, Studio Penulisan Bahagian C dan rekod pencapaian dalam satu tempat."
                   : "Terus cuba soalan contoh tanpa daftar akaun. Akses penuh boleh dibuka apabila bersedia."}
               </p>
             </div>
@@ -1353,7 +1572,7 @@ function Dashboard({
             <div className="flex max-w-[330px] flex-col gap-3 sm:max-w-none sm:flex-row">
               {isLoggedIn ? (
                 <>
-                  <button type="button" onClick={() => (access.isPremium ? onNavigate(profileReady ? "/simulasi" : "/profile") : onShowPaywall())} className="primary-button">
+                  <button type="button" onClick={() => (access.isPremium ? onNavigate(profileReady ? "/app/simulasi" : "/app/profile") : onShowPaywall())} className="primary-button">
                     {access.isPremium ? (profileReady ? "Mula Latihan" : "Lengkapkan Profil") : "Buka Akses Premium"}
                     <ChevronRight size={18} aria-hidden="true" />
                   </button>
@@ -1400,8 +1619,11 @@ function Dashboard({
 
           <section className="grid gap-5 lg:grid-cols-3">
             <ModeCard title="Simulasi Penuh" text="Campuran Bahagian A dan B secara rawak." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 30)} />
-            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/latihan")} />
+            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/app/latihan")} />
             <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
+            <ModeCard title="Studio Penulisan" text="Bahagian C dengan editor, timer dan autosave." icon={PenLine} onClick={onStartEssay} />
+            <ModeCard title="Pencapaian" text="Semak analisis prestasi dan perkembangan latihan." icon={Award} onClick={() => onNavigate("/app/pencapaian")} />
+            <ModeCard title="Lencana" text="Lihat lencana yang sudah dibuka dan sasaran seterusnya." icon={Trophy} onClick={() => onNavigate("/app/lencana")} />
           </section>
         </>
       ) : null}
@@ -1593,6 +1815,30 @@ function PaywallPage({
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
 }) {
+  const premiumFeatures = [
+    "Simulasi penuh",
+    "Bank soalan lengkap",
+    "Soalan dan jawapan disusun secara rawak",
+    "Latihan mengikut bahagian",
+    "Cabaran pantas",
+    "Rekod semua cubaan",
+    "Analisis prestasi",
+    "XP dan level",
+    "Sistem lencana",
+    "Bahagian C / latihan penulisan",
+  ];
+  const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : isLoggedIn ? "Teruskan ke Checkout" : "Dapatkan Premium";
+  const handlePrimary = () => {
+    if (access.canUsePremiumFeature()) {
+      onNavigate("/app");
+      return;
+    }
+    if (isLoggedIn) {
+      onNavigate("/checkout");
+      return;
+    }
+    onAuth("register");
+  };
   const statusText = access.isBlocked
     ? "Akaun ini sedang disemak oleh pentadbir."
     : access.isExpired
@@ -1602,34 +1848,161 @@ function PaywallPage({
         : "Naik taraf ke Premium untuk membuka akses penuh. Sudah mempunyai akaun Premium? Log masuk untuk meneruskan latihan.";
 
   return (
-    <section className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-soft sm:p-8">
-      <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-        <div>
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
-            <Crown size={28} aria-hidden="true" />
-          </span>
-          <h1 className="mt-6 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Akses Premium PKSK</h1>
-          <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="grid gap-0 lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="min-h-[240px] lg:min-h-[520px]">
+            <img src="/assets/pksk-hero.png" alt="PKSK Academy oleh CikguSTEM" className="h-full w-full object-cover object-left" />
+          </div>
+          <div className="flex flex-col justify-center gap-6 p-6 sm:p-8 lg:p-12">
+            <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-sun-100 px-3 py-2 text-sm font-black text-amber-700">
+              <Crown size={17} aria-hidden="true" />
+              Premium PKSK Academy
+            </div>
+            <div>
+              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Latihan PKSK yang lebih lengkap, tersusun dan boleh dipantau.</h1>
+              <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button type="button" className="primary-button" onClick={handlePrimary}>
+                {primaryLabel}
+              </button>
+              {!access.canUsePremiumFeature() ? (
+                <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/preview") : onAuth("login"))}>
+                  {isLoggedIn ? "Cuba Preview" : "Sudah ada akaun? Log Masuk"}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <h2 className="text-xl font-black">Manfaat Premium</h2>
-          <div className="mt-5 grid gap-3">
-            {["Simulasi tanpa had", "Bank soalan penuh", "Rekod prestasi", "Sejarah cubaan", "XP dan level", "Lencana pencapaian", "Latihan rawak setiap kali mula"].map((item) => (
-              <div key={item} className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-700">
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+        <article className="rounded-2xl bg-white p-6 shadow-soft">
+          <p className="text-sm font-black uppercase text-ocean-700">Apa itu PKSK Academy?</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Platform latihan PKSK oleh CikguSTEM</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            PKSK Academy membantu calon Tahun 6 membuat latihan secara lebih konsisten melalui simulasi, latihan mengikut bahagian dan rekod perkembangan.
+          </p>
+        </article>
+        <article className="rounded-2xl bg-white p-6 shadow-soft">
+          <p className="text-sm font-black uppercase text-ocean-700">Apa yang pengguna dapat</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {premiumFeatures.map((item) => (
+              <div key={item} className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
                 <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
                 {item}
               </div>
             ))}
           </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button type="button" className="primary-button" onClick={() => onAuth("register")}>
-              Daftar & Dapatkan Premium
-            </button>
-            <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/") : onAuth("login"))}>
-              {isLoggedIn ? "Kembali" : "Sudah ada akaun? Log Masuk"}
-            </button>
-          </div>
+        </article>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <ComparisonCard
+          title="Free Preview"
+          tone="ocean"
+          items={["Tanpa daftar", "5 soalan Bahagian A", "5 soalan Bahagian B", "Result ringkas"]}
+        />
+        <ComparisonCard
+          title="Premium"
+          tone="sun"
+          items={["Full question bank", "Unlimited simulation", "Random questions", "Performance tracking", "Attempt history", "XP", "Level", "Badges", "Full section practice", "Writing practice"]}
+        />
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-soft">
+        <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview percuma boleh digunakan tanpa e-mel dan kata laluan." />
+          <FaqItem title="Adakah payment sudah aktif?" text="Belum. Pembayaran akan ditambah pada fasa akan datang; admin masih boleh aktifkan Premium untuk testing." />
+          <FaqItem title="Bagaimana Premium diaktifkan nanti?" text="Melalui server webhook selepas bayaran berjaya, bukan melalui parameter frontend seperti paid=true." />
         </div>
+        <div className="mt-6">
+          <button type="button" className="primary-button" onClick={handlePrimary}>
+            {primaryLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ComparisonCard({ title, tone, items }: { title: string; tone: "ocean" | "sun"; items: string[] }) {
+  const toneClass = tone === "ocean" ? "bg-ocean-50 text-ocean-700" : "bg-sun-100 text-amber-700";
+  return (
+    <article className="rounded-2xl bg-white p-6 shadow-soft">
+      <h2 className={`w-fit rounded-xl px-3 py-2 text-sm font-black uppercase ${toneClass}`}>{title}</h2>
+      <div className="mt-5 grid gap-3">
+        {items.map((item) => (
+          <div key={item} className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
+            {item}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function FaqItem({ title, text }: { title: string; text: string }) {
+  return (
+    <article className="rounded-2xl bg-slate-50 p-5">
+      <h3 className="font-black text-slate-950">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    </article>
+  );
+}
+
+function CheckoutPage({
+  isLoggedIn,
+  access,
+  onAuth,
+  onNavigate,
+}: {
+  isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
+  onAuth: (mode: AuthMode) => void;
+  onNavigate: (route: AppRoute) => void;
+}) {
+  if (!isLoggedIn) {
+    return <PremiumRouteGate onStartGuestPreview={() => onNavigate("/preview")} onAuth={onAuth} onShowPaywall={() => onNavigate("/premium")} />;
+  }
+
+  if (access.canUsePremiumFeature()) {
+    return (
+      <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+        <h1 className="text-3xl font-black">Akses Premium sudah aktif</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">Akaun ini sudah boleh menggunakan PKSK Academy.</p>
+        <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/app")}>
+          Buka PKSK Academy
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-soft">
+      <div className="grid gap-5 text-center">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-sun-100 text-amber-700">
+          <Crown size={26} aria-hidden="true" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-black">Pembayaran dalam proses pembangunan.</h1>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+            Untuk fasa ini, akses Premium masih boleh diberikan melalui Admin Panel. Payment gateway akan disambungkan kemudian melalui server webhook.
+          </p>
+        </div>
+        <div className="rounded-2xl bg-slate-50 p-5 text-left">
+          <h2 className="text-lg font-black">Flow masa depan</h2>
+          <p className="mt-3 text-sm leading-7 text-slate-600">
+            User register atau login, teruskan checkout, payment provider sahkan bayaran, server webhook update Supabase
+            `subscription_status`, `subscription_started_at` dan `subscription_ends_at`, kemudian user masuk ke `/app`.
+          </p>
+        </div>
+        <button type="button" className="secondary-button mx-auto" onClick={() => onNavigate("/premium")}>
+          Kembali ke Premium
+        </button>
       </div>
     </section>
   );
@@ -2709,16 +3082,28 @@ function AdminSettingsPage({ settings }: { settings: AppSettings }) {
   );
 }
 
-function AccessDeniedPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
+function AccessDeniedPage({
+  title = "403 Access Denied",
+  text = "Halaman ini hanya untuk admin yang diberi kebenaran.",
+  buttonLabel = "Kembali",
+  buttonRoute = "/",
+  onNavigate,
+}: {
+  title?: string;
+  text?: string;
+  buttonLabel?: string;
+  buttonRoute?: AppRoute;
+  onNavigate: (route: AppRoute) => void;
+}) {
   return (
     <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-coral-50 text-coral-600">
         <LockKeyhole size={26} aria-hidden="true" />
       </div>
-      <h1 className="mt-5 text-3xl font-black">403 Access Denied</h1>
-      <p className="mt-3 text-sm leading-6 text-slate-600">Halaman ini hanya untuk admin yang diberi kebenaran.</p>
-      <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/")}>
-        Kembali ke Dashboard
+      <h1 className="mt-5 text-3xl font-black">{title}</h1>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
+      <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate(buttonRoute)}>
+        {buttonLabel}
       </button>
     </section>
   );
@@ -2874,7 +3259,7 @@ function EssayPage({
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-bold text-slate-500">{saveStatus}</p>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <button type="button" className="secondary-button" onClick={() => onNavigate("/simulasi")}>
+            <button type="button" className="secondary-button" onClick={() => onNavigate("/app/simulasi")}>
               Kembali
             </button>
             <button type="button" className="primary-button" disabled={busy || responseText.trim().length === 0} onClick={() => onSubmit(responseText)}>
@@ -2924,7 +3309,7 @@ function EssayResultPanel({ result, onNavigate, onStartEssay }: { result: EssayS
         <button type="button" className="primary-button" onClick={onStartEssay}>
           Cuba Tajuk Lain
         </button>
-        <button type="button" className="secondary-button" onClick={() => onNavigate("/history")}>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
           Sejarah Cubaan
         </button>
       </div>
@@ -3061,10 +3446,10 @@ function ResultPanel({ result, onNavigate }: { result: CompleteAttemptResult; on
       </p>
       <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <button type="button" className="primary-button" onClick={() => onNavigate("/performance")}>
+        <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
           Lihat Prestasi
         </button>
-        <button type="button" className="secondary-button" onClick={() => onNavigate("/history")}>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
           Sejarah Cubaan
         </button>
       </div>
@@ -3372,7 +3757,7 @@ function EmptyState({ title, text, onNavigate }: { title: string; text: string; 
     <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
       <h1 className="text-2xl font-black">{title}</h1>
       <p className="mx-auto mt-2 max-w-xl text-slate-600">{text}</p>
-      <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/simulasi")}>
+      <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/app/simulasi")}>
         Mula Latihan
       </button>
     </section>
@@ -3631,7 +4016,13 @@ function isRecoveryLink(): boolean {
 }
 
 function getCurrentRoute(): AppRoute {
-  const path = window.location.pathname as AppRoute;
+  const rawPath = window.location.pathname.replace(/\/$/, "") || "/";
+  const legacyTarget = legacyRouteMap[rawPath];
+  if (legacyTarget) {
+    window.history.replaceState({}, "", legacyTarget);
+    return legacyTarget;
+  }
+  const path = rawPath as AppRoute;
   return validRoutes.has(path) ? path : "/";
 }
 

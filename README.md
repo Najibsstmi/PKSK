@@ -1,6 +1,6 @@
-# Simulator PKSK
+# PKSK Academy oleh CikguSTEM
 
-Simulator PKSK ialah aplikasi web latihan PKSK untuk murid Tahun 6 dengan guest preview, akses premium dan admin panel.
+PKSK Academy oleh CikguSTEM ialah platform latihan PKSK untuk murid Tahun 6 dengan guest preview, akses premium dan admin panel.
 
 Domain production:
 
@@ -16,6 +16,52 @@ Stack:
 - Tailwind CSS
 - Supabase
 - Vercel
+
+## Route Architecture
+
+Public marketing website:
+
+- `/` landing page PKSK Academy
+- `/preview` free preview
+- `/premium` premium sales page
+- `/login` login
+- `/register` register
+- `/checkout` placeholder payment gateway masa depan
+
+Premium application:
+
+- `/app` dashboard PKSK Academy
+- `/app/simulasi`
+- `/app/latihan`
+- `/app/pencapaian`
+- `/app/lencana`
+- `/app/sejarah`
+- `/app/panduan`
+
+Compatibility redirect sementara:
+
+- `/simulasi` -> `/app/simulasi`
+- `/latihan` -> `/app/latihan`
+- `/performance` -> `/app/pencapaian`
+- `/history` -> `/app/sejarah`
+- `/achievements` -> `/app/lencana`
+- `/guide` -> `/app/panduan`
+
+## Payment Gateway Future Flow
+
+Payment belum dibina dalam fasa ini. Route `/checkout` hanya placeholder.
+
+Flow masa depan:
+
+1. User register atau login
+2. User masuk checkout
+3. Payment provider sahkan bayaran
+4. Server webhook update Supabase
+5. Supabase set `subscription_status = 'premium'`
+6. Supabase set `subscription_started_at` dan `subscription_ends_at`
+7. User redirect ke `/app`
+
+Premium activation mesti melalui server webhook. Jangan percaya parameter frontend seperti `?paid=true`.
 
 ## Commercial Access Model
 
