@@ -1954,18 +1954,6 @@ function PaywallPage({
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
 }) {
-  const premiumFeatures = [
-    "Simulasi penuh",
-    "Bank soalan lengkap",
-    "Soalan dan jawapan disusun secara rawak",
-    "Latihan mengikut bahagian",
-    "Cabaran pantas",
-    "Rekod semua cubaan",
-    "Analisis prestasi",
-    "XP dan level",
-    "Sistem lencana",
-    "Bahagian C / latihan penulisan",
-  ];
   const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : isLoggedIn ? "Teruskan ke Checkout" : "Dapatkan Premium";
   const handlePrimary = () => {
     if (access.canUsePremiumFeature()) {
@@ -2016,7 +2004,7 @@ function PaywallPage({
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+      <section className="grid gap-5 lg:grid-cols-[0.6fr_1.4fr]">
         <article className="rounded-2xl bg-white p-6 shadow-soft">
           <p className="text-sm font-black uppercase text-ocean-700">Apa itu PKSK Academy?</p>
           <h2 className="mt-2 text-2xl font-black text-slate-950">Platform latihan PKSK oleh CikguSTEM</h2>
@@ -2024,16 +2012,14 @@ function PaywallPage({
             PKSK Academy membantu calon Tahun 6 membuat latihan secara lebih konsisten melalui simulasi, latihan mengikut bahagian dan rekod perkembangan.
           </p>
         </article>
-        <article className="rounded-2xl bg-white p-6 shadow-soft">
-          <p className="text-sm font-black uppercase text-ocean-700">Apa yang pengguna dapat</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {premiumFeatures.map((item) => (
-              <div key={item} className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
-                {item}
-              </div>
-            ))}
-          </div>
+        <article className="overflow-hidden rounded-2xl bg-white shadow-soft">
+          <img
+            src="/assets/what-users-get.webp"
+            alt="Apa yang pengguna dapat dengan PKSK Academy"
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
         </article>
       </section>
 
