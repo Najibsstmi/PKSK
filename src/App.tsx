@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Clock3,
   Crown,
+  Download,
   Eye,
   FileSpreadsheet,
   FileUp,
@@ -24,8 +25,10 @@ import {
   Rocket,
   Save,
   ShieldCheck,
+  Share2,
   Sparkles,
   Star,
+  Smartphone,
   Target,
   Trophy,
   Users,
@@ -108,6 +111,10 @@ type AppRoute =
   | "/admin/questions/import-history"
   | "/admin/settings";
 type AuthMode = "login" | "register";
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
@@ -166,6 +173,7 @@ const legacyRouteMap: Record<string, AppRoute> = {
 };
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
+const appLogoPath = "/assets/pksk-academy-logo.png";
 const rememberedEmailKey = "pksk-remembered-email";
 const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 5,
@@ -219,6 +227,9 @@ function App() {
   const [guestPayload, setGuestPayload] = useState<GuestPreviewPayload | null>(null);
   const [guestResult, setGuestResult] = useState<GuestPreviewResult | null>(null);
   const [guestAnswers, setGuestAnswers] = useState<Record<string, string>>({});
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [isInstalledApp, setIsInstalledApp] = useState(false);
 
   const isLoggedIn = Boolean(session?.user);
   const access = useAccess(session, profile, accessStatus);
@@ -270,6 +281,35 @@ function App() {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+    setIsInstalledApp(standalone);
+
+    function handleBeforeInstallPrompt(event: Event) {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    }
+
+    function handleInstalled() {
+      setInstallPrompt(null);
+      setIsInstalledApp(true);
+      setShowInstallHelp(false);
+      setMessage("PKSK Academy berjaya dipasang.");
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -350,6 +390,27 @@ function App() {
 
   function openPaywall() {
     navigate("/premium");
+  }
+
+  async function handleInstallApp() {
+    if (isInstalledApp) {
+      setMessage("PKSK Academy sudah dipasang pada peranti ini.");
+      return;
+    }
+
+    if (!installPrompt) {
+      setShowInstallHelp(true);
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    setInstallPrompt(null);
+    if (choice.outcome === "accepted") {
+      setMessage("PKSK Academy sedang dipasang.");
+    } else {
+      setShowInstallHelp(true);
+    }
   }
 
   async function handleSignOut() {
@@ -922,6 +983,12 @@ function App() {
       </main>
 
       {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} onNavigate={navigate} /> : null}
+      <InstallAppButton
+        showHelp={showInstallHelp}
+        isInstalled={isInstalledApp}
+        onInstall={handleInstallApp}
+        onCloseHelp={() => setShowInstallHelp(false)}
+      />
     </div>
   );
 }
@@ -960,8 +1027,8 @@ function TopBar({
     <div className="fixed inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onNavigate(isPublicShell ? "/" : "/app")}>
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ocean-600 text-white shadow-soft">
-            <GraduationCap size={22} aria-hidden="true" />
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white p-1 shadow-soft">
+            <img src={appLogoPath} alt="" className="h-full w-full object-contain" />
           </span>
           <span className="min-w-0">
             <span className="block text-base font-bold leading-tight">PKSK Academy</span>
@@ -1133,6 +1200,87 @@ function BottomNav({
   );
 }
 
+function BrandMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="mb-5 flex flex-col items-center text-center">
+      <img src={appLogoPath} alt="PKSK Academy oleh CikguSTEM" className={compact ? "h-20 w-20 object-contain" : "h-28 w-28 object-contain"} />
+      <p className="mt-2 text-xs font-black uppercase tracking-wide text-ocean-700">PKSK Academy</p>
+      <p className="text-xs font-semibold text-slate-500">oleh CikguSTEM</p>
+    </div>
+  );
+}
+
+function InstallAppButton({
+  showHelp,
+  isInstalled,
+  onInstall,
+  onCloseHelp,
+}: {
+  showHelp: boolean;
+  isInstalled: boolean;
+  onInstall: () => void;
+  onCloseHelp: () => void;
+}) {
+  if (isInstalled) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="fixed bottom-24 right-4 z-40 inline-flex min-h-12 items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-ocean-700 lg:bottom-6 lg:right-6"
+        onClick={onInstall}
+      >
+        <Download size={18} aria-hidden="true" />
+        Install PKSK Academy
+      </button>
+
+      {showHelp ? (
+        <div className="fixed inset-0 z-50 grid place-items-end bg-slate-950/40 p-4 sm:place-items-center" role="dialog" aria-modal="true">
+          <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-ocean-50 text-ocean-700">
+                  <Smartphone size={24} aria-hidden="true" />
+                </div>
+                <h2 className="mt-4 text-2xl font-black">Install PKSK Academy</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Jika butang install automatik tidak muncul, ikut langkah di bawah mengikut peranti.
+                </p>
+              </div>
+              <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" onClick={onCloseHelp} aria-label="Tutup panduan install">
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <article className="rounded-2xl bg-slate-50 p-4">
+                <div className="flex items-center gap-3">
+                  <Share2 size={18} className="text-ocean-700" aria-hidden="true" />
+                  <h3 className="font-black">iPhone / iPad</h3>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Buka laman ini dalam Safari, tekan butang Share, pilih Add to Home Screen, kemudian tekan Add.
+                </p>
+              </article>
+              <article className="rounded-2xl bg-slate-50 p-4">
+                <div className="flex items-center gap-3">
+                  <Download size={18} className="text-ocean-700" aria-hidden="true" />
+                  <h3 className="font-black">Android / Chrome</h3>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Buka menu browser dan pilih Install app atau Add to Home screen jika prompt automatik belum keluar.
+                </p>
+              </article>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function AuthPanel({
   mode,
   busy,
@@ -1171,7 +1319,8 @@ function AuthPanel({
   if (mode === "login" && isResetRequestOpen) {
     return (
       <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
-        <div className="mb-5">
+        <BrandMark compact />
+        <div className="mb-5 mt-5">
           <h2 className="text-xl font-black">Lupa Kata Laluan</h2>
           <p className="mt-1 text-sm leading-6 text-slate-500">Masukkan e-mel akaun. Kami akan hantar pautan untuk tetapkan kata laluan baharu.</p>
         </div>
@@ -1203,6 +1352,7 @@ function AuthPanel({
 
   return (
     <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
+      <BrandMark />
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
@@ -1303,7 +1453,8 @@ function PasswordRecoveryPanel({ busy, onSubmit }: { busy: boolean; onSubmit: (p
 
   return (
     <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
-      <div className="mb-5">
+      <BrandMark compact />
+      <div className="mb-5 mt-5">
         <h2 className="text-xl font-black">Tetapkan Kata Laluan Baharu</h2>
         <p className="mt-1 text-sm leading-6 text-slate-500">Masukkan kata laluan baharu untuk akaun PKSK anda.</p>
       </div>
@@ -1363,18 +1514,7 @@ function AuthPage({
   onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean) => void;
 }) {
   return (
-    <div className="mx-auto max-w-3xl">
-      <PageHeader
-        icon={isPasswordRecovery ? LockKeyhole : UserRound}
-        title={isPasswordRecovery ? "Tukar Kata Laluan" : mode === "login" ? "Log Masuk" : "Daftar Akaun"}
-        text={
-          isPasswordRecovery
-            ? "Tetapkan kata laluan baharu sebelum kembali ke latihan."
-            : mode === "login"
-              ? "Sudah mempunyai akaun Premium? Log masuk untuk meneruskan latihan."
-              : "Daftar akaun untuk meneruskan proses Premium. Akses penuh hanya aktif selepas subscription diberikan."
-        }
-      />
+    <div className="mx-auto max-w-md">
       {isPasswordRecovery ? (
         <PasswordRecoveryPanel busy={busy} onSubmit={onPasswordUpdate} />
       ) : (
