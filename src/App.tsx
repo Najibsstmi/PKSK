@@ -174,6 +174,7 @@ const legacyRouteMap: Record<string, AppRoute> = {
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
 const appLogoPath = "/assets/pksk-academy-logo.png";
+const appLogoMarkPath = "/assets/pksk-academy-mark.png";
 const rememberedEmailKey = "pksk-remembered-email";
 const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 5,
@@ -1028,7 +1029,7 @@ function TopBar({
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onNavigate(isPublicShell ? "/" : "/app")}>
           <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white p-1 shadow-soft">
-            <img src={appLogoPath} alt="" className="h-full w-full object-contain" />
+            <img src={appLogoMarkPath} alt="" className="h-full w-full object-contain" />
           </span>
           <span className="min-w-0">
             <span className="block text-base font-bold leading-tight">PKSK Academy</span>
@@ -1203,9 +1204,7 @@ function BottomNav({
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="mb-5 flex flex-col items-center text-center">
-      <img src={appLogoPath} alt="PKSK Academy oleh CikguSTEM" className={compact ? "h-20 w-20 object-contain" : "h-28 w-28 object-contain"} />
-      <p className="mt-2 text-xs font-black uppercase tracking-wide text-ocean-700">PKSK Academy</p>
-      <p className="text-xs font-semibold text-slate-500">oleh CikguSTEM</p>
+      <img src={appLogoPath} alt="PKSK Academy oleh CikguSTEM" className={compact ? "h-24 w-auto max-w-[220px] object-contain" : "h-32 w-auto max-w-[260px] object-contain"} />
     </div>
   );
 }
@@ -2038,17 +2037,16 @@ function PaywallPage({
         </article>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-2">
-        <ComparisonCard
-          title="Free Preview"
-          tone="ocean"
-          items={["Tanpa daftar", "5 soalan Bahagian A", "5 soalan Bahagian B", "Result ringkas"]}
-        />
-        <ComparisonCard
-          title="Premium"
-          tone="sun"
-          items={["Full question bank", "Unlimited simulation", "Random questions", "Performance tracking", "Attempt history", "XP", "Level", "Badges", "Full section practice", "Writing practice"]}
-        />
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="overflow-x-auto">
+          <img
+            src="/assets/free-vs-premium.webp"
+            alt="Perbandingan Free Preview dan Premium PKSK Academy"
+            className="min-w-[760px] w-full max-w-none object-contain md:min-w-0"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-soft">
@@ -2065,23 +2063,6 @@ function PaywallPage({
         </div>
       </section>
     </div>
-  );
-}
-
-function ComparisonCard({ title, tone, items }: { title: string; tone: "ocean" | "sun"; items: string[] }) {
-  const toneClass = tone === "ocean" ? "bg-ocean-50 text-ocean-700" : "bg-sun-100 text-amber-700";
-  return (
-    <article className="rounded-2xl bg-white p-6 shadow-soft">
-      <h2 className={`w-fit rounded-xl px-3 py-2 text-sm font-black uppercase ${toneClass}`}>{title}</h2>
-      <div className="mt-5 grid gap-3">
-        {items.map((item) => (
-          <div key={item} className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
-            {item}
-          </div>
-        ))}
-      </div>
-    </article>
   );
 }
 
