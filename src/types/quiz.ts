@@ -3,7 +3,8 @@ export type PkskSectionCode = "A" | "B" | "C";
 
 export type QuizOption = {
   id: string;
-  option_text: string;
+  option_text: string | null;
+  option_image_url?: string | null;
   option_order: number;
 };
 
@@ -14,6 +15,7 @@ export type QuizQuestion = {
   topic: string | null;
   difficulty: "easy" | "medium" | "hard";
   question_text: string;
+  question_image_url?: string | null;
   question_order: number;
   options: QuizOption[];
   selected_option_id: string | null;

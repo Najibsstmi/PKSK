@@ -42,6 +42,64 @@ export type QuizAttemptRow = {
   status: "in_progress" | "completed" | "abandoned";
 };
 
+export type QuestionImportRow = {
+  id: string;
+  uploaded_by: string;
+  file_name: string;
+  storage_path: string;
+  source_title: string | null;
+  status: "uploaded" | "processing" | "review" | "completed" | "failed";
+  processing_stage: string | null;
+  total_detected: number;
+  total_imported: number;
+  processing_error: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type ImportedQuestionDraftRow = {
+  id: string;
+  import_id: string;
+  imported_question_id: string | null;
+  source_question_number: string | null;
+  question_type: "objective" | "essay";
+  section: "A" | "B" | "C" | null;
+  category: string | null;
+  topic: string | null;
+  difficulty: "easy" | "medium" | "hard" | null;
+  question_text: string;
+  question_image_url: string | null;
+  correct_option_label: string | null;
+  explanation: string | null;
+  confidence: number | null;
+  review_status: "pending" | "approved" | "rejected" | "needs_review";
+  essay_min_words: number | null;
+  essay_time_limit: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImportedQuestionDraftOptionRow = {
+  id: string;
+  draft_question_id: string;
+  option_label: string | null;
+  option_text: string | null;
+  option_image_url: string | null;
+  is_correct: boolean | null;
+  sort_order: number;
+  created_at: string;
+};
+
+export type QuestionAssetRow = {
+  id: string;
+  question_id: string | null;
+  draft_question_id: string | null;
+  asset_type: "question_image" | "diagram" | "graph" | "table" | "reference_image" | "option_image";
+  file_url: string;
+  sort_order: number;
+  created_at: string;
+};
+
 export type BadgeRow = {
   id: string;
   code: string;
@@ -155,6 +213,30 @@ export type Database = {
         Update: Record<string, never>;
         Relationships: [];
       };
+      question_imports: {
+        Row: QuestionImportRow;
+        Insert: Partial<QuestionImportRow>;
+        Update: Partial<QuestionImportRow>;
+        Relationships: [];
+      };
+      imported_question_drafts: {
+        Row: ImportedQuestionDraftRow;
+        Insert: Partial<ImportedQuestionDraftRow>;
+        Update: Partial<ImportedQuestionDraftRow>;
+        Relationships: [];
+      };
+      imported_question_draft_options: {
+        Row: ImportedQuestionDraftOptionRow;
+        Insert: Partial<ImportedQuestionDraftOptionRow>;
+        Update: Partial<ImportedQuestionDraftOptionRow>;
+        Relationships: [];
+      };
+      question_assets: {
+        Row: QuestionAssetRow;
+        Insert: Partial<QuestionAssetRow>;
+        Update: Partial<QuestionAssetRow>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -266,8 +348,102 @@ export type Database = {
       admin_list_questions: {
         Args: {
           search_text?: string | null;
+          section_filter?: string | null;
+          status_filter?: string | null;
+          source_filter?: string | null;
           page_number?: number;
           page_size?: number;
+        };
+        Returns: Json;
+      };
+      admin_create_question_import: {
+        Args: {
+          file_name: string;
+          storage_path: string;
+          source_title?: string | null;
+        };
+        Returns: string;
+      };
+      admin_get_question_import: {
+        Args: {
+          p_import_id: string;
+        };
+        Returns: Json;
+      };
+      admin_list_question_imports: {
+        Args: {
+          status_filter?: string | null;
+          page_number?: number;
+          page_size?: number;
+        };
+        Returns: Json;
+      };
+      admin_list_import_drafts: {
+        Args: {
+          p_import_id: string;
+        };
+        Returns: Json;
+      };
+      admin_update_import_draft: {
+        Args: {
+          draft_id: string;
+          draft_payload: Json;
+          options_payload?: Json | null;
+        };
+        Returns: Json;
+      };
+      admin_set_import_draft_status: {
+        Args: {
+          draft_ids: string[];
+          next_status: string;
+        };
+        Returns: Json;
+      };
+      admin_import_approved_questions: {
+        Args: {
+          p_import_id: string;
+        };
+        Returns: Json;
+      };
+      admin_create_manual_question: {
+        Args: {
+          question_payload: Json;
+        };
+        Returns: string;
+      };
+      admin_update_question_status: {
+        Args: {
+          p_question_id: string;
+          next_is_active: boolean;
+          archive_question?: boolean;
+        };
+        Returns: Json;
+      };
+      start_essay_attempt: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
+      fetch_active_essay_attempt: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      get_essay_attempt_payload: {
+        Args: {
+          p_attempt_id: string;
+        };
+        Returns: Json;
+      };
+      autosave_essay_response: {
+        Args: {
+          p_attempt_id: string;
+          p_response_text: string;
+        };
+        Returns: Json;
+      };
+      submit_essay_response: {
+        Args: {
+          p_attempt_id: string;
+          p_response_text: string;
         };
         Returns: Json;
       };

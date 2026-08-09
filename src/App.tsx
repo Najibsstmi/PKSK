@@ -7,15 +7,20 @@ import {
   ClipboardList,
   Clock3,
   Crown,
+  Eye,
+  FileSpreadsheet,
+  FileUp,
   Footprints,
   GraduationCap,
   HeartHandshake,
   History,
+  Image as ImageIcon,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
   Menu,
   PenLine,
+  Plus,
   Rocket,
   Save,
   ShieldCheck,
@@ -43,12 +48,25 @@ import {
   fetchAdminUsers,
   grantPremium,
   revokePremium,
+  createManualQuestion,
   setUserRole,
   unblockUser,
+  updateQuestionStatus,
 } from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
+import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
 import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
+import {
+  createPdfQuestionImport,
+  fetchImportDrafts,
+  fetchQuestionImport,
+  fetchQuestionImports,
+  importApprovedQuestions,
+  processPdfImport,
+  setImportDraftStatus,
+  updateImportDraft,
+} from "./services/questionImportService";
 import {
   completeAttempt,
   fetchActiveAttempt,
@@ -60,6 +78,8 @@ import {
 import type { AccessStatus, AdminKpis, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
+import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
+import type { DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
@@ -72,6 +92,7 @@ type AppRoute =
   | "/simulasi"
   | "/latihan"
   | "/quiz"
+  | "/essay"
   | "/profile"
   | "/performance"
   | "/history"
@@ -81,6 +102,8 @@ type AppRoute =
   | "/admin/users"
   | "/admin/subscriptions"
   | "/admin/questions"
+  | "/admin/questions/import"
+  | "/admin/questions/import-history"
   | "/admin/settings";
 type AuthMode = "login" | "register";
 
@@ -96,10 +119,24 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/", "/simulasi", "/performance", "/achievements", "/guide"].includes(item.to));
-const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/settings"];
-const premiumRoutes = new Set<AppRoute>(["/simulasi", "/latihan", "/performance", "/history", "/achievements"]);
+const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
+const premiumRoutes = new Set<AppRoute>(["/simulasi", "/latihan", "/quiz", "/essay", "/performance", "/history", "/achievements"]);
 const validRoutes = new Set<AppRoute>(
-  navItems.map((item) => item.to).concat(["/preview", "/premium", "/login", "/register", "/quiz", "/profile", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/settings"]),
+  navItems.map((item) => item.to).concat([
+    "/preview",
+    "/premium",
+    "/login",
+    "/register",
+    "/quiz",
+    "/essay",
+    "/profile",
+    "/admin/users",
+    "/admin/subscriptions",
+    "/admin/questions",
+    "/admin/questions/import",
+    "/admin/questions/import-history",
+    "/admin/settings",
+  ]),
 );
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
@@ -151,6 +188,8 @@ function App() {
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
+  const [activeEssayPayload, setActiveEssayPayload] = useState<EssayAttemptPayload | null>(null);
+  const [essayResult, setEssayResult] = useState<EssaySubmitResult | null>(null);
   const [guestPayload, setGuestPayload] = useState<GuestPreviewPayload | null>(null);
   const [guestResult, setGuestResult] = useState<GuestPreviewResult | null>(null);
   const [guestAnswers, setGuestAnswers] = useState<Record<string, string>>({});
@@ -196,8 +235,11 @@ function App() {
         setAttempts([]);
         setBadges([]);
         setActivePayload(null);
+        setActiveEssayPayload(null);
+        setEssayResult(null);
         setIsPasswordRecovery(false);
         window.localStorage.removeItem("pksk-active-attempt");
+        window.localStorage.removeItem("pksk-active-essay");
       }
     });
 
@@ -231,6 +273,7 @@ function App() {
       const nextAttempts = await fetchAttemptHistory();
       const nextBadges = await fetchBadgesWithProgress(nextProfile, nextAttempts);
       const activeAttempt = nextAccessStatus.is_premium ? await fetchActiveAttempt() : null;
+      const activeEssayAttemptId = nextAccessStatus.is_premium ? await fetchActiveEssayAttempt().catch(() => null) : null;
       setProfile(nextProfile);
       setAccessStatus(nextAccessStatus);
       setAttempts(nextAttempts);
@@ -242,6 +285,15 @@ function App() {
         if (payload.attempt.status === "in_progress") {
           setActivePayload(payload);
           window.localStorage.setItem("pksk-active-attempt", payload.attempt.id);
+        }
+      }
+
+      const savedEssayAttemptId = window.localStorage.getItem("pksk-active-essay") ?? activeEssayAttemptId;
+      if (savedEssayAttemptId) {
+        const essayPayload = await getEssayAttemptPayload(savedEssayAttemptId).catch(() => null);
+        if (essayPayload?.attempt.status === "in_progress") {
+          setActiveEssayPayload(essayPayload);
+          window.localStorage.setItem("pksk-active-essay", essayPayload.attempt.id);
         }
       }
     } catch (error) {
@@ -442,6 +494,82 @@ function App() {
     }
   }
 
+  async function handleStartEssay() {
+    if (!isLoggedIn) {
+      openAuth("login");
+      setMessage("Sila log masuk untuk membuka Bahagian C.");
+      return;
+    }
+
+    if (!access.canUsePremiumFeature()) {
+      openPaywall();
+      return;
+    }
+
+    if (activeEssayPayload?.attempt.status === "in_progress") {
+      navigate("/essay");
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    setEssayResult(null);
+    try {
+      const attemptId = await startEssayAttempt();
+      const payload = await getEssayAttemptPayload(attemptId);
+      setActiveEssayPayload(payload);
+      window.localStorage.setItem("pksk-active-essay", attemptId);
+      navigate("/essay");
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleEssayAutosave(responseText: string) {
+    if (!activeEssayPayload) {
+      return null;
+    }
+
+    const saved = await autosaveEssayResponse(activeEssayPayload.attempt.id, responseText);
+    setActiveEssayPayload((current) =>
+      current
+        ? {
+            ...current,
+            response: {
+              ...current.response,
+              response_text: responseText,
+              word_count: saved.word_count,
+              autosaved_at: saved.autosaved_at,
+            },
+          }
+        : current,
+    );
+    return saved;
+  }
+
+  async function handleEssaySubmit(responseText: string) {
+    if (!activeEssayPayload || !session?.user) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      const submitted = await submitEssayResponse(activeEssayPayload.attempt.id, responseText);
+      setEssayResult(submitted);
+      setActiveEssayPayload(null);
+      window.localStorage.removeItem("pksk-active-essay");
+      setMessage(`${submitted.message} ${submitted.ai_note}`);
+      await refreshData(session.user.id);
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleResumeQuiz() {
     if (!activePayload) {
       return;
@@ -449,6 +577,12 @@ function App() {
     const payload = await getAttemptPayload(activePayload.attempt.id);
     setActivePayload(payload);
     navigate("/quiz");
+  }
+
+  function handleResumeEssay() {
+    if (activeEssayPayload) {
+      navigate("/essay");
+    }
   }
 
   async function handleAnswer(questionId: string, optionId: string) {
@@ -579,9 +713,11 @@ function App() {
           profileReady={profileReady}
           performance={performance}
           activePayload={activePayload}
+          activeEssayPayload={activeEssayPayload}
           settings={appSettings}
           onNavigate={navigate}
           onResume={handleResumeQuiz}
+          onResumeEssay={handleResumeEssay}
           onStartQuiz={handleStartQuiz}
           onStartGuestPreview={handleStartGuestPreview}
           onAuthMode={openAuth}
@@ -629,6 +765,12 @@ function App() {
       if (currentRoute === "/admin/questions") {
         return <AdminQuestionsPage onMessage={setMessage} />;
       }
+      if (currentRoute === "/admin/questions/import") {
+        return <AdminQuestionImportPage onMessage={setMessage} />;
+      }
+      if (currentRoute === "/admin/questions/import-history") {
+        return <AdminImportHistoryPage onMessage={setMessage} />;
+      }
       if (currentRoute === "/admin/subscriptions") {
         return <AdminSubscriptionsPage />;
       }
@@ -641,7 +783,7 @@ function App() {
       return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
     }
     if (currentRoute === "/simulasi" || currentRoute === "/latihan") {
-      return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onNavigate={navigate} />;
+      return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onStartEssay={handleStartEssay} onNavigate={navigate} />;
     }
     if (currentRoute === "/quiz") {
       return (
@@ -652,6 +794,19 @@ function App() {
           onAnswer={handleAnswer}
           onComplete={handleCompleteAttempt}
           onNavigate={navigate}
+        />
+      );
+    }
+    if (currentRoute === "/essay") {
+      return (
+        <EssayPage
+          payload={activeEssayPayload}
+          result={essayResult}
+          busy={busy}
+          onAutosave={handleEssayAutosave}
+          onSubmit={handleEssaySubmit}
+          onNavigate={navigate}
+          onStartEssay={handleStartEssay}
         />
       );
     }
@@ -1121,9 +1276,11 @@ function Dashboard({
   profileReady,
   performance,
   activePayload,
+  activeEssayPayload,
   settings,
   onNavigate,
   onResume,
+  onResumeEssay,
   onStartQuiz,
   onStartGuestPreview,
   onAuthMode,
@@ -1135,9 +1292,11 @@ function Dashboard({
   profileReady: boolean;
   performance: ReturnType<typeof calculatePerformance>;
   activePayload: AttemptPayload | null;
+  activeEssayPayload: EssayAttemptPayload | null;
   settings: AppSettings;
   onNavigate: (route: AppRoute) => void;
   onResume: () => void;
+  onResumeEssay: () => void;
   onStartQuiz: (mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) => void;
   onStartGuestPreview: (section: "A" | "B") => void;
   onAuthMode: (mode: AuthMode) => void;
@@ -1194,6 +1353,11 @@ function Dashboard({
                       Sambung Cubaan
                     </button>
                   ) : null}
+                  {activeEssayPayload ? (
+                    <button type="button" onClick={onResumeEssay} className="secondary-button">
+                      Sambung Penulisan
+                    </button>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -1227,7 +1391,7 @@ function Dashboard({
 
           <section className="grid gap-5 lg:grid-cols-3">
             <ModeCard title="Simulasi Penuh" text="Campuran Bahagian A dan B secara rawak." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 30)} />
-            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A atau B untuk fokus." icon={Brain} onClick={() => onNavigate("/latihan")} />
+            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/latihan")} />
             <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
           </section>
         </>
@@ -1357,6 +1521,7 @@ function GuestPreviewPage({
           <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
             <p className="text-sm font-black text-ocean-700">Soalan {index + 1}</p>
             <h2 className="mt-2 text-lg font-black leading-7 text-slate-950">{question.question_text}</h2>
+            {question.question_image_url ? <QuestionImage src={question.question_image_url} /> : null}
             <div className="mt-5 grid gap-3">
               {question.options.map((option) => {
                 const selected = answers[question.id] === option.id;
@@ -1369,7 +1534,7 @@ function GuestPreviewPage({
                       selected ? "border-ocean-500 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-white text-slate-700 hover:border-ocean-200"
                     }`}
                   >
-                    {option.option_text}
+                    <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
                   </button>
                 );
               })}
@@ -1471,12 +1636,11 @@ function AdminNav() {
     { to: "/admin/users", label: "Users" },
     { to: "/admin/subscriptions", label: "Subscriptions" },
     { to: "/admin/questions", label: "Question Bank" },
+    { to: "/admin/questions/import-history", label: "Import History" },
     { to: "/admin/settings", label: "System Settings" },
   ];
   function navigateAdmin(to: AppRoute) {
-    window.history.pushState({}, "", to);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    navigateAdminRoute(to);
   }
 
   return (
@@ -1488,6 +1652,12 @@ function AdminNav() {
       ))}
     </nav>
   );
+}
+
+function navigateAdminRoute(to: AppRoute, query = "") {
+  window.history.pushState({}, "", `${to}${query}`);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: AppRoute) => void; onMessage: (message: string | null) => void }) {
@@ -1689,57 +1859,812 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
 function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null) => void }) {
   const [questions, setQuestions] = useState<AdminQuestionRow[]>([]);
   const [search, setSearch] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [selectedQuestion, setSelectedQuestion] = useState<AdminQuestionRow | null>(null);
 
   const loadQuestions = useCallback(async () => {
     try {
-      const nextQuestions = await fetchAdminQuestions(search);
+      const nextQuestions = await fetchAdminQuestions(search, sectionFilter, statusFilter, sourceFilter);
       setQuestions(nextQuestions);
     } catch (error) {
       onMessage(toMessage(error));
     }
-  }, [onMessage, search]);
+  }, [onMessage, search, sectionFilter, sourceFilter, statusFilter]);
 
   useEffect(() => {
     loadQuestions();
   }, [loadQuestions]);
 
+  async function runStatusAction(action: () => Promise<void>, successMessage: string) {
+    onMessage(null);
+    try {
+      await action();
+      await loadQuestions();
+      onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }
+
   return (
-    <AdminShell title="Question Bank" text="Paparan asas bank soalan. Edit dan activate/deactivate boleh dikembangkan fasa seterusnya.">
+    <AdminShell title="Question Bank" text="Import PDF, semak draft, dan urus status soalan tanpa metadata berat.">
       <section className="rounded-2xl bg-white p-5 shadow-soft">
-        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari soalan, kategori atau bahagian" />
+        <div className="grid gap-3 lg:grid-cols-[auto_auto_auto_1fr]">
+          <button type="button" className="primary-button" onClick={() => setManualOpen(true)}>
+            <Plus size={18} aria-hidden="true" />
+            Tambah Soalan
+          </button>
+          <button type="button" className="secondary-button" onClick={() => navigateAdminRoute("/admin/questions/import")}>
+            <FileUp size={18} aria-hidden="true" />
+            Import PDF
+          </button>
+          <button type="button" className="secondary-button" onClick={() => onMessage("Import Excel/CSV akan ditambah selepas workflow PDF stabil.")}>
+            <FileSpreadsheet size={18} aria-hidden="true" />
+            Import Excel/CSV
+          </button>
+          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari soalan, kategori, topik atau sumber" />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <select className="field" value={sectionFilter} onChange={(event) => setSectionFilter(event.target.value)}>
+            <option value="all">Semua bahagian</option>
+            <option value="A">Bahagian A</option>
+            <option value="B">Bahagian B</option>
+            <option value="C">Bahagian C</option>
+          </select>
+          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Semua status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="archived">Archived</option>
+          </select>
+          <input className="field" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} placeholder="Sumber" />
           <button type="button" className="secondary-button" onClick={loadQuestions}>
             Search
           </button>
         </div>
       </section>
+
       <section className="grid gap-4">
-        {questions.map((question) => (
-          <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase text-ocean-700">
-                  Bahagian {question.section} / {question.category ?? "Umum"} / {question.difficulty}
-                </p>
-                <h2 className="mt-2 text-base font-black leading-6 text-slate-950">{question.question_text}</h2>
+        {questions.map((question) => {
+          const archived = Boolean(question.archived_at);
+          return (
+            <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black uppercase text-ocean-700">
+                    Bahagian {question.section} / {question.category ?? "Umum"} / {question.topic ?? "Topik bebas"} / {question.difficulty}
+                  </p>
+                  <h2 className="mt-2 line-clamp-3 text-base font-black leading-6 text-slate-950">{question.question_text}</h2>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+                    <span>Source: {question.source_title ?? "Manual"}</span>
+                    <span>Jenis: {question.question_type === "essay" ? "Esei" : "Objektif"}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`rounded-lg px-3 py-2 text-xs font-black ${questionStatusTone(question)}`}>{questionStatusLabel(question)}</span>
+                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600" onClick={() => setSelectedQuestion(question)}>
+                    <Eye size={14} aria-hidden="true" />
+                    View
+                  </button>
+                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600" onClick={() => onMessage("Edit penuh soalan sedia ada akan disambung dalam fasa selepas import PDF stabil.")}>
+                    <PenLine size={14} aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600"
+                    onClick={() => runStatusAction(() => updateQuestionStatus(question.id, !question.is_active, false), question.is_active ? "Soalan dinyahaktifkan." : "Soalan diaktifkan.")}
+                    disabled={archived}
+                  >
+                    {question.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600"
+                    onClick={() => runStatusAction(() => updateQuestionStatus(question.id, false, true), "Soalan diarkibkan.")}
+                    disabled={archived}
+                  >
+                    Archive
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <span className={`rounded-lg px-3 py-2 text-xs font-black ${question.is_active ? "bg-leaf-50 text-leaf-700" : "bg-slate-100 text-slate-500"}`}>
-                  {question.is_active ? "Active" : "Inactive"}
-                </span>
-                <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
-                  Edit
+            </article>
+          );
+        })}
+        {questions.length === 0 ? <EmptyAdminPanel title="Tiada soalan ditemui" text="Cuba ubah filter atau import PDF baharu." /> : null}
+      </section>
+
+      {manualOpen ? <ManualQuestionModal onClose={() => setManualOpen(false)} onCreated={loadQuestions} onMessage={onMessage} /> : null}
+      {selectedQuestion ? <QuestionViewModal question={selectedQuestion} onClose={() => setSelectedQuestion(null)} /> : null}
+    </AdminShell>
+  );
+}
+
+function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | null) => void }) {
+  const [importRow, setImportRow] = useState<QuestionImportRow | null>(null);
+  const [drafts, setDrafts] = useState<ImportedQuestionDraft[]>([]);
+  const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [sourceTitle, setSourceTitle] = useState("");
+  const [busyAction, setBusyAction] = useState(false);
+  const importId = new URLSearchParams(window.location.search).get("id");
+
+  const loadImport = useCallback(async () => {
+    if (!importId) {
+      setImportRow(null);
+      setDrafts([]);
+      return;
+    }
+
+    try {
+      const [nextImport, nextDrafts] = await Promise.all([fetchQuestionImport(importId), fetchImportDrafts(importId)]);
+      setImportRow(nextImport);
+      setDrafts(nextDrafts);
+      setSelectedDraftIds([]);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [importId, onMessage]);
+
+  useEffect(() => {
+    loadImport();
+  }, [loadImport]);
+
+  async function handleUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!file) {
+      onMessage("Pilih fail PDF dahulu.");
+      return;
+    }
+
+    setBusyAction(true);
+    onMessage(null);
+    try {
+      const nextImportId = await createPdfQuestionImport(file, sourceTitle);
+      navigateAdminRoute("/admin/questions/import", `?id=${nextImportId}`);
+      onMessage("PDF berjaya dimuat naik. Teruskan dengan proses ekstrak.");
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function runImportAction(action: () => Promise<void>, successMessage: string) {
+    setBusyAction(true);
+    onMessage(null);
+    try {
+      await action();
+      await loadImport();
+      onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  const highConfidenceIds = drafts.filter((draft) => !draft.imported_question_id && confidenceLevel(draft.confidence) === "High").map((draft) => draft.id);
+  const approvedCount = drafts.filter((draft) => draft.review_status === "approved" && !draft.imported_question_id).length;
+
+  return (
+    <AdminShell title="Import PDF" text="Upload PDF, biarkan sistem ekstrak, semak draft, kemudian publish ke bank soalan.">
+      {!importRow ? (
+        <section className="rounded-2xl bg-white p-6 shadow-soft">
+          <div className="mb-5 flex items-start gap-4">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+              <FileUp size={24} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-2xl font-black">Step 1: Upload PDF</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">Admin hanya perlu pilih PDF dan beri nama sumber jika mahu. Metadata akan dicadangkan kemudian.</p>
+            </div>
+          </div>
+          <form className="grid gap-4" onSubmit={handleUpload}>
+            <Label text="Fail PDF">
+              <input className="field h-auto py-3" type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
+            </Label>
+            <Label text="Nama sumber">
+              <input className="field" value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder="Contoh: Tips PKSK 2026" />
+            </Label>
+            <button type="submit" className="primary-button w-full sm:w-auto" disabled={busyAction}>
+              {busyAction ? "Uploading..." : "Upload PDF"}
+            </button>
+          </form>
+        </section>
+      ) : (
+        <div className="space-y-6">
+          <ImportStatusPanel importRow={importRow} />
+          <section className="rounded-2xl bg-white p-5 shadow-soft">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-xl font-black">Workflow Import</h2>
+                <p className="mt-1 text-sm text-slate-500">{importRow.file_name}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="secondary-button" disabled={busyAction || importRow.status === "processing"} onClick={() => runImportAction(() => processPdfImport(importRow.id), "Pemprosesan PDF dimulakan.")}>
+                  Process PDF
                 </button>
-                <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
-                  Activate / Deactivate
+                <button type="button" className="secondary-button" disabled={busyAction || highConfidenceIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(highConfidenceIds, "approved"), "Semua draft high confidence diluluskan.")}>
+                  Approve All High Confidence
+                </button>
+                <button type="button" className="secondary-button" disabled={busyAction || selectedDraftIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(selectedDraftIds, "approved"), "Draft terpilih diluluskan.")}>
+                  Approve Selected
+                </button>
+                <button type="button" className="secondary-button" disabled={busyAction || selectedDraftIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(selectedDraftIds, "rejected"), "Draft terpilih ditolak.")}>
+                  Reject Selected
+                </button>
+                <button type="button" className="primary-button" disabled={busyAction || approvedCount === 0} onClick={() => runImportAction(async () => {
+                  const count = await importApprovedQuestions(importRow.id);
+                  onMessage(`${count} soalan dimasukkan ke bank soalan.`);
+                }, "Import approved selesai.")}>
+                  Import Approved Questions
                 </button>
               </div>
             </div>
-          </article>
-        ))}
+          </section>
+          <section className="grid gap-4">
+            {drafts.map((draft) => (
+              <DraftReviewCard
+                key={draft.id}
+                draft={draft}
+                selected={selectedDraftIds.includes(draft.id)}
+                onSelect={(checked) =>
+                  setSelectedDraftIds((current) => (checked ? current.concat(draft.id) : current.filter((item) => item !== draft.id)))
+                }
+                onSave={(nextDraft) => runImportAction(() => updateImportDraft(nextDraft), "Draft dikemaskini.")}
+                onStatus={(nextStatus) => runImportAction(() => setImportDraftStatus([draft.id], nextStatus), "Status draft dikemaskini.")}
+              />
+            ))}
+            {drafts.length === 0 ? <EmptyAdminPanel title="Belum ada draft" text="Klik Process PDF selepas upload. Draft akan muncul di sini untuk disemak." /> : null}
+          </section>
+        </div>
+      )}
+    </AdminShell>
+  );
+}
+
+function AdminImportHistoryPage({ onMessage }: { onMessage: (message: string | null) => void }) {
+  const [imports, setImports] = useState<QuestionImportRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState<QuestionImportStatus | "all">("all");
+
+  const loadImports = useCallback(async () => {
+    try {
+      setImports(await fetchQuestionImports(statusFilter));
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [onMessage, statusFilter]);
+
+  useEffect(() => {
+    loadImports();
+  }, [loadImports]);
+
+  return (
+    <AdminShell title="Import History" text="Buka semula PDF yang pernah diimport dan teruskan semakan draft.">
+      <section className="rounded-2xl bg-white p-5 shadow-soft">
+        <div className="grid gap-3 sm:grid-cols-[220px_auto]">
+          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as QuestionImportStatus | "all")}>
+            <option value="all">Semua status</option>
+            <option value="uploaded">Uploaded</option>
+            <option value="processing">Processing</option>
+            <option value="review">Review</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button type="button" className="secondary-button" onClick={loadImports}>
+            Refresh
+          </button>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+              <tr>
+                {["File", "Date", "Admin", "Detected", "Imported", "Status", "Action"].map((header) => (
+                  <th key={header} className="px-4 py-3">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {imports.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-4 py-3 font-bold text-slate-900">{item.source_title || item.file_name}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(item.created_at)}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.uploaded_by_name ?? "Admin"}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.total_detected}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.total_imported}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-lg px-3 py-2 text-xs font-black ${importStatusTone(item.status)}`}>{item.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button type="button" className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700" onClick={() => navigateAdminRoute("/admin/questions/import", `?id=${item.id}`)}>
+                      Buka
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </AdminShell>
   );
+}
+
+function ManualQuestionModal({
+  onClose,
+  onCreated,
+  onMessage,
+}: {
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+  onMessage: (message: string | null) => void;
+}) {
+  const [questionType, setQuestionType] = useState<QuestionType>("objective");
+  const [section, setSection] = useState<PkskSectionCode>("B");
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>("medium");
+  const [questionText, setQuestionText] = useState("");
+  const [category, setCategory] = useState("");
+  const [topic, setTopic] = useState("");
+  const [correctLabel, setCorrectLabel] = useState("A");
+  const [options, setOptions] = useState(() => defaultDraftOptions());
+  const [busy, setBusy] = useState(false);
+
+  function fillSuggestedMetadata() {
+    if (section === "A") {
+      setCategory("EQ");
+      setTopic("Kecerdasan Insaniah");
+    } else if (section === "C") {
+      setCategory("Penulisan");
+      setTopic("Artikulasi Penulisan");
+      setQuestionType("essay");
+    } else {
+      setCategory("IQ");
+      setTopic("Kecerdasan Intelek");
+    }
+    setDifficulty("medium");
+    onMessage("Cadangan metadata awal diisi. AI server-side boleh ditambah pada fungsi ini selepas OPENAI_API_KEY disediakan.");
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!questionText.trim()) {
+      onMessage("Masukkan teks soalan dahulu.");
+      return;
+    }
+
+    const payload: ManualQuestionInput = {
+      question_type: questionType,
+      section,
+      question_text: questionText,
+      category: category || null,
+      topic: topic || null,
+      difficulty,
+      correct_option_label: questionType === "objective" ? correctLabel : null,
+      options:
+        questionType === "objective"
+          ? options.map((option, index) => ({
+              ...option,
+              is_correct: option.option_label === correctLabel,
+              sort_order: index + 1,
+            }))
+          : [],
+    };
+
+    setBusy(true);
+    onMessage(null);
+    try {
+      await createManualQuestion(payload);
+      await onCreated();
+      onMessage("Soalan manual berjaya ditambah.");
+      onClose();
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <form className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black">Tambah Soalan</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Borang ringkas sahaja. Metadata boleh kosong jika tidak perlu.</p>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Label text="Jenis">
+              <select className="field" value={questionType} onChange={(event) => setQuestionType(event.target.value as QuestionType)}>
+                <option value="objective">Objektif</option>
+                <option value="essay">Esei</option>
+              </select>
+            </Label>
+            <Label text="Bahagian">
+              <select className="field" value={section} onChange={(event) => setSection(event.target.value as PkskSectionCode)}>
+                <option value="A">Bahagian A</option>
+                <option value="B">Bahagian B</option>
+                <option value="C">Bahagian C</option>
+              </select>
+            </Label>
+            <Label text="Aras">
+              <select className="field" value={difficulty} onChange={(event) => setDifficulty(event.target.value as QuestionDifficulty)}>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </Label>
+          </div>
+          <Label text="Soalan">
+            <textarea className="field" value={questionText} onChange={(event) => setQuestionText(event.target.value)} placeholder="Tulis soalan di sini" required />
+          </Label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Label text="Kategori">
+              <input className="field" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Optional" />
+            </Label>
+            <Label text="Topik">
+              <input className="field" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Optional" />
+            </Label>
+          </div>
+          {questionType === "objective" ? (
+            <div className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-black text-slate-700">Pilihan Jawapan</h3>
+                <select className="field max-w-[180px]" value={correctLabel} onChange={(event) => setCorrectLabel(event.target.value)}>
+                  {optionLabels.map((label) => (
+                    <option key={label} value={label}>
+                      Jawapan {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {options.map((option, index) => (
+                <div key={option.option_label ?? index} className="grid gap-2 sm:grid-cols-[64px_1fr]">
+                  <span className="grid h-12 place-items-center rounded-xl bg-slate-100 text-sm font-black text-slate-600">{option.option_label}</span>
+                  <input
+                    className="field"
+                    value={option.option_text ?? ""}
+                    onChange={(event) =>
+                      setOptions((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, option_text: event.target.value } : item)))
+                    }
+                    placeholder={`Pilihan ${option.option_label}`}
+                    required
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+            <button type="button" className="secondary-button" onClick={fillSuggestedMetadata}>
+              <Sparkles size={18} aria-hidden="true" />
+              Auto classify
+            </button>
+            <button type="submit" className="primary-button" disabled={busy}>
+              {busy ? "Menyimpan..." : "Simpan Soalan"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function QuestionViewModal({ question, onClose }: { question: AdminQuestionRow; onClose: () => void }) {
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center bg-slate-950/40 px-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase text-ocean-700">
+              Bahagian {question.section} / {question.category ?? "Umum"} / {question.difficulty}
+            </p>
+            <h2 className="mt-2 text-2xl font-black">Soalan</h2>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        {question.question_image_url ? <img src={question.question_image_url} alt="" className="mt-5 max-h-80 rounded-xl border border-slate-200 object-contain" /> : null}
+        <p className="mt-5 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-800">{question.question_text}</p>
+        <div className="mt-5 grid gap-2 text-sm text-slate-600">
+          <SummaryRow label="Source" value={question.source_title ?? "Manual"} />
+          <SummaryRow label="Status" value={questionStatusLabel(question)} />
+          <SummaryRow label="Topik" value={question.topic ?? "-"} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ImportStatusPanel({ importRow }: { importRow: QuestionImportRow }) {
+  const steps = [
+    ["uploaded", "Uploading"],
+    ["processing", importRow.processing_stage ?? "Processing"],
+    ["review", "Ready for review"],
+    ["completed", "Completed"],
+  ];
+
+  return (
+    <section className="rounded-2xl bg-white p-5 shadow-soft">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-black">{importRow.source_title || importRow.file_name}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Detected: {importRow.total_detected} / Imported: {importRow.total_imported}
+          </p>
+        </div>
+        <span className={`rounded-xl px-4 py-2 text-sm font-black ${importStatusTone(importRow.status)}`}>{importRow.status}</span>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-4">
+        {steps.map(([key, label]) => (
+          <div key={key} className={`rounded-xl border px-4 py-3 text-sm font-bold ${importStepActive(importRow.status, key) ? "border-ocean-200 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+            {label}
+          </div>
+        ))}
+      </div>
+      {importRow.processing_error ? <p className="mt-4 rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{importRow.processing_error}</p> : null}
+    </section>
+  );
+}
+
+function DraftReviewCard({
+  draft,
+  selected,
+  onSelect,
+  onSave,
+  onStatus,
+}: {
+  draft: ImportedQuestionDraft;
+  selected: boolean;
+  onSelect: (checked: boolean) => void;
+  onSave: (draft: ImportedQuestionDraft) => Promise<void>;
+  onStatus: (status: DraftReviewStatus) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [localDraft, setLocalDraft] = useState(draft);
+
+  useEffect(() => {
+    setLocalDraft(draft);
+  }, [draft]);
+
+  const confidence = confidenceLevel(localDraft.confidence);
+
+  function updateOption(index: number, value: string) {
+    setLocalDraft((current) => ({
+      ...current,
+      options: current.options.map((option, optionIndex) => (optionIndex === index ? { ...option, option_text: value } : option)),
+    }));
+  }
+
+  return (
+    <article className="rounded-2xl bg-white p-5 shadow-soft">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <input type="checkbox" className="mt-1 h-4 w-4 accent-ocean-600" checked={selected} onChange={(event) => onSelect(event.target.checked)} disabled={Boolean(draft.imported_question_id)} />
+          <div>
+            <p className="text-sm font-black text-ocean-700">Soalan {localDraft.source_question_number ?? "-"}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span className={`rounded-lg px-3 py-1 text-xs font-black ${confidenceTone(confidence)}`}>{confidence} confidence</span>
+              <span className={`rounded-lg px-3 py-1 text-xs font-black ${draftStatusTone(localDraft.review_status)}`}>{draftStatusLabel(localDraft.review_status)}</span>
+              {draft.imported_question_id ? <span className="rounded-lg bg-leaf-50 px-3 py-1 text-xs font-black text-leaf-600">Imported</span> : null}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600" onClick={() => onStatus("approved")} disabled={Boolean(draft.imported_question_id)}>
+            Approve
+          </button>
+          <button type="button" className="rounded-lg bg-sun-50 px-3 py-2 text-xs font-black text-amber-700" onClick={() => onStatus("needs_review")} disabled={Boolean(draft.imported_question_id)}>
+            Mark Review
+          </button>
+          <button type="button" className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600" onClick={() => onStatus("rejected")} disabled={Boolean(draft.imported_question_id)}>
+            Reject
+          </button>
+          <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600" onClick={() => setEditing((current) => !current)}>
+            {editing ? "Close Edit" : "Edit"}
+          </button>
+        </div>
+      </div>
+
+      {localDraft.question_image_url ? (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <img src={localDraft.question_image_url} alt="" className="max-h-80 rounded-lg object-contain" />
+        </div>
+      ) : localDraft.assets.length > 0 ? (
+        <div className="mt-5 flex flex-wrap gap-3">
+          {localDraft.assets.map((asset) => (
+            <a key={asset.id} href={asset.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">
+              <ImageIcon size={15} aria-hidden="true" />
+              {asset.asset_type}
+            </a>
+          ))}
+        </div>
+      ) : null}
+
+      {editing ? (
+        <div className="mt-5 grid gap-4 rounded-2xl border border-ocean-100 bg-ocean-50/40 p-4">
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Label text="No.">
+              <input className="field" value={localDraft.source_question_number ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, source_question_number: event.target.value })} />
+            </Label>
+            <Label text="Bahagian">
+              <select className="field" value={localDraft.section ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, section: (event.target.value || null) as PkskSectionCode | null })}>
+                <option value="">Auto</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </Label>
+            <Label text="Aras">
+              <select className="field" value={localDraft.difficulty ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, difficulty: (event.target.value || null) as QuestionDifficulty | null })}>
+                <option value="">Auto</option>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </Label>
+            <Label text="Jawapan">
+              <input className="field" value={localDraft.correct_option_label ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, correct_option_label: event.target.value.toUpperCase() })} />
+            </Label>
+          </div>
+          <Label text="Soalan">
+            <textarea className="field" value={localDraft.question_text} onChange={(event) => setLocalDraft({ ...localDraft, question_text: event.target.value })} />
+          </Label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Label text="Kategori">
+              <input className="field" value={localDraft.category ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, category: event.target.value })} />
+            </Label>
+            <Label text="Topik">
+              <input className="field" value={localDraft.topic ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, topic: event.target.value })} />
+            </Label>
+          </div>
+          {localDraft.question_type === "objective" ? (
+            <div className="grid gap-3">
+              {localDraft.options.map((option, index) => (
+                <div key={option.id ?? `${option.option_label}-${index}`} className="grid gap-2 sm:grid-cols-[64px_1fr]">
+                  <span className="grid h-12 place-items-center rounded-xl bg-white text-sm font-black text-slate-600">{option.option_label ?? optionLabels[index] ?? index + 1}</span>
+                  <input className="field" value={option.option_text ?? ""} onChange={(event) => updateOption(index, event.target.value)} placeholder="Teks pilihan" />
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <button type="button" className="primary-button w-full sm:w-auto" onClick={() => onSave(localDraft)}>
+            Simpan Edit
+          </button>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <p className="whitespace-pre-wrap text-lg font-black leading-7 text-slate-950">{localDraft.question_text}</p>
+          {localDraft.options.length > 0 ? (
+            <div className="mt-4 grid gap-2">
+              {localDraft.options.map((option) => (
+                <div key={option.id ?? option.option_label ?? option.sort_order} className={`rounded-xl border px-4 py-3 text-sm font-bold ${option.is_correct ? "border-leaf-200 bg-leaf-50 text-leaf-700" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                  <span className="mr-2 font-black">{option.option_label}.</span>
+                  {option.option_text}
+                  {option.option_image_url ? <img src={option.option_image_url} alt="" className="mt-3 max-h-40 rounded-lg object-contain" /> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryRow label="Bahagian" value={localDraft.section ?? "Auto"} />
+            <SummaryRow label="Kategori" value={localDraft.category ?? "-"} />
+            <SummaryRow label="Topik" value={localDraft.topic ?? "-"} />
+            <SummaryRow label="Aras" value={localDraft.difficulty ?? "Auto"} />
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function EmptyAdminPanel({ title, text }: { title: string; text: string }) {
+  return (
+    <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+      <h2 className="text-2xl font-black">{title}</h2>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{text}</p>
+    </section>
+  );
+}
+
+const optionLabels = ["A", "B", "C", "D"];
+
+function defaultDraftOptions() {
+  return optionLabels.map((label, index) => ({
+    option_label: label,
+    option_text: "",
+    option_image_url: null,
+    is_correct: label === "A",
+    sort_order: index + 1,
+  }));
+}
+
+function questionStatusLabel(question: AdminQuestionRow): string {
+  if (question.archived_at) {
+    return "Archived";
+  }
+  return question.is_active ? "Active" : "Inactive";
+}
+
+function questionStatusTone(question: AdminQuestionRow): string {
+  if (question.archived_at) {
+    return "bg-slate-100 text-slate-500";
+  }
+  return question.is_active ? "bg-leaf-50 text-leaf-600" : "bg-sun-50 text-amber-700";
+}
+
+function importStatusTone(status: QuestionImportStatus): string {
+  const tones: Record<QuestionImportStatus, string> = {
+    uploaded: "bg-ocean-50 text-ocean-700",
+    processing: "bg-sun-50 text-amber-700",
+    review: "bg-ocean-50 text-ocean-700",
+    completed: "bg-leaf-50 text-leaf-600",
+    failed: "bg-coral-50 text-coral-600",
+  };
+  return tones[status];
+}
+
+function draftStatusLabel(status: DraftReviewStatus): string {
+  const labels: Record<DraftReviewStatus, string> = {
+    pending: "Pending",
+    approved: "Approved",
+    rejected: "Rejected",
+    needs_review: "Needs review",
+  };
+  return labels[status];
+}
+
+function draftStatusTone(status: DraftReviewStatus): string {
+  const tones: Record<DraftReviewStatus, string> = {
+    pending: "bg-slate-100 text-slate-600",
+    approved: "bg-leaf-50 text-leaf-600",
+    rejected: "bg-coral-50 text-coral-600",
+    needs_review: "bg-sun-50 text-amber-700",
+  };
+  return tones[status];
+}
+
+function confidenceLevel(value: number | null): "High" | "Medium" | "Low" {
+  if (value !== null && value >= 0.85) {
+    return "High";
+  }
+  if (value !== null && value >= 0.6) {
+    return "Medium";
+  }
+  return "Low";
+}
+
+function confidenceTone(level: "High" | "Medium" | "Low"): string {
+  if (level === "High") {
+    return "bg-leaf-50 text-leaf-600";
+  }
+  if (level === "Medium") {
+    return "bg-sun-50 text-amber-700";
+  }
+  return "bg-coral-50 text-coral-600";
+}
+
+function importStepActive(currentStatus: QuestionImportStatus, step: string): boolean {
+  const order: Record<string, number> = {
+    uploaded: 1,
+    processing: 2,
+    review: 3,
+    completed: 4,
+    failed: 2,
+  };
+  return order[currentStatus] >= (order[step] ?? 0);
 }
 
 function AdminSubscriptionsPage() {
@@ -1797,11 +2722,13 @@ function ModePage({
   isLoggedIn,
   busy,
   onStartQuiz,
+  onStartEssay,
   onNavigate,
 }: {
   isLoggedIn: boolean;
   busy: boolean;
   onStartQuiz: (mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) => void;
+  onStartEssay: () => void;
   onNavigate: (route: AppRoute) => void;
 }) {
   if (!isLoggedIn) {
@@ -1815,9 +2742,178 @@ function ModePage({
         <ModeCard title="Bahagian A" text="10 soalan Kecerdasan Insaniah." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 10)} />
         <ModeCard title="Bahagian B" text="15 soalan Kecerdasan Intelek." icon={Brain} disabled={busy} onClick={() => onStartQuiz("section", "B", 15)} />
         <ModeCard title="Cabaran Pantas" text="10 soalan rawak pendek." icon={Zap} disabled={busy} onClick={() => onStartQuiz("quick", null, 10)} />
-        <ModeCard title="Bahagian C" text="Struktur karangan tersedia; penandaan AI dibuat fasa lain." icon={PenLine} disabled onClick={() => undefined} />
+        <ModeCard title="Bahagian C" text="Tajuk karangan rawak dengan editor penulisan, timer dan autosave." icon={PenLine} disabled={busy} onClick={onStartEssay} />
       </div>
     </div>
+  );
+}
+
+function EssayPage({
+  payload,
+  result,
+  busy,
+  onAutosave,
+  onSubmit,
+  onNavigate,
+  onStartEssay,
+}: {
+  payload: EssayAttemptPayload | null;
+  result: EssaySubmitResult | null;
+  busy: boolean;
+  onAutosave: (responseText: string) => Promise<{ word_count: number; autosaved_at: string } | null>;
+  onSubmit: (responseText: string) => void;
+  onNavigate: (route: AppRoute) => void;
+  onStartEssay: () => void;
+}) {
+  const [responseText, setResponseText] = useState(payload?.response.response_text ?? "");
+  const [lastSavedText, setLastSavedText] = useState(payload?.response.response_text ?? "");
+  const [saveStatus, setSaveStatus] = useState(payload?.response.autosaved_at ? `Disimpan ${formatTimeOnly(payload.response.autosaved_at)}` : "Belum disimpan");
+  const [remainingSeconds, setRemainingSeconds] = useState(() => essayRemainingSeconds(payload));
+  const wordCount = useMemo(() => countWords(responseText), [responseText]);
+  const minWords = payload?.question.essay_min_words ?? 80;
+
+  useEffect(() => {
+    setResponseText(payload?.response.response_text ?? "");
+    setLastSavedText(payload?.response.response_text ?? "");
+    setSaveStatus(payload?.response.autosaved_at ? `Disimpan ${formatTimeOnly(payload.response.autosaved_at)}` : "Belum disimpan");
+    setRemainingSeconds(essayRemainingSeconds(payload));
+  }, [payload]);
+
+  useEffect(() => {
+    if (!payload || result) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setRemainingSeconds(essayRemainingSeconds(payload));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [payload, result]);
+
+  useEffect(() => {
+    if (!payload || result || responseText === lastSavedText) {
+      return;
+    }
+
+    setSaveStatus("Menyimpan...");
+    const timeout = window.setTimeout(async () => {
+      try {
+        const saved = await onAutosave(responseText);
+        if (saved) {
+          setLastSavedText(responseText);
+          setSaveStatus(`Disimpan ${formatTimeOnly(saved.autosaved_at)}`);
+        }
+      } catch {
+        setSaveStatus("Autosave gagal. Cuba submit semula.");
+      }
+    }, 1200);
+
+    return () => window.clearTimeout(timeout);
+  }, [lastSavedText, onAutosave, payload, responseText, result]);
+
+  if (result) {
+    return <EssayResultPanel result={result} onNavigate={onNavigate} onStartEssay={onStartEssay} />;
+  }
+
+  if (!payload) {
+    return (
+      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <PenLine size={26} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-2xl font-black">Bahagian C belum dimulakan</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Klik mula untuk dapatkan tajuk karangan rawak daripada bank soalan.</p>
+        <button type="button" className="primary-button mx-auto mt-6" onClick={onStartEssay}>
+          Mula Bahagian C
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[0.68fr_0.32fr]">
+      <section className="rounded-2xl bg-white p-6 shadow-soft">
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Bahagian C / {payload.question.topic ?? "Artikulasi Penulisan"}</p>
+            <h1 className="mt-2 text-2xl font-black leading-snug text-slate-950">{payload.question.question_text}</h1>
+          </div>
+          <span className="w-fit rounded-xl bg-sun-50 px-4 py-2 text-sm font-black text-amber-700">AI marking akan datang</span>
+        </div>
+
+        {payload.question.question_image_url ? <QuestionImage src={payload.question.question_image_url} /> : null}
+
+        <div className="mt-5">
+          <label className="grid gap-3">
+            <span className="text-sm font-black text-slate-700">Karangan anda</span>
+            <textarea
+              className="field min-h-[420px] text-base leading-8"
+              value={responseText}
+              onChange={(event) => setResponseText(event.target.value)}
+              placeholder="Tulis karangan di sini. Jawapan akan disimpan automatik semasa anda menaip."
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-bold text-slate-500">{saveStatus}</p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="button" className="secondary-button" onClick={() => onNavigate("/simulasi")}>
+              Kembali
+            </button>
+            <button type="button" className="primary-button" disabled={busy || responseText.trim().length === 0} onClick={() => onSubmit(responseText)}>
+              {busy ? "Menghantar..." : "Submit Karangan"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="rounded-2xl bg-white p-6 shadow-soft">
+          <h2 className="text-lg font-black">Status Penulisan</h2>
+          <div className="mt-5 grid gap-3">
+            <SummaryRow label="Masa" value={formatTimer(remainingSeconds)} />
+            <SummaryRow label="Patah perkataan" value={`${wordCount}`} />
+            <SummaryRow label="Sasaran" value={`${minWords}+ perkataan`} />
+            <SummaryRow label="Autosave" value={saveStatus.replace("Disimpan ", "")} />
+          </div>
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.min(100, Math.round((wordCount / Math.max(1, minWords)) * 100))}%` }} />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-ocean-100 bg-ocean-50 p-6">
+          <h2 className="text-lg font-black text-ocean-900">Tip Ringkas</h2>
+          <div className="mt-4 grid gap-3 text-sm font-semibold leading-6 text-slate-700">
+            <p>Mulakan dengan pendahuluan yang jelas.</p>
+            <p>Isi karangan boleh disusun dalam 2 hingga 3 perenggan.</p>
+            <p>Akhiri dengan penutup yang merumuskan idea utama.</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function EssayResultPanel({ result, onNavigate, onStartEssay }: { result: EssaySubmitResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {
+  return (
+    <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+      <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-leaf-50 text-leaf-600">
+        <Save size={30} aria-hidden="true" />
+      </div>
+      <h1 className="mt-5 text-3xl font-black">Karangan berjaya dihantar.</h1>
+      <p className="mt-3 text-lg font-black text-ocean-700">AI marking akan ditambah pada versi akan datang.</p>
+      <p className="mt-3 text-sm font-semibold text-slate-500">{result.word_count ?? 0} patah perkataan disimpan.</p>
+      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+        <button type="button" className="primary-button" onClick={onStartEssay}>
+          Cuba Tajuk Lain
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/history")}>
+          Sejarah Cubaan
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1860,6 +2956,7 @@ function QuizPage({
           <span className="text-sm font-bold text-slate-500">{current.section} - {current.category}</span>
         </div>
         <h1 className="text-2xl font-black leading-snug text-slate-950">{current.question_text}</h1>
+        {current.question_image_url ? <QuestionImage src={current.question_image_url} /> : null}
         <div className="mt-6 grid gap-3">
           {current.options.map((option) => (
             <button
@@ -1870,7 +2967,7 @@ function QuizPage({
                 current.selected_option_id === option.id ? "border-ocean-500 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-white hover:border-ocean-200"
               }`}
             >
-              {option.option_text}
+              <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
             </button>
           ))}
         </div>
@@ -1917,6 +3014,23 @@ function QuizPage({
         </div>
       </aside>
     </div>
+  );
+}
+
+function QuestionImage({ src }: { src: string }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <img src={src} alt="" className="mx-auto max-h-96 rounded-xl object-contain" />
+    </div>
+  );
+}
+
+function OptionContent({ text, imageUrl }: { text: string | null; imageUrl: string | null }) {
+  return (
+    <span className="block">
+      {text ? <span className="block">{text}</span> : null}
+      {imageUrl ? <img src={imageUrl} alt="" className="mt-3 max-h-44 rounded-lg object-contain" /> : null}
+    </span>
   );
 }
 
@@ -2444,6 +3558,35 @@ function formatDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatTimeOnly(value: string): string {
+  return new Intl.DateTimeFormat("ms-MY", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function countWords(value: string): number {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  return words.length;
+}
+
+function formatTimer(totalSeconds: number): string {
+  const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
+  const seconds = Math.max(0, totalSeconds) % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function essayRemainingSeconds(payload: EssayAttemptPayload | null): number {
+  if (!payload) {
+    return 0;
+  }
+  const limitMinutes = payload.question.essay_time_limit ?? 30;
+  const limitSeconds = limitMinutes * 60;
+  const startedAt = new Date(payload.attempt.started_at).getTime();
+  const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+  return Math.max(0, limitSeconds - elapsedSeconds);
 }
 
 function toMessage(error: unknown): string {

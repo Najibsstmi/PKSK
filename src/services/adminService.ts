@@ -1,5 +1,7 @@
 import { requireSupabase } from "../lib/supabase";
 import type { AdminKpis, AdminQuestionRow, AdminUserRow, SubscriptionPlan, UserRole } from "../types/access";
+import type { Json } from "../types/database";
+import type { ManualQuestionInput } from "../types/imports";
 
 export async function fetchAdminKpis(): Promise<AdminKpis> {
   const client = requireSupabase();
@@ -28,10 +30,13 @@ export async function fetchAdminUsers(searchText: string, statusFilter: string):
   return (data ?? []) as AdminUserRow[];
 }
 
-export async function fetchAdminQuestions(searchText: string): Promise<AdminQuestionRow[]> {
+export async function fetchAdminQuestions(searchText: string, sectionFilter = "all", statusFilter = "all", sourceFilter = ""): Promise<AdminQuestionRow[]> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("admin_list_questions", {
     search_text: searchText || null,
+    section_filter: sectionFilter || "all",
+    status_filter: statusFilter || "all",
+    source_filter: sourceFilter || null,
     page_number: 1,
     page_size: 50,
   });
@@ -41,6 +46,32 @@ export async function fetchAdminQuestions(searchText: string): Promise<AdminQues
   }
 
   return (data ?? []) as AdminQuestionRow[];
+}
+
+export async function createManualQuestion(input: ManualQuestionInput): Promise<string> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("admin_create_manual_question", {
+    question_payload: input as unknown as Json,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
+
+  return data;
+}
+
+export async function updateQuestionStatus(questionId: string, nextIsActive: boolean, archiveQuestion = false): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("admin_update_question_status", {
+    p_question_id: questionId,
+    next_is_active: nextIsActive,
+    archive_question: archiveQuestion,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
 }
 
 export async function grantPremium(targetUserId: string, plan: SubscriptionPlan): Promise<void> {
@@ -127,6 +158,12 @@ export function mapAdminMessage(message: string): string {
   }
   if (message.includes("INVALID_ROLE")) {
     return "Role pengguna tidak sah.";
+  }
+  if (message.includes("QUESTION_NOT_FOUND")) {
+    return "Soalan tidak ditemui.";
+  }
+  if (message.includes("INVALID_QUESTION_TYPE")) {
+    return "Jenis soalan tidak sah.";
   }
 
   return message;

@@ -65,9 +65,14 @@ export type AdminQuestionRow = {
   id: string;
   section: "A" | "B" | "C";
   category: string | null;
+  topic: string | null;
   difficulty: "easy" | "medium" | "hard";
+  question_type: "objective" | "essay";
   question_text: string;
+  question_image_url: string | null;
   is_active: boolean;
+  archived_at: string | null;
+  source_title: string | null;
   created_at: string;
   total_count: number;
 };

@@ -59,6 +59,8 @@ Route admin:
 - `/admin/users`
 - `/admin/subscriptions`
 - `/admin/questions`
+- `/admin/questions/import`
+- `/admin/questions/import-history`
 - `/admin/settings`
 
 Admin actions dibuat melalui secure RPC, bukan update terus dari frontend.
@@ -71,6 +73,11 @@ Admin boleh:
 - extend 30 hari, 6 bulan, 1 tahun atau lifetime
 - revoke premium
 - block/unblock user
+- tambah soalan manual ringkas
+- upload PDF untuk import bank soalan
+- semak draft soalan sebelum publish
+- batch approve/reject draft
+- activate/deactivate/archive soalan
 
 Super admin sahaja boleh:
 
@@ -85,6 +92,8 @@ Jalankan SQL ini dalam Supabase SQL Editor mengikut turutan:
 1. `supabase/schema.sql`
 2. `supabase/seed.sql`
 3. `supabase/migrations/20260808_add_commercial_access.sql`
+4. `supabase/migrations/20260809_enable_bahagian_c_essay.sql`
+5. `supabase/migrations/20260809_add_pdf_question_import.sql`
 
 Migration komersial menambah:
 
@@ -95,6 +104,130 @@ Migration komersial menambah:
 - `app_settings`
 - RPC premium/access/admin
 - settings free preview
+
+Migration import PDF menambah:
+
+- `question_imports`
+- `imported_question_drafts`
+- `imported_question_draft_options`
+- `question_assets`
+- `option_image_url` pada `question_options`
+- support `essay_min_words` dan `essay_time_limit`
+- storage bucket `question-imports`
+- storage bucket `question-assets`
+- RPC admin untuk upload record, review draft, batch approve dan publish approved questions
+
+## Bahagian C Penulisan
+
+Bahagian C sudah aktif untuk murid. Kad Bahagian C tidak dikunci.
+
+Flow murid:
+
+1. Pilih `Bahagian C`
+2. Sistem pilih tajuk karangan secara rawak daripada database
+3. Murid menulis dalam editor moden
+4. Sistem kira jumlah perkataan
+5. Timer berjalan semasa menulis
+6. Jawapan autosave
+7. Murid tekan `Hantar Karangan`
+8. Jawapan disimpan dalam Supabase
+9. Sistem paparkan mesej bahawa karangan berjaya dihantar
+
+AI marking belum dibina dalam Fasa ini. Selepas murid hantar, aplikasi akan memaklumkan:
+
+```text
+Karangan berjaya dihantar.
+AI marking akan ditambah pada versi akan datang.
+```
+
+Data Bahagian C disimpan dalam:
+
+- `questions` untuk tajuk karangan
+- `quiz_attempts` untuk rekod cubaan
+- `attempt_questions` untuk tajuk yang dipilih
+- `essay_responses` untuk jawapan karangan murid
+
+Migration Bahagian C juga menambah RPC untuk mula cubaan, autosave dan hantar karangan.
+
+## Admin Question Import
+
+Workflow admin:
+
+1. Buka `/admin/questions`
+2. Klik `Import PDF`
+3. Upload PDF
+4. Klik `Process PDF`
+5. Semak draft
+6. `Approve All High Confidence` atau pilih draft tertentu
+7. Klik `Import Approved Questions`
+
+Admin tidak perlu isi metadata satu per satu. Metadata seperti bahagian, kategori, topik, aras dan jawapan disimpan sebagai cadangan draft dahulu.
+
+## Supabase Storage
+
+Migration import PDF akan mencipta bucket:
+
+```text
+question-imports
+question-assets
+```
+
+`question-imports` ialah private bucket untuk PDF asal.
+
+`question-assets` ialah public bucket untuk gambar/rajah soalan yang perlu dipaparkan dalam quiz.
+
+## PDF Processing
+
+Edge Function:
+
+```text
+supabase/functions/process-pdf-import
+```
+
+Function ini:
+
+- sahkan pengguna ialah `admin` atau `super_admin`
+- download PDF dari private Supabase Storage
+- update status import
+- simpan draft ke staging table
+- tidak expose secret ke frontend
+
+Nota keselamatan: external AI extraction dimatikan dahulu. PDF tidak dihantar ke OpenAI atau provider luar sehingga pemilik projek memberi kebenaran jelas. Bila dibenarkan, sambungan provider dibuat di:
+
+```text
+supabase/functions/process-pdf-import/questionExtraction.ts
+```
+
+## AI Environment Variables
+
+Untuk Edge Function:
+
+```bash
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+OPENAI_API_KEY=...
+OPENAI_MODEL=...
+```
+
+`OPENAI_API_KEY` jangan diletakkan dalam Vercel frontend dan jangan guna prefix `VITE_`.
+
+## Deploy Edge Function
+
+Selepas login Supabase CLI dan link project:
+
+```bash
+npx supabase functions deploy process-pdf-import
+```
+
+Kemudian set secret server-side:
+
+```bash
+npx supabase secrets set OPENAI_API_KEY=sk-...
+npx supabase secrets set OPENAI_MODEL=gpt-4.1-mini
+```
+
+Jika PDF processor belum deploy, UI akan memaparkan mesej bahawa pemproses PDF belum aktif.
 
 ## Jika Muncul Mesej Sistem Akses Premium
 
@@ -204,12 +337,10 @@ Tetapan Vercel:
 
 ## Import PDF Seterusnya
 
-Skrip `scripts/extract_pdf_seed.py` boleh dijadikan asas untuk menjana seed SQL daripada PDF lain tanpa mengubah source React.
+Gunakan admin UI di:
 
-Contoh:
-
-```bash
-python scripts/extract_pdf_seed.py "C:/path/to/bank-soalan.pdf" --output supabase/seed-bank-baru.sql --source-code bank-baru-2026 --source-title "Bank Baru 2026"
+```text
+/admin/questions/import
 ```
 
-Selepas SQL baharu dijana, semak kandungan dan jalankan di Supabase SQL Editor.
+Skrip `scripts/extract_pdf_seed.py` hanya tinggal sebagai alat sokongan lama untuk jana seed SQL secara manual.

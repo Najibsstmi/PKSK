@@ -68,6 +68,7 @@ export async function fetchActiveAttempt(): Promise<QuizAttemptRow | null> {
     .from("quiz_attempts")
     .select("*")
     .eq("status", "in_progress")
+    .or("section.is.null,section.neq.C")
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
