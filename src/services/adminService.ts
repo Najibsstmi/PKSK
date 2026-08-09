@@ -1,5 +1,5 @@
 import { requireSupabase } from "../lib/supabase";
-import type { AdminKpis, AdminQuestionRow, AdminUserRow, SubscriptionPlan, UserRole } from "../types/access";
+import type { AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, SubscriptionPlan, UserRole } from "../types/access";
 import type { Json } from "../types/database";
 import type { ManualQuestionInput } from "../types/imports";
 
@@ -48,6 +48,19 @@ export async function fetchAdminQuestions(searchText: string, sectionFilter = "a
   return (data ?? []) as AdminQuestionRow[];
 }
 
+export async function fetchAdminQuestionDetail(questionId: string): Promise<AdminQuestionDetail> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("admin_get_question_detail", {
+    p_question_id: questionId,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
+
+  return data as AdminQuestionDetail;
+}
+
 export async function createManualQuestion(input: ManualQuestionInput): Promise<string> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("admin_create_manual_question", {
@@ -59,6 +72,18 @@ export async function createManualQuestion(input: ManualQuestionInput): Promise<
   }
 
   return data;
+}
+
+export async function updateQuestion(input: ManualQuestionInput & { id: string; is_active?: boolean }): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("admin_update_question", {
+    question_payload: input as unknown as Json,
+    options_payload: input.options as unknown as Json,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
 }
 
 export async function updateQuestionStatus(questionId: string, nextIsActive: boolean, archiveQuestion = false): Promise<void> {
@@ -164,6 +189,12 @@ export function mapAdminMessage(message: string): string {
   }
   if (message.includes("INVALID_QUESTION_TYPE")) {
     return "Jenis soalan tidak sah.";
+  }
+  if (message.includes("INVALID_SECTION")) {
+    return "Bahagian soalan tidak sah.";
+  }
+  if (message.includes("INVALID_DIFFICULTY")) {
+    return "Aras soalan tidak sah.";
   }
 
   return message;

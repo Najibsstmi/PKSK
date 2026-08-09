@@ -48,6 +48,7 @@ import {
   blockUser,
   extendPremium,
   fetchAdminKpis,
+  fetchAdminQuestionDetail,
   fetchAdminQuestions,
   fetchAdminUsers,
   grantPremium,
@@ -55,6 +56,7 @@ import {
   createManualQuestion,
   setUserRole,
   unblockUser,
+  updateQuestion,
   updateQuestionStatus,
 } from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
@@ -80,11 +82,11 @@ import {
   skipAnswer,
   submitAnswer,
 } from "./services/questionService";
-import type { AccessStatus, AdminKpis, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
+import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
-import type { DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
+import type { DraftOption, DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
@@ -2418,6 +2420,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
   const [sourceFilter, setSourceFilter] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<AdminQuestionRow | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<AdminQuestionRow | null>(null);
 
   const loadQuestions = useCallback(async () => {
     try {
@@ -2442,6 +2445,8 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
       onMessage(toMessage(error));
     }
   }
+
+  const totalCount = questions[0]?.total_count ?? questions.length;
 
   return (
     <AdminShell title="Question Bank" text="Import PDF, semak draft, dan urus status soalan tanpa metadata berat.">
@@ -2479,6 +2484,10 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
             Search
           </button>
         </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-sm font-bold text-slate-500">
+          <span>{totalCount} soalan ditemui</span>
+          <span>Senarai memaparkan maksimum 50 soalan terkini. Gunakan carian untuk tapis bank besar.</span>
+        </div>
       </section>
 
       <section className="grid gap-4">
@@ -2503,22 +2512,35 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
                     <Eye size={14} aria-hidden="true" />
                     View
                   </button>
-                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600" onClick={() => onMessage("Edit penuh soalan sedia ada akan disambung dalam fasa selepas import PDF stabil.")}>
+                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600" onClick={() => setEditingQuestion(question)}>
                     <PenLine size={14} aria-hidden="true" />
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600"
-                    onClick={() => runStatusAction(() => updateQuestionStatus(question.id, !question.is_active, false), question.is_active ? "Soalan dinyahaktifkan." : "Soalan diaktifkan.")}
-                    disabled={archived}
-                  >
-                    {question.is_active ? "Deactivate" : "Activate"}
-                  </button>
+                  {archived ? (
+                    <button
+                      type="button"
+                      className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600"
+                      onClick={() => runStatusAction(() => updateQuestionStatus(question.id, true, false), "Soalan dipulihkan dan diaktifkan semula.")}
+                    >
+                      Pulihkan
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600"
+                      onClick={() => runStatusAction(() => updateQuestionStatus(question.id, !question.is_active, false), question.is_active ? "Soalan dinyahaktifkan." : "Soalan diaktifkan.")}
+                    >
+                      {question.is_active ? "Deactivate" : "Activate"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600"
-                    onClick={() => runStatusAction(() => updateQuestionStatus(question.id, false, true), "Soalan diarkibkan.")}
+                    onClick={() => {
+                      if (window.confirm("Archive soalan ini? Soalan tidak akan keluar dalam simulasi selepas diarkibkan.")) {
+                        runStatusAction(() => updateQuestionStatus(question.id, false, true), "Soalan diarkibkan.");
+                      }
+                    }}
                     disabled={archived}
                   >
                     Archive
@@ -2533,6 +2555,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
 
       {manualOpen ? <ManualQuestionModal onClose={() => setManualOpen(false)} onCreated={loadQuestions} onMessage={onMessage} /> : null}
       {selectedQuestion ? <QuestionViewModal question={selectedQuestion} onClose={() => setSelectedQuestion(null)} /> : null}
+      {editingQuestion ? <QuestionEditModal question={editingQuestion} onClose={() => setEditingQuestion(null)} onSaved={loadQuestions} onMessage={onMessage} /> : null}
     </AdminShell>
   );
 }
@@ -2915,14 +2938,343 @@ function ManualQuestionModal({
   );
 }
 
-function QuestionViewModal({ question, onClose }: { question: AdminQuestionRow; onClose: () => void }) {
+function QuestionEditModal({
+  question,
+  onClose,
+  onSaved,
+  onMessage,
+}: {
+  question: AdminQuestionRow;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onMessage: (message: string | null) => void;
+}) {
+  const [detail, setDetail] = useState<AdminQuestionDetail | null>(null);
+  const [questionType, setQuestionType] = useState<QuestionType>(question.question_type);
+  const [section, setSection] = useState<PkskSectionCode>(question.section);
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>(question.difficulty);
+  const [questionText, setQuestionText] = useState(question.question_text);
+  const [category, setCategory] = useState(question.category ?? "");
+  const [topic, setTopic] = useState(question.topic ?? "");
+  const [imageUrl, setImageUrl] = useState(question.question_image_url ?? "");
+  const [explanation, setExplanation] = useState("");
+  const [correctLabel, setCorrectLabel] = useState("A");
+  const [options, setOptions] = useState<DraftOption[]>(() => defaultDraftOptions());
+  const [essayMinWords, setEssayMinWords] = useState("100");
+  const [essayTimeLimit, setEssayTimeLimit] = useState("45");
+  const [isActive, setIsActive] = useState(question.is_active);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadDetail() {
+      setLoading(true);
+      onMessage(null);
+      try {
+        const nextDetail = await fetchAdminQuestionDetail(question.id);
+        if (!alive) {
+          return;
+        }
+
+        const nextOptions = nextDetail.options.length > 0 ? nextDetail.options : defaultDraftOptions();
+        setDetail(nextDetail);
+        setQuestionType(nextDetail.question_type);
+        setSection(nextDetail.section);
+        setDifficulty(nextDetail.difficulty);
+        setQuestionText(nextDetail.question_text);
+        setCategory(nextDetail.category ?? "");
+        setTopic(nextDetail.topic ?? "");
+        setImageUrl(nextDetail.question_image_url ?? "");
+        setExplanation(nextDetail.explanation ?? "");
+        setOptions(nextOptions);
+        setCorrectLabel(nextDetail.correct_option_label ?? nextOptions.find((option) => option.is_correct)?.option_label ?? "A");
+        setEssayMinWords(String(nextDetail.essay_min_words ?? 100));
+        setEssayTimeLimit(String(nextDetail.essay_time_limit ?? 45));
+        setIsActive(nextDetail.is_active);
+      } catch (error) {
+        onMessage(toMessage(error));
+      } finally {
+        if (alive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDetail();
+    return () => {
+      alive = false;
+    };
+  }, [onMessage, question.id]);
+
+  function updateOption(index: number, patch: Partial<DraftOption>) {
+    setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? { ...option, ...patch } : option)));
+  }
+
+  function addOption() {
+    const nextIndex = options.length;
+    const nextLabel = optionLabels[nextIndex] ?? String.fromCharCode(65 + nextIndex);
+    setOptions((current) => [
+      ...current,
+      {
+        option_label: nextLabel,
+        option_text: "",
+        option_image_url: null,
+        is_correct: false,
+        sort_order: current.length + 1,
+      },
+    ]);
+  }
+
+  function removeOption(index: number) {
+    setOptions((current) => {
+      const nextOptions = current.filter((_, optionIndex) => optionIndex !== index);
+      if (current[index]?.option_label === correctLabel) {
+        setCorrectLabel(nextOptions[0]?.option_label ?? "A");
+      }
+      return nextOptions.map((option, optionIndex) => ({ ...option, sort_order: optionIndex + 1 }));
+    });
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!questionText.trim()) {
+      onMessage("Masukkan teks soalan dahulu.");
+      return;
+    }
+
+    const cleanedOptions = options
+      .map((option, index) => ({
+        ...option,
+        option_label: option.option_label || (optionLabels[index] ?? String.fromCharCode(65 + index)),
+        option_text: option.option_text?.trim() || null,
+        option_image_url: option.option_image_url?.trim() || null,
+        is_correct: (option.option_label || (optionLabels[index] ?? String.fromCharCode(65 + index))) === correctLabel,
+        sort_order: index + 1,
+      }))
+      .filter((option) => option.option_text || option.option_image_url);
+
+    if (questionType === "objective" && cleanedOptions.length < 2) {
+      onMessage("Soalan objektif perlukan sekurang-kurangnya dua pilihan jawapan.");
+      return;
+    }
+
+    if (questionType === "objective" && !cleanedOptions.some((option) => option.is_correct)) {
+      onMessage("Pilih satu jawapan betul dahulu.");
+      return;
+    }
+
+    const payload: ManualQuestionInput & { id: string; is_active: boolean } = {
+      id: question.id,
+      question_type: questionType,
+      section,
+      question_text: questionText.trim(),
+      category: category.trim() || null,
+      topic: topic.trim() || null,
+      difficulty,
+      question_image_url: imageUrl.trim() || null,
+      explanation: explanation.trim() || null,
+      is_active: isActive,
+      correct_option_label: questionType === "objective" ? correctLabel : null,
+      essay_min_words: questionType === "essay" ? Number(essayMinWords) || 100 : null,
+      essay_time_limit: questionType === "essay" ? Number(essayTimeLimit) || 45 : null,
+      options: questionType === "objective" ? cleanedOptions : [],
+    };
+
+    setSaving(true);
+    onMessage(null);
+    try {
+      await updateQuestion(payload);
+      await onSaved();
+      onMessage("Soalan berjaya dikemas kini.");
+      onClose();
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <section className="fixed inset-0 z-40 grid place-items-center bg-slate-950/40 px-4">
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <form className="w-full max-w-4xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase text-ocean-700">{detail?.source_title ?? question.source_title ?? "Manual"}</p>
+            <h2 className="mt-1 text-2xl font-black">Edit Soalan</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Kemaskan soalan, pilihan jawapan dan status tanpa perlu import semula.</p>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="mt-6 rounded-2xl bg-slate-50 p-5 text-sm font-bold text-slate-500">Memuatkan detail soalan...</div>
+        ) : (
+          <div className="mt-5 grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-4">
+              <Label text="Jenis">
+                <select className="field" value={questionType} onChange={(event) => setQuestionType(event.target.value as QuestionType)}>
+                  <option value="objective">Objektif</option>
+                  <option value="essay">Esei</option>
+                </select>
+              </Label>
+              <Label text="Bahagian">
+                <select className="field" value={section} onChange={(event) => setSection(event.target.value as PkskSectionCode)}>
+                  <option value="A">Bahagian A</option>
+                  <option value="B">Bahagian B</option>
+                  <option value="C">Bahagian C</option>
+                </select>
+              </Label>
+              <Label text="Aras">
+                <select className="field" value={difficulty} onChange={(event) => setDifficulty(event.target.value as QuestionDifficulty)}>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </Label>
+              <Label text="Status">
+                <select className="field" value={isActive ? "active" : "inactive"} onChange={(event) => setIsActive(event.target.value === "active")}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </Label>
+            </div>
+
+            <Label text="Soalan">
+              <textarea className="field min-h-32" value={questionText} onChange={(event) => setQuestionText(event.target.value)} required />
+            </Label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Label text="Kategori">
+                <input className="field" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Contoh: SSQ, Bahasa Melayu, Penulisan" />
+              </Label>
+              <Label text="Topik">
+                <input className="field" value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Contoh: Kerjasama, Matematik" />
+              </Label>
+            </div>
+
+            <Label text="URL imej soalan">
+              <input className="field" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="Kosongkan jika tiada imej" />
+            </Label>
+
+            {questionType === "objective" ? (
+              <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-sm font-black text-slate-700">Pilihan Jawapan</h3>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <select className="field max-w-[180px]" value={correctLabel} onChange={(event) => setCorrectLabel(event.target.value)}>
+                      {options.map((option, index) => {
+                        const label = option.option_label || optionLabels[index] || String.fromCharCode(65 + index);
+                        return (
+                          <option key={label} value={label}>
+                            Jawapan {label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <button type="button" className="secondary-button" onClick={addOption}>
+                      <Plus size={18} aria-hidden="true" />
+                      Tambah Pilihan
+                    </button>
+                  </div>
+                </div>
+                {options.map((option, index) => {
+                  const label = option.option_label || optionLabels[index] || String.fromCharCode(65 + index);
+                  return (
+                    <div key={`${label}-${index}`} className="grid gap-2 rounded-xl bg-white p-3 sm:grid-cols-[64px_1fr_auto]">
+                      <input className="field text-center font-black" value={label} onChange={(event) => updateOption(index, { option_label: event.target.value.toUpperCase() })} />
+                      <input className="field" value={option.option_text ?? ""} onChange={(event) => updateOption(index, { option_text: event.target.value })} placeholder={`Pilihan ${label}`} />
+                      <button type="button" className="secondary-button" onClick={() => removeOption(index)} disabled={options.length <= 2}>
+                        Buang
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2">
+                <Label text="Minimum patah perkataan">
+                  <input className="field" type="number" min={1} value={essayMinWords} onChange={(event) => setEssayMinWords(event.target.value)} />
+                </Label>
+                <Label text="Masa menulis (minit)">
+                  <input className="field" type="number" min={1} value={essayTimeLimit} onChange={(event) => setEssayTimeLimit(event.target.value)} />
+                </Label>
+              </div>
+            )}
+
+            <Label text="Nota jawapan / explanation">
+              <textarea className="field" value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="Optional" />
+            </Label>
+
+            {detail?.assets.length ? (
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                {detail.assets.map((asset) => (
+                  <a key={asset.id} href={asset.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600">
+                    <ImageIcon size={15} aria-hidden="true" />
+                    {asset.asset_type}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button type="button" className="secondary-button" onClick={onClose}>
+                Batal
+              </button>
+              <button type="submit" className="primary-button" disabled={saving}>
+                <Save size={18} aria-hidden="true" />
+                {saving ? "Menyimpan..." : "Simpan Edit"}
+              </button>
+            </div>
+          </div>
+        )}
+      </form>
+    </section>
+  );
+}
+
+function QuestionViewModal({ question, onClose }: { question: AdminQuestionRow; onClose: () => void }) {
+  const [detail, setDetail] = useState<AdminQuestionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadDetail() {
+      try {
+        const nextDetail = await fetchAdminQuestionDetail(question.id);
+        if (alive) {
+          setDetail(nextDetail);
+        }
+      } catch {
+        if (alive) {
+          setDetail(null);
+        }
+      } finally {
+        if (alive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDetail();
+    return () => {
+      alive = false;
+    };
+  }, [question.id]);
+
+  const viewQuestion = detail ?? question;
+
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
       <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-soft">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase text-ocean-700">
-              Bahagian {question.section} / {question.category ?? "Umum"} / {question.difficulty}
+              Bahagian {viewQuestion.section} / {viewQuestion.category ?? "Umum"} / {viewQuestion.difficulty}
             </p>
             <h2 className="mt-2 text-2xl font-black">Soalan</h2>
           </div>
@@ -2930,12 +3282,31 @@ function QuestionViewModal({ question, onClose }: { question: AdminQuestionRow; 
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        {question.question_image_url ? <img src={question.question_image_url} alt="" className="mt-5 max-h-80 rounded-xl border border-slate-200 object-contain" /> : null}
-        <p className="mt-5 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-800">{question.question_text}</p>
+        {loading ? <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500">Memuatkan detail soalan...</div> : null}
+        {viewQuestion.question_image_url ? <img src={viewQuestion.question_image_url} alt="" className="mt-5 max-h-80 rounded-xl border border-slate-200 object-contain" /> : null}
+        <p className="mt-5 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-800">{viewQuestion.question_text}</p>
+        {detail?.options.length ? (
+          <div className="mt-5 grid gap-2">
+            {detail.options.map((option) => (
+              <div key={option.id ?? option.option_label ?? option.sort_order} className={`rounded-xl border px-4 py-3 text-sm font-bold ${option.is_correct ? "border-leaf-200 bg-leaf-50 text-leaf-700" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                <span className="mr-2 font-black">{option.option_label}.</span>
+                {option.option_text}
+                {option.is_correct ? <span className="ml-2 rounded-lg bg-leaf-100 px-2 py-1 text-[11px] font-black text-leaf-700">Jawapan betul</span> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {detail?.explanation ? (
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-black uppercase text-slate-500">Explanation</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">{detail.explanation}</p>
+          </div>
+        ) : null}
         <div className="mt-5 grid gap-2 text-sm text-slate-600">
-          <SummaryRow label="Source" value={question.source_title ?? "Manual"} />
-          <SummaryRow label="Status" value={questionStatusLabel(question)} />
-          <SummaryRow label="Topik" value={question.topic ?? "-"} />
+          <SummaryRow label="Source" value={viewQuestion.source_title ?? "Manual"} />
+          <SummaryRow label="Status" value={questionStatusLabel(viewQuestion)} />
+          <SummaryRow label="Topik" value={viewQuestion.topic ?? "-"} />
+          {detail?.question_type === "essay" ? <SummaryRow label="Karangan" value={`${detail.essay_min_words ?? 100} patah perkataan minimum / ${detail.essay_time_limit ?? 45} minit`} /> : null}
         </div>
       </div>
     </section>

@@ -1,4 +1,5 @@
 import type { Json, ProfileRow } from "./database";
+import type { DraftAsset, DraftOption } from "./imports";
 import type { QuizQuestion } from "./quiz";
 
 export type UserRole = "user" | "admin" | "super_admin";
@@ -75,6 +76,15 @@ export type AdminQuestionRow = {
   source_title: string | null;
   created_at: string;
   total_count: number;
+};
+
+export type AdminQuestionDetail = AdminQuestionRow & {
+  explanation: string | null;
+  correct_option_label: string | null;
+  essay_min_words: number | null;
+  essay_time_limit: number | null;
+  options: DraftOption[];
+  assets: DraftAsset[];
 };
 
 export type SubscriptionHistory = {

@@ -363,6 +363,19 @@ export type Database = {
         };
         Returns: Json;
       };
+      admin_get_question_detail: {
+        Args: {
+          p_question_id: string;
+        };
+        Returns: Json;
+      };
+      admin_update_question: {
+        Args: {
+          question_payload: Json;
+          options_payload?: Json | null;
+        };
+        Returns: Json;
+      };
       admin_create_question_import: {
         Args: {
           file_name: string;
