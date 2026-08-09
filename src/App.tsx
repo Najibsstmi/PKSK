@@ -2590,6 +2590,18 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
     loadImport();
   }, [loadImport]);
 
+  useEffect(() => {
+    if (importRow?.status !== "processing") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      loadImport();
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [importRow?.status, loadImport]);
+
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
@@ -2610,13 +2622,13 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
     }
   }
 
-  async function runImportAction(action: () => Promise<void>, successMessage: string) {
+  async function runImportAction(action: () => Promise<string | null | undefined | void>, successMessage: string) {
     setBusyAction(true);
     onMessage(null);
     try {
-      await action();
+      const actionMessage = await action();
       await loadImport();
-      onMessage(successMessage);
+      onMessage(actionMessage || successMessage);
     } catch (error) {
       onMessage(toMessage(error));
     } finally {
@@ -2626,9 +2638,13 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
 
   const highConfidenceIds = drafts.filter((draft) => !draft.imported_question_id && confidenceLevel(draft.confidence) === "High").map((draft) => draft.id);
   const approvedCount = drafts.filter((draft) => draft.review_status === "approved" && !draft.imported_question_id).length;
+  const pendingCount = drafts.filter((draft) => draft.review_status === "pending" && !draft.imported_question_id).length;
+  const reviewCount = drafts.filter((draft) => draft.review_status === "needs_review" && !draft.imported_question_id).length;
+  const rejectedCount = drafts.filter((draft) => draft.review_status === "rejected" && !draft.imported_question_id).length;
+  const importedCount = drafts.filter((draft) => draft.imported_question_id).length;
 
   return (
-    <AdminShell title="Import PDF" text="Upload PDF, biarkan sistem ekstrak, semak draft, kemudian publish ke bank soalan.">
+    <AdminShell title="Import PDF" text="Upload PDF, ekstrak soalan, semak draft, kemudian publish ke bank soalan.">
       {!importRow ? (
         <section className="rounded-2xl bg-white p-6 shadow-soft">
           <div className="mb-5 flex items-start gap-4">
@@ -2637,7 +2653,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
             </span>
             <div>
               <h2 className="text-2xl font-black">Step 1: Upload PDF</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">Admin hanya perlu pilih PDF dan beri nama sumber jika mahu. Metadata akan dicadangkan kemudian.</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">Pilih PDF yang ada teks sebenar. PDF scan/gambar perlukan semakan manual atau OCR/AI selepas diberi kebenaran.</p>
             </div>
           </div>
           <form className="grid gap-4" onSubmit={handleUpload}>
@@ -2648,7 +2664,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
               <input className="field" value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder="Contoh: Tips PKSK 2026" />
             </Label>
             <button type="submit" className="primary-button w-full sm:w-auto" disabled={busyAction}>
-              {busyAction ? "Uploading..." : "Upload PDF"}
+              {busyAction ? "Memuat naik..." : "Upload PDF"}
             </button>
           </form>
         </section>
@@ -2660,13 +2676,30 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
               <div>
                 <h2 className="text-xl font-black">Workflow Import</h2>
                 <p className="mt-1 text-sm text-slate-500">{importRow.file_name}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-slate-600">{drafts.length} draft</span>
+                  <span className="rounded-lg bg-ocean-50 px-3 py-2 text-ocean-700">{pendingCount} pending</span>
+                  <span className="rounded-lg bg-sun-50 px-3 py-2 text-amber-700">{reviewCount} perlu semak</span>
+                  <span className="rounded-lg bg-coral-50 px-3 py-2 text-coral-600">{rejectedCount} ditolak</span>
+                  <span className="rounded-lg bg-leaf-50 px-3 py-2 text-leaf-600">{importedCount} imported</span>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className="secondary-button" disabled={busyAction || importRow.status === "processing"} onClick={() => runImportAction(() => processPdfImport(importRow.id), "Pemprosesan PDF dimulakan.")}>
-                  Process PDF
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={busyAction || importRow.status === "processing"}
+                  onClick={() =>
+                    runImportAction(async () => {
+                      const result = await processPdfImport(importRow.id);
+                      return result.warning || `${result.detected} draft soalan berjaya diekstrak.`;
+                    }, "Ekstrak PDF selesai. Semak draft yang terhasil.")
+                  }
+                >
+                  {importRow.status === "processing" ? "Sedang Ekstrak..." : "Ekstrak Soalan"}
                 </button>
                 <button type="button" className="secondary-button" disabled={busyAction || highConfidenceIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(highConfidenceIds, "approved"), "Semua draft high confidence diluluskan.")}>
-                  Approve All High Confidence
+                  Approve Draft Yakin
                 </button>
                 <button type="button" className="secondary-button" disabled={busyAction || selectedDraftIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(selectedDraftIds, "approved"), "Draft terpilih diluluskan.")}>
                   Approve Selected
@@ -2678,9 +2711,12 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
                   const count = await importApprovedQuestions(importRow.id);
                   onMessage(`${count} soalan dimasukkan ke bank soalan.`);
                 }, "Import approved selesai.")}>
-                  Import Approved Questions
+                  Publish Approved
                 </button>
               </div>
+            </div>
+            <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+              Flow stabil: upload PDF, klik Ekstrak Soalan, semak draft, approve draft yang betul, kemudian Publish Approved. Draft belum approve tidak akan masuk simulasi.
             </div>
           </section>
           <section className="grid gap-4">
@@ -2696,7 +2732,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
                 onStatus={(nextStatus) => runImportAction(() => setImportDraftStatus([draft.id], nextStatus), "Status draft dikemaskini.")}
               />
             ))}
-            {drafts.length === 0 ? <EmptyAdminPanel title="Belum ada draft" text="Klik Process PDF selepas upload. Draft akan muncul di sini untuk disemak." /> : null}
+            {drafts.length === 0 ? <EmptyAdminPanel title="Belum ada draft" text="Klik Ekstrak Soalan selepas upload. Draft akan muncul di sini untuk disemak." /> : null}
           </section>
         </div>
       )}
@@ -2807,7 +2843,7 @@ function ManualQuestionModal({
       setTopic("Kecerdasan Intelek");
     }
     setDifficulty("medium");
-    onMessage("Cadangan metadata awal diisi. AI server-side boleh ditambah pada fungsi ini selepas OPENAI_API_KEY disediakan.");
+    onMessage("Cadangan metadata awal diisi. OCR/AI server-side boleh ditambah kemudian selepas tuan beri kebenaran untuk memproses PDF melalui provider luar.");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

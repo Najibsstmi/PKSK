@@ -80,15 +80,23 @@ export async function fetchImportDrafts(importId: string): Promise<ImportedQuest
   return (data ?? []) as ImportedQuestionDraft[];
 }
 
-export async function processPdfImport(importId: string): Promise<void> {
+export type ProcessPdfImportResult = {
+  ok: boolean;
+  detected: number;
+  warning: string | null;
+};
+
+export async function processPdfImport(importId: string): Promise<ProcessPdfImportResult> {
   const client = requireSupabase();
-  const { error } = await client.functions.invoke("process-pdf-import", {
+  const { data, error } = await client.functions.invoke("process-pdf-import", {
     body: { importId },
   });
 
   if (error) {
-    throw new Error(mapImportMessage(error.message));
+    throw new Error(mapImportMessage(await getFunctionErrorMessage(error)));
   }
+
+  return (data ?? { ok: true, detected: 0, warning: null }) as ProcessPdfImportResult;
 }
 
 export async function updateImportDraft(draft: ImportedQuestionDraft): Promise<void> {
@@ -167,6 +175,35 @@ export function mapImportMessage(message: string): string {
   if (message.includes("FunctionsFetchError") || message.includes("process-pdf-import")) {
     return "Pemproses PDF belum aktif. Deploy Edge Function process-pdf-import dahulu.";
   }
+  if (message.includes("teks tidak dapat dibaca") || message.includes("scan/gambar")) {
+    return "PDF berjaya dimuat naik, tetapi teks tidak dapat dibaca. Gunakan PDF yang ada teks sebenar, atau aktifkan OCR/AI selepas beri kebenaran.";
+  }
+  if (message.includes("Tiada draft soalan") || message.includes("No questions were detected")) {
+    return "Tiada soalan berjaya dikesan. Cuba PDF yang lebih jelas atau pecahkan PDF mengikut bahagian.";
+  }
+  if (message.includes("PDF could not be downloaded")) {
+    return "PDF tidak dapat dibaca daripada storage. Cuba upload semula fail PDF tersebut.";
+  }
 
   return message;
+}
+
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  if (typeof error === "object" && error !== null && "context" in error) {
+    const response = (error as { context?: unknown }).context;
+    if (response instanceof Response) {
+      try {
+        const body = (await response.clone().json()) as { error?: string; message?: string };
+        return body.error || body.message || fallbackErrorMessage(error);
+      } catch {
+        return fallbackErrorMessage(error);
+      }
+    }
+  }
+
+  return fallbackErrorMessage(error);
+}
+
+function fallbackErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Pemproses PDF gagal.";
 }

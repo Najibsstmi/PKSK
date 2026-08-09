@@ -202,7 +202,7 @@ Workflow admin:
 1. Buka `/admin/questions`
 2. Klik `Import PDF`
 3. Upload PDF
-4. Klik `Process PDF`
+4. Klik `Ekstrak Soalan`
 5. Semak draft
 6. `Approve All High Confidence` atau pilih draft tertentu
 7. Klik `Import Approved Questions`
@@ -235,16 +235,18 @@ Function ini:
 - sahkan pengguna ialah `admin` atau `super_admin`
 - download PDF dari private Supabase Storage
 - update status import
-- simpan draft ke staging table
+- ekstrak teks PDF secara server-side tanpa menghantar PDF ke luar
+- cuba pecahkan teks kepada draft Bahagian A, B dan C
+- simpan draft ke staging table untuk disemak admin
 - tidak expose secret ke frontend
 
-Nota keselamatan: external AI extraction dimatikan dahulu. PDF tidak dihantar ke OpenAI atau provider luar sehingga pemilik projek memberi kebenaran jelas. Bila dibenarkan, sambungan provider dibuat di:
+Nota keselamatan: pemproses PDF semasa menggunakan parser teks tempatan. PDF tidak dihantar ke OpenAI atau provider luar. Jika PDF berbentuk scan/gambar, parser akan memaparkan mesej bahawa fail perlukan OCR atau AI extraction selepas pemilik projek memberi kebenaran jelas.
 
 ```text
 supabase/functions/process-pdf-import/questionExtraction.ts
 ```
 
-## AI Environment Variables
+## Edge Function Environment
 
 Untuk Edge Function:
 
@@ -252,11 +254,9 @@ Untuk Edge Function:
 SUPABASE_URL=...
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-OPENAI_API_KEY=...
-OPENAI_MODEL=...
 ```
 
-`OPENAI_API_KEY` jangan diletakkan dalam Vercel frontend dan jangan guna prefix `VITE_`.
+Jangan letakkan `SUPABASE_SERVICE_ROLE_KEY` dalam Vercel frontend dan jangan guna prefix `VITE_`.
 
 ## Deploy Edge Function
 
@@ -269,8 +269,7 @@ npx supabase functions deploy process-pdf-import
 Kemudian set secret server-side:
 
 ```bash
-npx supabase secrets set OPENAI_API_KEY=sk-...
-npx supabase secrets set OPENAI_MODEL=gpt-4.1-mini
+npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
 Jika PDF processor belum deploy, UI akan memaparkan mesej bahawa pemproses PDF belum aktif.

@@ -80,7 +80,7 @@ serve(async (request) => {
     }
 
     const pdfBytes = new Uint8Array(await fileBlob.arrayBuffer());
-    await markImport(serviceClient, importId, { processing_stage: "ai_classification" });
+    await markImport(serviceClient, importId, { processing_stage: "extracting_questions" });
 
     const extraction = await extractQuestionsFromPdf({
       pdfBytes,
