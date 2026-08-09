@@ -815,12 +815,8 @@ function App() {
     if (currentRoute === "/") {
       return (
         <LandingPage
-          isLoggedIn={isLoggedIn}
-          access={access}
           settings={appSettings}
-          onNavigate={navigate}
           onStartGuestPreview={handleStartGuestPreview}
-          onAuthMode={openAuth}
           onShowPaywall={openPaywall}
         />
       );
@@ -1022,7 +1018,6 @@ function TopBar({
     : [
         { to: "/preview", label: "Cuba Percuma" },
         { to: "/premium", label: "Premium" },
-        { to: "/login", label: "Log Masuk", tone: "secondary" },
       ];
 
   return (
@@ -1081,7 +1076,24 @@ function TopBar({
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          {isLoggedIn && !isPublicShell ? (
+          {isPublicShell ? (
+            isLoggedIn && access.canUsePremiumFeature() ? (
+              <button type="button" onClick={() => onNavigate("/app")} className="topbar-login-button">
+                <UserRound size={17} aria-hidden="true" />
+                Buka PKSK Academy
+              </button>
+            ) : isLoggedIn ? (
+              <button type="button" onClick={() => onNavigate("/premium")} className="topbar-login-button">
+                <Crown size={17} aria-hidden="true" />
+                Dapatkan Premium
+              </button>
+            ) : (
+              <button type="button" onClick={() => onNavigate("/login")} className="topbar-login-button">
+                <UserRound size={17} aria-hidden="true" />
+                Log Masuk
+              </button>
+            )
+          ) : isLoggedIn ? (
             <>
               <button
                 type="button"
@@ -1525,83 +1537,101 @@ function AuthPage({
 }
 
 function LandingPage({
-  isLoggedIn,
-  access,
   settings,
-  onNavigate,
   onStartGuestPreview,
-  onAuthMode,
   onShowPaywall,
 }: {
-  isLoggedIn: boolean;
-  access: ReturnType<typeof useAccess>;
   settings: AppSettings;
-  onNavigate: (route: AppRoute) => void;
   onStartGuestPreview: (section: "A" | "B") => void;
-  onAuthMode: (mode: AuthMode) => void;
   onShowPaywall: () => void;
 }) {
+  const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
+    { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Latihan seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
+    { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
+    { icon: Target, title: "Analisis Prestasi", text: "Jejak kelemahan dan kekuatan murid.", tone: "bg-leaf-50 text-leaf-600" },
+    { icon: Trophy, title: "Lencana & XP", text: "Kumpul XP dan buka pencapaian.", tone: "bg-sun-100 text-amber-700" },
+    { icon: ClipboardList, title: "Latihan Berstruktur", text: "Fokus Bahagian A, B dan C.", tone: "bg-sky-50 text-sky-700" },
+    { icon: PenLine, title: "Studio Penulisan", text: "Editor moden untuk latihan karangan.", tone: "bg-coral-50 text-coral-600" },
+  ];
+  const confidencePoints: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
+    { icon: Target, title: "Fokus pada kelemahan", text: "Kenal pasti bahagian yang perlu dilatih semula.", tone: "bg-ocean-50 text-ocean-700" },
+    { icon: Clock3, title: "Jimat masa & tenaga", text: "Latihan lengkap dalam platform yang mudah digunakan.", tone: "bg-sun-100 text-amber-700" },
+    { icon: ShieldCheck, title: "Selamat & terjamin", text: "Platform latihan yang tersusun untuk murid sekolah rendah.", tone: "bg-blue-50 text-blue-700" },
+    { icon: HeartHandshake, title: "Untuk ibu bapa & anak", text: "Dirancang supaya perkembangan anak mudah dipantau.", tone: "bg-violet-50 text-violet-700" },
+  ];
+
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
-        <div className="grid lg:min-h-[520px] lg:grid-cols-[1.02fr_0.98fr]">
-          <div className="relative min-h-[260px] lg:min-h-[520px]">
-            <img src="/assets/pksk-hero.png" alt="Murid Tahun 6 berlatih secara tersusun" className="h-full w-full object-cover object-left" />
+      <section className="landing-hero">
+        <div className="landing-hero-copy">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-ocean-100 bg-white/80 px-3 py-2 text-xs font-black uppercase text-ocean-700 shadow-sm">
+            <GraduationCap size={15} aria-hidden="true" />
+            Simulasi PKSK sebenar
           </div>
-          <div className="flex min-w-0 flex-col justify-center gap-6 p-6 sm:p-8 lg:p-12">
-            <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
-              <GraduationCap size={17} aria-hidden="true" />
-              PKSK Academy oleh CikguSTEM
-            </div>
-            <div className="max-w-2xl space-y-4">
-              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Persediaan PKSK yang lebih yakin dan tersusun.</h1>
-              <p className="text-base leading-7 text-slate-600 sm:text-lg">
-                Berlatih melalui simulasi, soalan rawak dan rekod pencapaian dalam platform yang sesuai untuk calon Tahun 6 dan ibu bapa.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
-                <span className="hero-popular-badge">Paling Popular</span>
-                <Crown size={18} aria-hidden="true" />
-                Dapatkan Premium
-              </button>
-              <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
-                <Play size={16} fill="currentColor" aria-hidden="true" />
-                Cuba 10 Soalan Percuma
-              </button>
-              <button
-                type="button"
-                className="hero-login-link"
-                onClick={() => (isLoggedIn && access.canUsePremiumFeature() ? onNavigate("/app") : onAuthMode("login"))}
-              >
-                <UserRound size={15} aria-hidden="true" />
-                {isLoggedIn && access.canUsePremiumFeature() ? "Buka PKSK Academy" : "Log Masuk"}
-              </button>
-            </div>
+          <div className="max-w-2xl space-y-4">
+            <h1 className="text-4xl font-black leading-[1.03] text-slate-950 sm:text-5xl lg:text-6xl">
+              Persediaan PKSK bermula di sini.
+            </h1>
+            <p className="max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
+              Simulasi sebenar, soalan rawak, analisis prestasi dan latihan berstruktur untuk bantu anak anda lebih yakin dan bersedia.
+            </p>
           </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
+              <span className="hero-popular-badge">Paling Popular</span>
+              <Crown size={18} aria-hidden="true" />
+              Dapatkan Premium
+            </button>
+            <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
+              <Play size={16} fill="currentColor" aria-hidden="true" />
+              Cuba 10 Soalan Percuma
+            </button>
+          </div>
+          <div className="landing-trust-line">
+            <Users size={17} aria-hidden="true" />
+            <span>Direka untuk calon Tahun 6, ibu bapa dan guru yang mahu latihan lebih tersusun.</span>
+          </div>
+        </div>
+
+        <div className="landing-hero-visual" aria-label="Paparan prestasi dan XP PKSK Academy">
+          <img src="/assets/pksk-academy-hero-dashboard.png" alt="Murid PKSK Academy dengan paparan prestasi, XP dan graf kemajuan" className="landing-hero-image" />
+        </div>
+      </section>
+
+      <section className="landing-feature-strip" aria-label="Ciri utama PKSK Academy">
+        {featureHighlights.map((item) => (
+          <article key={item.title} className="landing-feature-card">
+            <span className={`landing-feature-icon ${item.tone}`}>
+              <item.icon size={27} aria-hidden="true" />
+            </span>
+            <h2>{item.title}</h2>
+            <p>{item.text}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="landing-confidence-panel">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Semua yang anda perlukan untuk berjaya dalam PKSK</h2>
+          <div className="mx-auto mt-3 h-1 w-16 rounded-full bg-ocean-500" />
+        </div>
+        <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {confidencePoints.map((item) => (
+            <article key={item.title} className="landing-confidence-item">
+              <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${item.tone}`}>
+                <item.icon size={23} aria-hidden="true" />
+              </span>
+              <div>
+                <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{item.text}</p>
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 
       <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
-
-      <section className="grid gap-5 md:grid-cols-3">
-        <FeatureCard icon={ShieldCheck} title="Simulasi Berstruktur" text="Latihan penuh dan latihan mengikut bahagian membantu murid membiasakan diri dengan format PKSK." />
-        <FeatureCard icon={Zap} title="Soalan Rawak" text="Setiap cubaan menyusun soalan dan pilihan jawapan supaya ulang kaji tidak terasa sama." />
-        <FeatureCard icon={Award} title="Rekod Kemajuan" text="Premium menyimpan sejarah, prestasi, XP, level dan lencana pencapaian murid." />
-      </section>
     </div>
-  );
-}
-
-function FeatureCard({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
-  return (
-    <article className="rounded-2xl bg-white p-6 shadow-soft">
-      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
-        <Icon size={23} aria-hidden="true" />
-      </span>
-      <h2 className="mt-5 text-xl font-black text-slate-950">{title}</h2>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
-    </article>
   );
 }
 
