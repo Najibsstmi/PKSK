@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ms">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0891b2" />
+    <title>PKSK Academy</title>
+    <script>
+      (function () {
+        var target = window.location.pathname + window.location.search + window.location.hash;
+        if (target && target !== "/") {
+          window.sessionStorage.setItem("pksk-spa-redirect", target);
+        }
+        window.location.replace("/");
+      })();
+    </script>
+  </head>
+  <body>
+    <p>PKSK Academy sedang dibuka semula...</p>
+  </body>
+</html>

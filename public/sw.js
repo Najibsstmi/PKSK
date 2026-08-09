@@ -1,6 +1,7 @@
-const CACHE_NAME = "pksk-academy-shell-v1";
+const CACHE_NAME = "pksk-academy-shell-v2";
 const APP_SHELL = [
   "/",
+  "/index.html",
   "/manifest.webmanifest",
   "/android-chrome-192x192.png",
   "/android-chrome-512x512.png",
@@ -31,6 +32,20 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request).catch(() => caches.match("/")));
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            return response;
+          }
+
+          if (response.status === 404) {
+            return caches.match("/index.html").then((cachedShell) => cachedShell || caches.match("/") || response);
+          }
+
+          return response;
+        })
+        .catch(() => caches.match("/index.html").then((cachedShell) => cachedShell || caches.match("/"))),
+    );
   }
 });

@@ -97,7 +97,6 @@ type AppRoute =
   | "/checkout"
   | "/app"
   | "/app/simulasi"
-  | "/app/latihan"
   | "/app/quiz"
   | "/app/essay"
   | "/app/profile"
@@ -121,7 +120,6 @@ type BeforeInstallPromptEvent = Event & {
 const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
   { to: "/app/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
-  { to: "/app/latihan", label: "Latihan", icon: Brain, authOnly: true, premiumOnly: true },
   { to: "/app/pencapaian", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
   { to: "/app/sejarah", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
@@ -135,7 +133,6 @@ const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "
 const premiumRoutes = new Set<AppRoute>([
   "/app",
   "/app/simulasi",
-  "/app/latihan",
   "/app/quiz",
   "/app/essay",
   "/app/profile",
@@ -164,7 +161,8 @@ const validRoutes = new Set<AppRoute>(
 );
 const legacyRouteMap: Record<string, AppRoute> = {
   "/simulasi": "/app/simulasi",
-  "/latihan": "/app/latihan",
+  "/latihan": "/app/simulasi",
+  "/app/latihan": "/app/simulasi",
   "/quiz": "/app/quiz",
   "/essay": "/app/essay",
   "/profile": "/app/profile",
@@ -178,6 +176,7 @@ const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
 const appLogoPath = "/assets/pksk-academy-logo.png";
 const appLogoMarkPath = "/assets/pksk-academy-mark.png";
 const rememberedEmailKey = "pksk-remembered-email";
+const spaRedirectStorageKey = "pksk-spa-redirect";
 const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 5,
   free_preview_section_b_limit: 5,
@@ -426,7 +425,7 @@ function App() {
 
   async function handleAuth(email: string, password: string, displayName: string, rememberMe = false) {
     if (!supabase) {
-      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
+      setMessage("Sistem simulasi belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
@@ -497,7 +496,7 @@ function App() {
 
   async function handlePasswordResetRequest(email: string) {
     if (!supabase) {
-      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
+      setMessage("Sistem simulasi belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
@@ -527,7 +526,7 @@ function App() {
 
   async function handlePasswordUpdate(password: string) {
     if (!supabase) {
-      setMessage("Sistem latihan belum bersedia. Sila cuba semula selepas tetapan selesai.");
+      setMessage("Sistem simulasi belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
@@ -571,7 +570,7 @@ function App() {
   async function handleStartQuiz(mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) {
     if (!isLoggedIn) {
       openAuth("login");
-      setMessage("Sila log masuk untuk membuka latihan premium.");
+      setMessage("Sila log masuk untuk membuka simulasi premium.");
       return;
     }
 
@@ -695,33 +694,43 @@ function App() {
     setMessage(null);
     try {
       await submitAnswer(activePayload.attempt.id, questionId, optionId);
-      setActivePayload({
-        ...activePayload,
-        questions: activePayload.questions.map((question) =>
-          question.id === questionId ? { ...question, selected_option_id: optionId, answer_status: "answered" } : question,
-        ),
-      });
+      setActivePayload((currentPayload) =>
+        currentPayload
+          ? {
+              ...currentPayload,
+              questions: currentPayload.questions.map((question) =>
+                question.id === questionId ? { ...question, selected_option_id: optionId, answer_status: "answered" } : question,
+              ),
+            }
+          : currentPayload,
+      );
     } catch (error) {
       setMessage(toMessage(error));
     }
   }
 
-  async function handleSkipAnswer(questionId: string) {
+  async function handleSkipAnswer(questionId: string): Promise<boolean> {
     if (!activePayload) {
-      return;
+      return false;
     }
 
     setMessage(null);
     try {
       await skipAnswer(activePayload.attempt.id, questionId);
-      setActivePayload({
-        ...activePayload,
-        questions: activePayload.questions.map((question) =>
-          question.id === questionId ? { ...question, selected_option_id: null, answer_status: "skipped" } : question,
-        ),
-      });
+      setActivePayload((currentPayload) =>
+        currentPayload
+          ? {
+              ...currentPayload,
+              questions: currentPayload.questions.map((question) =>
+                question.id === questionId ? { ...question, selected_option_id: null, answer_status: "skipped" } : question,
+              ),
+            }
+          : currentPayload,
+      );
+      return true;
     } catch (error) {
       setMessage(toMessage(error));
+      return false;
     }
   }
 
@@ -746,19 +755,6 @@ function App() {
   }
 
   async function handleStartGuestPreview(section: "A" | "B") {
-    const sectionACompleted = window.localStorage.getItem("pksk-guest-preview-completed-A") === "true";
-    const sectionBCompleted = window.localStorage.getItem("pksk-guest-preview-completed-B") === "true";
-
-    if (section === "A" && sectionACompleted && !sectionBCompleted) {
-      await handleStartGuestPreview("B");
-      return;
-    }
-
-    if ((section === "A" && sectionACompleted && sectionBCompleted) || (section === "B" && sectionBCompleted)) {
-      openPaywall();
-      return;
-    }
-
     const limit = section === "A" ? appSettings.free_preview_section_a_limit : appSettings.free_preview_section_b_limit;
     setBusy(true);
     setMessage(null);
@@ -798,7 +794,6 @@ function App() {
         .filter((answer) => Boolean(answer.selected_option_id));
       const previewResult = await scoreGuestPreview(answers);
       setGuestResult(previewResult);
-      window.localStorage.setItem(`pksk-guest-preview-completed-${guestPayload.section}`, "true");
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
@@ -939,7 +934,7 @@ function App() {
         />
       );
     }
-    if (currentRoute === "/app/simulasi" || currentRoute === "/app/latihan") {
+    if (currentRoute === "/app/simulasi") {
       return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onStartEssay={handleStartEssay} onNavigate={navigate} />;
     }
     if (currentRoute === "/app/quiz") {
@@ -1391,7 +1386,7 @@ function AuthPanel({
         <div>
           <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
           <p className="text-sm leading-6 text-slate-500">
-            {mode === "login" ? "Sambung latihan tanpa perlu isi e-mel berulang kali." : "Cipta akaun untuk simpan rekod latihan sendiri."}
+            {mode === "login" ? "Sambung simulasi tanpa perlu isi e-mel berulang kali." : "Cipta akaun untuk simpan rekod simulasi sendiri."}
           </p>
         </div>
         <button
@@ -1568,17 +1563,17 @@ function LandingPage({
   onShowPaywall: () => void;
 }) {
   const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
-    { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Latihan seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
+    { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Simulasi seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
     { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
     { icon: Target, title: "Analisis Prestasi", text: "Jejak kelemahan dan kekuatan murid.", tone: "bg-leaf-50 text-leaf-600" },
     { icon: Trophy, title: "Lencana & XP", text: "Kumpul XP dan buka pencapaian.", tone: "bg-sun-100 text-amber-700" },
-    { icon: ClipboardList, title: "Latihan Berstruktur", text: "Fokus Bahagian A, B dan C.", tone: "bg-sky-50 text-sky-700" },
-    { icon: PenLine, title: "Studio Penulisan", text: "Editor moden untuk latihan karangan.", tone: "bg-coral-50 text-coral-600" },
+    { icon: ClipboardList, title: "Persediaan Berstruktur", text: "Fokus Bahagian A, B dan C.", tone: "bg-sky-50 text-sky-700" },
+    { icon: PenLine, title: "Studio Penulisan", text: "Editor moden untuk karangan Bahagian C.", tone: "bg-coral-50 text-coral-600" },
   ];
   const confidencePoints: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
     { icon: Target, title: "Fokus pada kelemahan", text: "Kenal pasti bahagian yang perlu dilatih semula.", tone: "bg-ocean-50 text-ocean-700" },
-    { icon: Clock3, title: "Jimat masa & tenaga", text: "Latihan lengkap dalam platform yang mudah digunakan.", tone: "bg-sun-100 text-amber-700" },
-    { icon: ShieldCheck, title: "Selamat & terjamin", text: "Platform latihan yang tersusun untuk murid sekolah rendah.", tone: "bg-blue-50 text-blue-700" },
+    { icon: Clock3, title: "Jimat masa & tenaga", text: "Persediaan lengkap dalam platform yang mudah digunakan.", tone: "bg-sun-100 text-amber-700" },
+    { icon: ShieldCheck, title: "Selamat & terjamin", text: "Platform persediaan yang tersusun untuk murid sekolah rendah.", tone: "bg-blue-50 text-blue-700" },
     { icon: HeartHandshake, title: "Untuk ibu bapa & anak", text: "Dirancang supaya perkembangan anak mudah dipantau.", tone: "bg-violet-50 text-violet-700" },
   ];
 
@@ -1595,7 +1590,7 @@ function LandingPage({
               Persediaan PKSK bermula di sini.
             </h1>
             <p className="max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-              Simulasi sebenar, soalan rawak, analisis prestasi dan latihan berstruktur untuk bantu anak anda lebih yakin dan bersedia.
+              Simulasi sebenar, soalan rawak, analisis prestasi dan persediaan berstruktur untuk bantu anak anda lebih yakin dan bersedia.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -1611,7 +1606,7 @@ function LandingPage({
           </div>
           <div className="landing-trust-line">
             <Users size={17} aria-hidden="true" />
-            <span>Direka untuk calon Tahun 6, ibu bapa dan guru yang mahu latihan lebih tersusun.</span>
+            <span>Direka untuk calon Tahun 6, ibu bapa dan guru yang mahu persediaan lebih tersusun.</span>
           </div>
         </div>
 
@@ -1740,7 +1735,7 @@ function Dashboard({
           <div className="order-2 flex min-w-0 flex-col justify-center gap-6 p-6 sm:p-8 lg:p-10">
             <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-sun-100 px-3 py-2 text-sm font-bold text-amber-700">
               <Sparkles size={17} aria-hidden="true" />
-              Latihan rawak setiap kali mula
+              Simulasi rawak setiap kali mula
             </div>
             <div className="max-w-[330px] space-y-4 sm:max-w-xl">
               <h1 className="break-words text-3xl font-black leading-tight text-slate-950 sm:text-5xl">
@@ -1748,7 +1743,7 @@ function Dashboard({
               </h1>
               <p className="break-words text-base leading-7 text-slate-600 sm:text-lg">
                 {isLoggedIn
-                  ? "Jalankan simulasi, latihan rawak, Studio Penulisan Bahagian C dan rekod pencapaian dalam satu tempat."
+                  ? "Jalankan simulasi rawak, Studio Penulisan Bahagian C dan rekod pencapaian dalam satu tempat."
                   : "Terus cuba soalan contoh tanpa daftar akaun. Akses penuh boleh dibuka apabila bersedia."}
               </p>
             </div>
@@ -1769,7 +1764,7 @@ function Dashboard({
               {isLoggedIn ? (
                 <>
                   <button type="button" onClick={() => (access.isPremium ? onNavigate(profileReady ? "/app/simulasi" : "/app/profile") : onShowPaywall())} className="primary-button">
-                    {access.isPremium ? (profileReady ? "Mula Latihan" : "Lengkapkan Profil") : "Buka Akses Premium"}
+                    {access.isPremium ? (profileReady ? "Mula Simulasi" : "Lengkapkan Profil") : "Buka Akses Premium"}
                     <ChevronRight size={18} aria-hidden="true" />
                   </button>
                   {activePayload ? (
@@ -1815,10 +1810,10 @@ function Dashboard({
 
           <section className="grid gap-5 lg:grid-cols-3">
             <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan, kemudian Bahagian C." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 100)} />
-            <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/app/latihan")} />
+            <ModeCard title="Pilih Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/app/simulasi")} />
             <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
             <ModeCard title="Studio Penulisan" text="Bahagian C dengan editor, timer dan autosave." icon={PenLine} onClick={onStartEssay} />
-            <ModeCard title="Pencapaian" text="Semak analisis prestasi dan perkembangan latihan." icon={Award} onClick={() => onNavigate("/app/pencapaian")} />
+            <ModeCard title="Pencapaian" text="Semak analisis prestasi dan perkembangan simulasi." icon={Award} onClick={() => onNavigate("/app/pencapaian")} />
             <ModeCard title="Lencana" text="Lihat lencana yang sudah dibuka dan sasaran seterusnya." icon={Trophy} onClick={() => onNavigate("/app/lencana")} />
           </section>
         </>
@@ -1848,7 +1843,7 @@ function FreePreviewSection({
           Jawab {settings.free_preview_section_a_limit} soalan Bahagian A dan {settings.free_preview_section_b_limit} soalan Bahagian B sebelum melihat pilihan Premium.
         </p>
         <button type="button" className="primary-button mt-5 w-full" onClick={() => onStartGuestPreview("A")}>
-          Mula Preview
+          Mula 10 Soalan Percuma
         </button>
       </article>
       <article className="rounded-2xl bg-white p-6 shadow-soft">
@@ -1856,7 +1851,7 @@ function FreePreviewSection({
           <Crown size={23} aria-hidden="true" />
         </span>
         <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
-        <h2 className="mt-2 text-2xl font-black text-slate-950">Latihan Tanpa Had</h2>
+        <h2 className="mt-2 text-2xl font-black text-slate-950">Simulasi Tanpa Had</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
           Nikmati simulasi tanpa had, bank soalan penuh, rekod prestasi, sejarah cubaan, XP, level dan lencana.
         </p>
@@ -1871,7 +1866,7 @@ function FreePreviewSection({
 function InlinePaywall({ access, onShowPaywall }: { access: ReturnType<typeof useAccess>; onShowPaywall: () => void }) {
   const title = access.isBlocked ? "Akaun memerlukan semakan" : access.isExpired ? "Akses premium telah tamat" : "Akses penuh belum aktif";
   const text = access.isBlocked
-    ? "Sila hubungi pentadbir untuk membuka semula akses latihan."
+    ? "Sila hubungi pentadbir untuk membuka semula akses simulasi."
     : "Buka akses premium untuk menggunakan bank soalan penuh, sejarah cubaan dan analisis prestasi.";
 
   return (
@@ -1918,11 +1913,11 @@ function GuestPreviewPage({
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
           <Sparkles size={26} aria-hidden="true" />
         </div>
-        <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba soalan contoh Bahagian A dan Bahagian B tanpa daftar akaun.</p>
+          <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba 5 soalan Bahagian A dahulu, kemudian sambung 5 soalan Bahagian B. Tidak perlu daftar akaun.</p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-            Mula Preview
+            Mula 10 Soalan Percuma
           </button>
           <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
             Kembali
@@ -1984,6 +1979,9 @@ function GuestPreviewPage({
                 <button type="button" className="primary-button" onClick={onShowPaywall}>
                   Daftar & Dapatkan Premium
                 </button>
+                <button type="button" className="secondary-button" onClick={() => onStartGuestPreview("A")}>
+                  Cuba Semula Preview
+                </button>
                 <button type="button" className="secondary-button" onClick={() => onAuthMode("login")}>
                   Sudah ada akaun? Log Masuk
                 </button>
@@ -2029,7 +2027,7 @@ function PaywallPage({
       ? "Akses premium telah tamat."
       : isLoggedIn
         ? "Akaun anda belum mempunyai akses premium."
-        : "Naik taraf ke Premium untuk membuka akses penuh. Sudah mempunyai akaun Premium? Log masuk untuk meneruskan latihan.";
+        : "Naik taraf ke Premium untuk membuka akses penuh. Sudah mempunyai akaun Premium? Log masuk untuk meneruskan simulasi.";
 
   return (
     <div className="space-y-8">
@@ -2044,7 +2042,7 @@ function PaywallPage({
               Premium PKSK Academy
             </div>
             <div>
-              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Latihan PKSK yang lebih lengkap, tersusun dan boleh dipantau.</h1>
+              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Persediaan PKSK yang lebih lengkap, tersusun dan boleh dipantau.</h1>
               <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -2064,9 +2062,9 @@ function PaywallPage({
       <section className="grid gap-5 lg:grid-cols-[0.6fr_1.4fr]">
         <article className="rounded-2xl bg-white p-6 shadow-soft">
           <p className="text-sm font-black uppercase text-ocean-700">Apa itu PKSK Academy?</p>
-          <h2 className="mt-2 text-2xl font-black text-slate-950">Platform latihan PKSK oleh CikguSTEM</h2>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Platform persediaan PKSK oleh CikguSTEM</h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            PKSK Academy membantu calon Tahun 6 membuat latihan secara lebih konsisten melalui simulasi, latihan mengikut bahagian dan rekod perkembangan.
+            PKSK Academy membantu calon Tahun 6 membuat persediaan secara lebih konsisten melalui simulasi penuh, pilihan mengikut bahagian dan rekod perkembangan.
           </p>
         </article>
         <article className="overflow-hidden rounded-2xl bg-white shadow-soft">
@@ -2222,7 +2220,7 @@ function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: App
   }, [onMessage]);
 
   return (
-    <AdminShell title="Admin Dashboard" text="Pantau pengguna, akses premium dan aktiviti latihan.">
+    <AdminShell title="Admin Dashboard" text="Pantau pengguna, akses premium dan aktiviti simulasi.">
       <section className="grid gap-4 md:grid-cols-4">
         <StatCard icon={Users} label="Registered Users" value={`${kpis?.total_registered_users ?? 0}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard icon={Crown} label="Premium Users" value={`${kpis?.premium_users ?? 0}`} tone="bg-sun-50 text-amber-700" />
@@ -3296,11 +3294,11 @@ function ModePage({
   onNavigate: (route: AppRoute) => void;
 }) {
   if (!isLoggedIn) {
-    return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan mata latihan." onNavigate={onNavigate} />;
+    return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan mata simulasi." onNavigate={onNavigate} />;
   }
   return (
     <div className="space-y-6">
-      <PageHeader icon={Target} title="Pilih Latihan" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
+      <PageHeader icon={Target} title="Pilih Simulasi" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
       <div className="grid gap-5 lg:grid-cols-3">
         <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan dalam 90 minit, kemudian Bahagian C." icon={ShieldCheck} disabled={busy} onClick={() => onStartQuiz("full", null, 100)} />
         <ModeCard title="Bahagian A" text="30 soalan Kecerdasan Insaniah. Skor rasmi 20%." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 30)} />
@@ -3497,18 +3495,20 @@ function QuizPage({
   result: CompleteAttemptResult | null;
   busy: boolean;
   onAnswer: (questionId: string, optionId: string) => void;
-  onSkip: (questionId: string) => void;
+  onSkip: (questionId: string) => Promise<boolean>;
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [skippingQuestionId, setSkippingQuestionId] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(() => objectiveRemainingSeconds(payload));
   const objectiveAttemptId = payload?.attempt.id ?? null;
   const objectiveStartedAt = payload?.attempt.started_at ?? null;
 
   useEffect(() => {
     setIndex(0);
+    setSkippingQuestionId(null);
     setRemainingSeconds(objectiveStartedAt ? objectiveRemainingSecondsFromStart(objectiveStartedAt) : 0);
   }, [objectiveAttemptId, objectiveStartedAt]);
 
@@ -3567,6 +3567,22 @@ function QuizPage({
     onComplete();
   }
 
+  async function handleSkipCurrent() {
+    if (!current || skippingQuestionId) {
+      return;
+    }
+
+    setSkippingQuestionId(current.id);
+    const skipped = await onSkip(current.id);
+    setSkippingQuestionId(null);
+
+    if (!skipped) {
+      return;
+    }
+
+    setIndex(getNextIndexAfterSkip(orderedQuestions, index, current.id));
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[0.72fr_0.28fr]">
       <section className="rounded-2xl bg-white p-6 shadow-soft">
@@ -3607,8 +3623,13 @@ function QuizPage({
             <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
               Sebelum
             </button>
-            <button type="button" className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50" disabled={busy} onClick={() => onSkip(current.id)}>
-              Skip Soalan Ini
+            <button
+              type="button"
+              className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50"
+              disabled={busy || Boolean(skippingQuestionId)}
+              onClick={handleSkipCurrent}
+            >
+              {skippingQuestionId === current.id ? "Menyimpan Skip..." : "Skip Soalan Ini"}
             </button>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
@@ -3643,7 +3664,7 @@ function QuizPage({
         </div>
         <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-slate-600">
           <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sun-100 ring-1 ring-amber-300" /> Dijawab</span>
-          <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-50 ring-1 ring-coral-200" /> Skip</span>
+          <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-100 ring-1 ring-coral-500" /> Skip</span>
           <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100" /> Belum</span>
         </div>
         <div className="mt-5 space-y-5">
@@ -3713,6 +3734,33 @@ function getQuestionStatus(question: QuizQuestion): "unanswered" | "answered" | 
   return question.selected_option_id ? "answered" : "unanswered";
 }
 
+function getQuestionStatusAfterSkip(question: QuizQuestion, skippedQuestionId: string): "unanswered" | "answered" | "skipped" {
+  if (question.id === skippedQuestionId) {
+    return "skipped";
+  }
+  return getQuestionStatus(question);
+}
+
+function getNextIndexAfterSkip(questions: QuizQuestion[], currentIndex: number, skippedQuestionId: string): number {
+  const hasUnfinishedSectionA = questions.some((question) => question.section === "A" && getQuestionStatusAfterSkip(question, skippedQuestionId) === "unanswered");
+  const canOpenQuestion = (question: QuizQuestion) => question.section !== "B" || !hasUnfinishedSectionA;
+
+  for (let nextIndex = currentIndex + 1; nextIndex < questions.length; nextIndex += 1) {
+    if (canOpenQuestion(questions[nextIndex])) {
+      return nextIndex;
+    }
+  }
+
+  const nextUnansweredIndex = questions.findIndex(
+    (question, questionIndex) =>
+      questionIndex !== currentIndex &&
+      canOpenQuestion(question) &&
+      getQuestionStatusAfterSkip(question, skippedQuestionId) === "unanswered",
+  );
+
+  return nextUnansweredIndex >= 0 ? nextUnansweredIndex : currentIndex;
+}
+
 function questionStatusClass(status: "unanswered" | "answered" | "skipped", active: boolean, locked: boolean): string {
   if (locked) {
     return "cursor-not-allowed bg-slate-50 text-slate-300";
@@ -3723,7 +3771,7 @@ function questionStatusClass(status: "unanswered" | "answered" | "skipped", acti
     return `${base}bg-sun-100 text-amber-800`;
   }
   if (status === "skipped") {
-    return `${base}bg-coral-50 text-coral-600 ring-1 ring-coral-200`;
+    return `${base}bg-coral-100 text-coral-600 ring-2 ring-coral-500`;
   }
   return `${base}bg-slate-100 text-slate-500 hover:bg-ocean-50 hover:text-ocean-700`;
 }
@@ -3800,7 +3848,7 @@ function ProfilePage({
   return (
     <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
       <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <PageHeader icon={UserRound} title="Profil Calon" text="Lengkapkan maklumat ringkas supaya kemajuan latihan lebih tersusun." compact />
+        <PageHeader icon={UserRound} title="Profil Calon" text="Lengkapkan maklumat ringkas supaya kemajuan simulasi lebih tersusun." compact />
         <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
           <Label text="Nama penuh">
             <input className="field" value={fullName} onChange={(event) => setFullName(event.target.value)} required />
@@ -3872,12 +3920,12 @@ function PerformancePage({
   onNavigate: (route: AppRoute) => void;
 }) {
   if (!isLoggedIn) {
-    return <LockedState title="Prestasi peribadi dikunci" text="Log masuk untuk melihat sejarah markah dan mata latihan." onNavigate={onNavigate} />;
+    return <LockedState title="Prestasi peribadi dikunci" text="Log masuk untuk melihat sejarah markah dan mata simulasi." onNavigate={onNavigate} />;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Award} title="Prestasi Saya" text="Lihat perkembangan latihan, markah terbaik dan lencana yang telah dibuka." />
+      <PageHeader icon={Award} title="Prestasi Saya" text="Lihat perkembangan simulasi, markah terbaik dan lencana yang telah dibuka." />
       <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <StatCard icon={ClipboardList} label="Simulasi" value={`${stats.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard icon={Star} label="Terbaik" value={`${stats.bestScore}%`} tone="bg-sun-50 text-amber-700" />
@@ -3920,7 +3968,7 @@ function HistoryPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={History} title="Sejarah Cubaan" text="Semak semula rekod latihan yang telah selesai." />
+      <PageHeader icon={History} title="Sejarah Cubaan" text="Semak semula rekod simulasi yang telah selesai." />
       <section className="grid gap-4">
         {attempts.map((attempt, index) => (
           <article key={attempt.id} className="rounded-2xl bg-white p-5 shadow-soft">
@@ -3937,7 +3985,7 @@ function HistoryPage({
             </div>
           </article>
         ))}
-        {attempts.length === 0 ? <EmptyState title="Belum ada sejarah" text="Mulakan latihan pertama untuk melihat rekod di sini." onNavigate={onNavigate} /> : null}
+        {attempts.length === 0 ? <EmptyState title="Belum ada sejarah" text="Mulakan simulasi pertama untuk melihat rekod di sini." onNavigate={onNavigate} /> : null}
       </section>
     </div>
   );
@@ -3958,7 +4006,7 @@ function AchievementsPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Trophy} title="Lencana" text="Kumpul lencana apabila berjaya mencapai sasaran latihan." />
+      <PageHeader icon={Trophy} title="Lencana" text="Kumpul lencana apabila berjaya mencapai sasaran simulasi." />
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {badges.map((badge) => {
           const Icon = iconForBadge(badge.icon);
@@ -3998,7 +4046,7 @@ function AchievementsPage({
 function GuidePage() {
   return (
     <div className="space-y-6">
-      <PageHeader icon={BookOpen} title="Panduan" text="Kenali bahagian utama PKSK dan pilih latihan yang sesuai." />
+      <PageHeader icon={BookOpen} title="Panduan" text="Kenali bahagian utama PKSK dan pilih simulasi yang sesuai." />
       <section className="grid gap-5 lg:grid-cols-3">
         {pkskSections.map((section) => (
           <article key={section.title} className="rounded-2xl bg-white p-6 shadow-soft">
@@ -4018,8 +4066,8 @@ function GuidePage() {
       <section className="rounded-2xl bg-white p-6 shadow-soft">
         <h2 className="text-xl font-black">Cara Guna Simulator</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <StepCard number="1" title="Lengkapkan profil" text="Masukkan nama, sekolah dan kelas supaya rekod latihan tersimpan dengan kemas." />
-          <StepCard number="2" title="Pilih latihan" text="Cuba simulasi penuh, ulang kaji mengikut bahagian atau cabaran pantas harian." />
+          <StepCard number="1" title="Lengkapkan profil" text="Masukkan nama, sekolah dan kelas supaya rekod simulasi tersimpan dengan kemas." />
+          <StepCard number="2" title="Pilih simulasi" text="Cuba simulasi penuh, ulang kaji mengikut bahagian atau cabaran pantas harian." />
           <StepCard number="3" title="Lihat kemajuan" text="Semak markah, sejarah cubaan dan lencana untuk tahu bahagian yang perlu dikuatkan." />
         </div>
       </section>
@@ -4035,7 +4083,7 @@ function SetupNotice() {
           <LockKeyhole size={23} aria-hidden="true" />
         </span>
         <div>
-          <h1 className="text-2xl font-black">Sistem latihan belum bersedia</h1>
+          <h1 className="text-2xl font-black">Sistem simulasi belum bersedia</h1>
           <p className="mt-2 leading-7 text-slate-700">Bank soalan sedang disambungkan. Sila cuba semula sebentar lagi atau maklumkan kepada pentadbir.</p>
         </div>
       </div>
@@ -4068,7 +4116,7 @@ function EmptyState({ title, text, onNavigate }: { title: string; text: string; 
       <h1 className="text-2xl font-black">{title}</h1>
       <p className="mx-auto mt-2 max-w-xl text-slate-600">{text}</p>
       <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/app/simulasi")}>
-        Mula Latihan
+        Mula Simulasi
       </button>
     </section>
   );
@@ -4348,15 +4396,44 @@ function isRecoveryLink(): boolean {
   return window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
 }
 
-function getCurrentRoute(): AppRoute {
-  const rawPath = window.location.pathname.replace(/\/$/, "") || "/";
+function resolveAppRoute(pathname: string): AppRoute | null {
+  const rawPath = pathname.replace(/\/$/, "") || "/";
   const legacyTarget = legacyRouteMap[rawPath];
   if (legacyTarget) {
-    window.history.replaceState({}, "", legacyTarget);
     return legacyTarget;
   }
+
   const path = rawPath as AppRoute;
-  return validRoutes.has(path) ? path : "/";
+  return validRoutes.has(path) ? path : null;
+}
+
+function getCurrentRoute(): AppRoute {
+  const rawPath = window.location.pathname.replace(/\/$/, "") || "/";
+  const savedRedirect = window.sessionStorage.getItem(spaRedirectStorageKey);
+
+  if (savedRedirect) {
+    window.sessionStorage.removeItem(spaRedirectStorageKey);
+    try {
+      const redirectUrl = new URL(savedRedirect, window.location.origin);
+      const redirectRoute = redirectUrl.origin === window.location.origin ? resolveAppRoute(redirectUrl.pathname) : null;
+      if (redirectRoute) {
+        window.history.replaceState({}, "", `${redirectRoute}${redirectUrl.search}${redirectUrl.hash}`);
+        return redirectRoute;
+      }
+    } catch {
+      window.sessionStorage.removeItem(spaRedirectStorageKey);
+    }
+  }
+
+  const currentRoute = resolveAppRoute(rawPath);
+  if (currentRoute) {
+    if (currentRoute !== rawPath) {
+      window.history.replaceState({}, "", `${currentRoute}${window.location.search}${window.location.hash}`);
+    }
+    return currentRoute;
+  }
+
+  return "/";
 }
 
 export default App;
