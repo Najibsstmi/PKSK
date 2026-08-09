@@ -77,6 +77,7 @@ import {
   fetchAttemptHistory,
   generateQuiz,
   getAttemptPayload,
+  skipAnswer,
   submitAnswer,
 } from "./services/questionService";
 import type { AccessStatus, AdminKpis, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
@@ -84,7 +85,7 @@ import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
 import type { DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
-import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode } from "./types/quiz";
+import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
 type AppRoute =
@@ -697,7 +698,26 @@ function App() {
       setActivePayload({
         ...activePayload,
         questions: activePayload.questions.map((question) =>
-          question.id === questionId ? { ...question, selected_option_id: optionId } : question,
+          question.id === questionId ? { ...question, selected_option_id: optionId, answer_status: "answered" } : question,
+        ),
+      });
+    } catch (error) {
+      setMessage(toMessage(error));
+    }
+  }
+
+  async function handleSkipAnswer(questionId: string) {
+    if (!activePayload) {
+      return;
+    }
+
+    setMessage(null);
+    try {
+      await skipAnswer(activePayload.attempt.id, questionId);
+      setActivePayload({
+        ...activePayload,
+        questions: activePayload.questions.map((question) =>
+          question.id === questionId ? { ...question, selected_option_id: null, answer_status: "skipped" } : question,
         ),
       });
     } catch (error) {
@@ -929,8 +949,10 @@ function App() {
           result={result}
           busy={busy}
           onAnswer={handleAnswer}
+          onSkip={handleSkipAnswer}
           onComplete={handleCompleteAttempt}
           onNavigate={navigate}
+          onStartEssay={handleStartEssay}
         />
       );
     }
@@ -1792,7 +1814,7 @@ function Dashboard({
           </section>
 
           <section className="grid gap-5 lg:grid-cols-3">
-            <ModeCard title="Simulasi Penuh" text="Campuran Bahagian A dan B secara rawak." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 30)} />
+            <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan, kemudian Bahagian C." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 100)} />
             <ModeCard title="Latihan Mengikut Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/app/latihan")} />
             <ModeCard title="Cabaran Pantas" text="10 soalan pendek untuk ulang kaji harian." icon={Clock3} onClick={() => onStartQuiz("quick", null, 10)} />
             <ModeCard title="Studio Penulisan" text="Bahagian C dengan editor, timer dan autosave." icon={PenLine} onClick={onStartEssay} />
@@ -3280,11 +3302,10 @@ function ModePage({
     <div className="space-y-6">
       <PageHeader icon={Target} title="Pilih Latihan" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
       <div className="grid gap-5 lg:grid-cols-3">
-        <ModeCard title="Simulasi Penuh" text="30 soalan rawak Bahagian A dan B." icon={ShieldCheck} disabled={busy} onClick={() => onStartQuiz("full", null, 30)} />
-        <ModeCard title="Bahagian A" text="10 soalan Kecerdasan Insaniah." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 10)} />
-        <ModeCard title="Bahagian B" text="15 soalan Kecerdasan Intelek." icon={Brain} disabled={busy} onClick={() => onStartQuiz("section", "B", 15)} />
-        <ModeCard title="Cabaran Pantas" text="10 soalan rawak pendek." icon={Zap} disabled={busy} onClick={() => onStartQuiz("quick", null, 10)} />
-        <ModeCard title="Bahagian C" text="Tajuk karangan rawak dengan editor penulisan, timer dan autosave." icon={PenLine} disabled={busy} onClick={onStartEssay} />
+        <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan dalam 90 minit, kemudian Bahagian C." icon={ShieldCheck} disabled={busy} onClick={() => onStartQuiz("full", null, 100)} />
+        <ModeCard title="Bahagian A" text="30 soalan Kecerdasan Insaniah. Skor rasmi 20%." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 30)} />
+        <ModeCard title="Bahagian B" text="70 soalan objektif Kecerdasan Intelek. Skor rasmi 70%." icon={Brain} disabled={busy} onClick={() => onStartQuiz("section", "B", 70)} />
+        <ModeCard title="Bahagian C" text="1 tajuk karangan Bahasa Melayu, minimum 100 patah perkataan dalam 45 minit." icon={PenLine} disabled={busy} onClick={onStartEssay} />
       </div>
     </div>
   );
@@ -3312,7 +3333,7 @@ function EssayPage({
   const [saveStatus, setSaveStatus] = useState(payload?.response.autosaved_at ? `Disimpan ${formatTimeOnly(payload.response.autosaved_at)}` : "Belum disimpan");
   const [remainingSeconds, setRemainingSeconds] = useState(() => essayRemainingSeconds(payload));
   const wordCount = useMemo(() => countWords(responseText), [responseText]);
-  const minWords = payload?.question.essay_min_words ?? 80;
+  const minWords = payload?.question.essay_min_words ?? 100;
 
   useEffect(() => {
     setResponseText(payload?.response.response_text ?? "");
@@ -3399,12 +3420,15 @@ function EssayPage({
         </div>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-bold text-slate-500">{saveStatus}</p>
+          <div>
+            <p className="text-sm font-bold text-slate-500">{saveStatus}</p>
+            {wordCount < minWords ? <p className="mt-1 text-sm font-black text-coral-600">Minimum {minWords} patah perkataan sebelum submit.</p> : null}
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" className="secondary-button" onClick={() => onNavigate("/app/simulasi")}>
               Kembali
             </button>
-            <button type="button" className="primary-button" disabled={busy || responseText.trim().length === 0} onClick={() => onSubmit(responseText)}>
+            <button type="button" className="primary-button" disabled={busy || wordCount < minWords} onClick={() => onSubmit(responseText)}>
               {busy ? "Menghantar..." : "Submit Karangan"}
             </button>
           </div>
@@ -3464,38 +3488,103 @@ function QuizPage({
   result,
   busy,
   onAnswer,
+  onSkip,
   onComplete,
   onNavigate,
+  onStartEssay,
 }: {
   payload: AttemptPayload | null;
   result: CompleteAttemptResult | null;
   busy: boolean;
   onAnswer: (questionId: string, optionId: string) => void;
+  onSkip: (questionId: string) => void;
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
+  onStartEssay: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(() => objectiveRemainingSeconds(payload));
+  const objectiveAttemptId = payload?.attempt.id ?? null;
+  const objectiveStartedAt = payload?.attempt.started_at ?? null;
+
+  useEffect(() => {
+    setIndex(0);
+    setRemainingSeconds(objectiveStartedAt ? objectiveRemainingSecondsFromStart(objectiveStartedAt) : 0);
+  }, [objectiveAttemptId, objectiveStartedAt]);
+
+  useEffect(() => {
+    if (!objectiveStartedAt || result) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setRemainingSeconds(objectiveRemainingSecondsFromStart(objectiveStartedAt));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [objectiveStartedAt, result]);
 
   if (result) {
-    return <ResultPanel result={result} onNavigate={onNavigate} />;
+    return <ResultPanel result={result} onNavigate={onNavigate} onStartEssay={onStartEssay} />;
   }
 
   if (!payload) {
     return <EmptyState title="Tiada cubaan aktif" text="Mulakan simulasi baharu atau sambung cubaan yang belum selesai." onNavigate={onNavigate} />;
   }
 
-  const current = payload.questions[index];
-  const answered = payload.questions.filter((question) => question.selected_option_id).length;
-  const complete = answered === payload.questions.length;
+  const orderedQuestions = [...payload.questions].sort((first, second) => {
+    const sectionOrder = sectionSortOrder(first.section) - sectionSortOrder(second.section);
+    return sectionOrder !== 0 ? sectionOrder : first.question_order - second.question_order;
+  });
+  const current = orderedQuestions[index] ?? orderedQuestions[0];
+  const sectionAQuestions = orderedQuestions.filter((question) => question.section === "A");
+  const sectionBQuestions = orderedQuestions.filter((question) => question.section === "B");
+  const hasSectionA = sectionAQuestions.length > 0;
+  const sectionAComplete = !hasSectionA || sectionAQuestions.every((question) => getQuestionStatus(question) !== "unanswered");
+  const answered = orderedQuestions.filter((question) => getQuestionStatus(question) === "answered").length;
+  const skipped = orderedQuestions.filter((question) => getQuestionStatus(question) === "skipped").length;
+  const completed = answered + skipped;
+  const unanswered = orderedQuestions.length - completed;
+  const complete = unanswered === 0;
+  const nextQuestion = orderedQuestions[index + 1];
+  const nextLocked = Boolean(nextQuestion?.section === "B" && hasSectionA && !sectionAComplete);
+  const currentSectionName = current.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
+  const timerTone = remainingSeconds <= 300 ? "bg-coral-50 text-coral-600" : "bg-ocean-50 text-ocean-700";
+  const scoreGuide =
+    payload.attempt.mode === "full"
+      ? "Skor rasmi: Bahagian A 20% + Bahagian B 70%"
+      : current.section === "A"
+        ? "Skor rasmi Bahagian A: 20%"
+        : "Skor rasmi Bahagian B: 70%";
+
+  function handleNext() {
+    if (index < orderedQuestions.length - 1) {
+      if (!nextLocked) {
+        setIndex((currentIndex) => currentIndex + 1);
+      }
+      return;
+    }
+    onComplete();
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.72fr_0.28fr]">
       <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <span className="rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
-            Soalan {index + 1} / {payload.questions.length}
+        <div className="mb-5 flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
+              Soalan {index + 1} / {orderedQuestions.length}
+            </span>
+            <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-600">{currentSectionName}</span>
+          </div>
+          <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>
+            <Clock3 size={17} aria-hidden="true" />
+            {formatTimer(remainingSeconds)}
           </span>
-          <span className="text-sm font-bold text-slate-500">{current.section} - {current.category}</span>
+        </div>
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-sm font-bold text-slate-500">{current.category ?? current.topic ?? "Soalan Objektif"}</span>
+          <span className="text-sm font-black text-amber-700">{scoreGuide}</span>
         </div>
         <h1 className="text-2xl font-black leading-snug text-slate-950">{current.question_text}</h1>
         {current.question_image_url ? <QuestionImage src={current.question_image_url} /> : null}
@@ -3506,53 +3595,90 @@ function QuizPage({
               type="button"
               onClick={() => onAnswer(current.id, option.id)}
               className={`rounded-2xl border p-4 text-left text-sm font-bold transition ${
-                current.selected_option_id === option.id ? "border-ocean-500 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-white hover:border-ocean-200"
+                current.selected_option_id === option.id ? "border-amber-400 bg-sun-50 text-slate-950" : "border-slate-200 bg-white hover:border-ocean-200"
               }`}
             >
               <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
             </button>
           ))}
         </div>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
-          <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
-            Sebelum
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => (index < payload.questions.length - 1 ? setIndex((currentIndex) => currentIndex + 1) : onComplete())}
-            disabled={busy || (index === payload.questions.length - 1 && !complete)}
-          >
-            {index < payload.questions.length - 1 ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
-          </button>
+        <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
+              Sebelum
+            </button>
+            <button type="button" className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50" disabled={busy} onClick={() => onSkip(current.id)}>
+              Skip Soalan Ini
+            </button>
+          </div>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            {nextLocked ? <p className="text-sm font-black text-coral-600">Lengkapkan semua soalan Bahagian A dahulu.</p> : null}
+            {index === orderedQuestions.length - 1 && !complete ? <p className="text-sm font-black text-coral-600">Jawab atau skip semua soalan sebelum hantar.</p> : null}
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleNext}
+              disabled={busy || nextLocked || (index === orderedQuestions.length - 1 && !complete)}
+            >
+              {index < orderedQuestions.length - 1 ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
+            </button>
+          </div>
         </div>
       </section>
 
       <aside className="rounded-2xl bg-white p-6 shadow-soft">
-        <h2 className="text-lg font-black">Kemajuan</h2>
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
-          <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.round((answered / payload.questions.length) * 100)}%` }} />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black">Kemajuan</h2>
+            <p className="mt-1 text-xs font-black uppercase text-ocean-700">A dahulu, kemudian B</p>
+          </div>
+          <span className={`rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>{formatTimer(remainingSeconds)}</span>
         </div>
-        <p className="mt-3 text-sm font-semibold text-slate-600">
-          {answered} daripada {payload.questions.length} dijawab.
-        </p>
-        <div className="mt-5 grid grid-cols-5 gap-2">
-          {payload.questions.map((question, questionIndex) => (
-            <button
-              key={question.id}
-              type="button"
-              onClick={() => setIndex(questionIndex)}
-              className={`grid h-10 place-items-center rounded-xl text-sm font-black ${
-                questionIndex === index
-                  ? "bg-ocean-600 text-white"
-                  : question.selected_option_id
-                    ? "bg-leaf-50 text-leaf-600"
-                    : "bg-slate-100 text-slate-500"
-              }`}
-            >
-              {questionIndex + 1}
-            </button>
-          ))}
+        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.round((completed / orderedQuestions.length) * 100)}%` }} />
+        </div>
+        <div className="mt-3 grid gap-1 text-sm font-semibold text-slate-600">
+          <p>{completed} daripada {orderedQuestions.length} selesai.</p>
+          <p><span className="font-black text-amber-700">{answered}</span> dijawab, <span className="font-black text-coral-600">{skipped}</span> skip, <span className="font-black text-slate-500">{unanswered}</span> belum.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-slate-600">
+          <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sun-100 ring-1 ring-amber-300" /> Dijawab</span>
+          <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-50 ring-1 ring-coral-200" /> Skip</span>
+          <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100" /> Belum</span>
+        </div>
+        <div className="mt-5 space-y-5">
+          {[
+            { section: "A" as const, title: "Bahagian A", questions: sectionAQuestions },
+            { section: "B" as const, title: "Bahagian B", questions: sectionBQuestions },
+          ]
+            .filter((group) => group.questions.length > 0)
+            .map((group) => (
+              <div key={group.section}>
+                <div className="mb-2 flex items-center justify-between text-xs font-black uppercase text-slate-500">
+                  <span>{group.title}</span>
+                  <span>{group.questions.filter((question) => getQuestionStatus(question) !== "unanswered").length}/{group.questions.length}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {orderedQuestions.map((question, questionIndex) => ({ question, questionIndex }))
+                    .filter((item) => item.question.section === group.section)
+                    .map(({ question, questionIndex }) => {
+                      const status = getQuestionStatus(question);
+                      const locked = question.section === "B" && hasSectionA && !sectionAComplete;
+                      return (
+                        <button
+                          key={question.id}
+                          type="button"
+                          disabled={locked}
+                          onClick={() => setIndex(questionIndex)}
+                          className={`grid h-10 place-items-center rounded-xl text-sm font-black transition ${questionStatusClass(status, questionIndex === index, locked)}`}
+                        >
+                          {questionIndex + 1}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            ))}
         </div>
       </aside>
     </div>
@@ -3576,18 +3702,60 @@ function OptionContent({ text, imageUrl }: { text: string | null; imageUrl: stri
   );
 }
 
-function ResultPanel({ result, onNavigate }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void }) {
+function sectionSortOrder(section: PkskSectionCode): number {
+  return section === "A" ? 1 : section === "B" ? 2 : 3;
+}
+
+function getQuestionStatus(question: QuizQuestion): "unanswered" | "answered" | "skipped" {
+  if (question.answer_status) {
+    return question.answer_status;
+  }
+  return question.selected_option_id ? "answered" : "unanswered";
+}
+
+function questionStatusClass(status: "unanswered" | "answered" | "skipped", active: boolean, locked: boolean): string {
+  if (locked) {
+    return "cursor-not-allowed bg-slate-50 text-slate-300";
+  }
+
+  const base = active ? "ring-2 ring-ocean-600 ring-offset-2 " : "";
+  if (status === "answered") {
+    return `${base}bg-sun-100 text-amber-800`;
+  }
+  if (status === "skipped") {
+    return `${base}bg-coral-50 text-coral-600 ring-1 ring-coral-200`;
+  }
+  return `${base}bg-slate-100 text-slate-500 hover:bg-ocean-50 hover:text-ocean-700`;
+}
+
+function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {
+  const hasSectionA = result.section_a_score !== null && result.section_a_score !== undefined;
+  const hasSectionB = result.section_b_score !== null && result.section_b_score !== undefined;
+  const isOfficialObjective = hasSectionA && hasSectionB;
+  const officialMaxScore = isOfficialObjective ? 90 : hasSectionA ? 20 : hasSectionB ? 70 : 100;
+  const officialScore = result.score ?? result.percentage;
+
   return (
     <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
       <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-sun-100 text-amber-700">
         <Trophy size={30} aria-hidden="true" />
       </div>
       <h1 className="mt-5 text-3xl font-black">Keputusan Disimpan</h1>
-      <p className="mt-3 text-slate-600">
-        {result.correct_answers} / {result.total_questions} betul - {result.percentage}%
-      </p>
+      <p className="mt-3 text-lg font-black text-slate-950">Skor rasmi: {Number(officialScore).toFixed(2)} / {officialMaxScore}%</p>
+      <p className="mt-2 text-sm font-semibold text-slate-600">{result.correct_answers} / {result.total_questions} betul. {result.skipped_answers ?? 0} soalan diskip.</p>
+      {isOfficialObjective ? (
+        <div className="mx-auto mt-5 grid max-w-lg gap-3 sm:grid-cols-2">
+          <SummaryPanel title="Bahagian A" value={`${Number(result.section_a_weighted_score ?? 0).toFixed(2)} / 20%`} />
+          <SummaryPanel title="Bahagian B" value={`${Number(result.section_b_weighted_score ?? 0).toFixed(2)} / 70%`} />
+        </div>
+      ) : null}
       <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+        {isOfficialObjective ? (
+          <button type="button" className="primary-button" onClick={onStartEssay}>
+            Teruskan Bahagian C
+          </button>
+        ) : null}
         <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
           Lihat Prestasi
         </button>
@@ -3725,9 +3893,9 @@ function PerformancePage({
             <div key={attempt.id} className="grid gap-2 sm:grid-cols-[110px_1fr_64px] sm:items-center">
               <span className="text-sm font-bold text-slate-500">Cubaan {attemptIndex + 1}</span>
               <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.min(100, Number(attempt.percentage))}%` }} />
+                <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.min(100, officialAttemptScore(attempt))}%` }} />
               </div>
-              <span className="text-sm font-black text-slate-900">{attempt.percentage}%</span>
+              <span className="text-sm font-black text-slate-900">{formatScore(officialAttemptScore(attempt))}%</span>
             </div>
           ))}
           {attempts.length === 0 ? <p className="text-sm font-semibold text-slate-500">Belum ada cubaan selesai.</p> : null}
@@ -3762,7 +3930,7 @@ function HistoryPage({
                 <p className="text-sm text-slate-500">{formatDate(attempt.started_at)}</p>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
-                <Metric label="Skor" value={`${attempt.percentage}%`} />
+                <Metric label="Skor" value={`${formatScore(officialAttemptScore(attempt))}%`} />
                 <Metric label="Betul" value={`${attempt.correct_answers}/${attempt.total_questions}`} />
                 <Metric label="Mata" value={`+${attempt.xp_earned}`} />
               </div>
@@ -4120,11 +4288,34 @@ function formatTimer(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+function officialAttemptScore(attempt: QuizAttemptRow): number {
+  const score = Number(attempt.score ?? 0);
+  return score > 0 ? score : Number(attempt.percentage ?? 0);
+}
+
+function formatScore(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(2);
+}
+
+function objectiveRemainingSeconds(payload: AttemptPayload | null): number {
+  if (!payload) {
+    return 0;
+  }
+  return objectiveRemainingSecondsFromStart(payload.attempt.started_at);
+}
+
+function objectiveRemainingSecondsFromStart(startedAtValue: string): number {
+  const limitSeconds = 90 * 60;
+  const startedAt = new Date(startedAtValue).getTime();
+  const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+  return Math.max(0, limitSeconds - elapsedSeconds);
+}
+
 function essayRemainingSeconds(payload: EssayAttemptPayload | null): number {
   if (!payload) {
     return 0;
   }
-  const limitMinutes = payload.question.essay_time_limit ?? 30;
+  const limitMinutes = payload.question.essay_time_limit ?? 45;
   const limitSeconds = limitMinutes * 60;
   const startedAt = new Date(payload.attempt.started_at).getTime();
   const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);

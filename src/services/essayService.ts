@@ -80,6 +80,9 @@ function mapEssayMessage(message: string): string {
   if (message.includes("ESSAY_ATTEMPT_NOT_FOUND")) {
     return "Cubaan karangan tidak ditemui. Sila mula semula Bahagian C.";
   }
+  if (message.includes("ESSAY_MIN_WORDS_REQUIRED")) {
+    return "Karangan mesti sekurang-kurangnya 100 patah perkataan sebelum dihantar.";
+  }
 
   return message;
 }

@@ -262,6 +262,13 @@ export type Database = {
         };
         Returns: Json;
       };
+      skip_answer: {
+        Args: {
+          p_attempt_id: string;
+          p_question_id: string;
+        };
+        Returns: Json;
+      };
       complete_attempt: {
         Args: {
           p_attempt_id: string;

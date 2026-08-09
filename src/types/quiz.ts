@@ -19,6 +19,7 @@ export type QuizQuestion = {
   question_order: number;
   options: QuizOption[];
   selected_option_id: string | null;
+  answer_status?: "unanswered" | "answered" | "skipped";
 };
 
 export type AttemptSummary = {
@@ -43,6 +44,7 @@ export type CompleteAttemptResult = {
   attempt_id: string;
   correct_answers: number;
   total_questions: number;
+  score?: number;
   percentage: number;
   duration_seconds: number;
   xp_earned: number;
@@ -51,6 +53,9 @@ export type CompleteAttemptResult = {
   section_a_score: number | null;
   section_b_score: number | null;
   section_c_score: number | null;
+  section_a_weighted_score?: number | null;
+  section_b_weighted_score?: number | null;
+  skipped_answers?: number;
   already_completed?: boolean;
 };
 

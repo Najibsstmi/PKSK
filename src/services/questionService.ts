@@ -49,6 +49,18 @@ export async function submitAnswer(attemptId: string, questionId: string, option
   }
 }
 
+export async function skipAnswer(attemptId: string, questionId: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("skip_answer", {
+    p_attempt_id: attemptId,
+    p_question_id: questionId,
+  });
+
+  if (error) {
+    throw new Error(mapSupabaseMessage(error.message));
+  }
+}
+
 export async function completeAttempt(attemptId: string): Promise<CompleteAttemptResult> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("complete_attempt", {
@@ -110,10 +122,16 @@ export function mapSupabaseMessage(message: string): string {
     return "Bank soalan belum tersedia. Sila maklumkan kepada pentadbir.";
   }
   if (message.includes("ATTEMPT_NOT_FINISHED")) {
-    return "Jawab semua soalan dahulu sebelum hantar keputusan.";
+    return "Jawab atau skip semua soalan dahulu sebelum hantar keputusan.";
   }
   if (message.includes("INVALID_ANSWER")) {
     return "Jawapan tidak dapat disimpan. Cuba semula.";
+  }
+  if (message.includes("NOT_ENOUGH_SECTION_A_QUESTIONS")) {
+    return "Bank soalan Bahagian A belum cukup 30 soalan aktif.";
+  }
+  if (message.includes("NOT_ENOUGH_SECTION_B_QUESTIONS")) {
+    return "Bank soalan Bahagian B belum cukup 70 soalan aktif.";
   }
 
   return message;

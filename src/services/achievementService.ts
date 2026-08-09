@@ -28,11 +28,11 @@ export async function fetchBadgesWithProgress(profile: ProfileRow | null, attemp
 export function calculatePerformance(profile: ProfileRow | null, attempts: QuizAttemptRow[], badgeCount: number): PerformanceStats {
   const completed = attempts.filter((attempt) => attempt.status === "completed");
   const totalAttempts = completed.length;
-  const bestScore = completed.reduce((best, attempt) => Math.max(best, Number(attempt.percentage)), 0);
+  const bestScore = completed.reduce((best, attempt) => Math.max(best, officialAttemptScore(attempt)), 0);
   const averageScore =
     totalAttempts === 0
       ? 0
-      : Math.round(completed.reduce((sum, attempt) => sum + Number(attempt.percentage), 0) / totalAttempts);
+      : Math.round(completed.reduce((sum, attempt) => sum + officialAttemptScore(attempt), 0) / totalAttempts);
 
   return {
     totalAttempts,
@@ -102,4 +102,9 @@ function averageSection(attempts: QuizAttemptRow[], key: "section_a_score" | "se
 
 function maxSection(attempts: QuizAttemptRow[], key: "section_a_score" | "section_b_score" | "section_c_score"): number {
   return attempts.reduce((best, attempt) => Math.max(best, Number(attempt[key] ?? 0)), 0);
+}
+
+function officialAttemptScore(attempt: QuizAttemptRow): number {
+  const score = Number(attempt.score ?? 0);
+  return score > 0 ? score : Number(attempt.percentage ?? 0);
 }
