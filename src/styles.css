@@ -146,4 +146,110 @@ a {
     box-shadow: none;
     transform: none;
   }
+
+  .hero-premium-cta {
+    position: relative;
+    display: inline-flex;
+    min-height: 58px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #0f66d0 0%, #0497b8 48%, #14b8a6 100%);
+    padding: 0 28px;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 950;
+    box-shadow:
+      0 18px 34px rgba(8, 145, 178, 0.26),
+      0 8px 16px rgba(15, 102, 208, 0.18);
+    transition:
+      box-shadow 180ms ease,
+      filter 180ms ease,
+      transform 180ms ease;
+  }
+
+  .hero-premium-cta:hover {
+    filter: saturate(1.08);
+    box-shadow:
+      0 22px 42px rgba(8, 145, 178, 0.32),
+      0 12px 22px rgba(15, 102, 208, 0.22);
+    transform: translateY(-2px) scale(1.01);
+  }
+
+  .hero-popular-badge {
+    position: absolute;
+    right: 12px;
+    top: -12px;
+    border-radius: 999px;
+    background: #fbbf24;
+    padding: 4px 9px;
+    color: #78350f;
+    font-size: 10px;
+    font-weight: 950;
+    line-height: 1;
+    box-shadow: 0 8px 16px rgba(251, 191, 36, 0.28);
+    white-space: nowrap;
+  }
+
+  .hero-preview-cta {
+    display: inline-flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border-radius: 15px;
+    border: 1.5px solid #7dd3fc;
+    background: rgba(255, 255, 255, 0.86);
+    padding: 0 22px;
+    color: #075985;
+    font-size: 14px;
+    font-weight: 900;
+    box-shadow: 0 10px 22px rgba(14, 165, 233, 0.1);
+    transition:
+      background-color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .hero-preview-cta:hover {
+    border-color: #0891b2;
+    background: #ecfeff;
+    box-shadow: 0 14px 28px rgba(14, 165, 233, 0.14);
+    transform: translateY(-1px);
+  }
+
+  .hero-login-link {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 999px;
+    padding: 0 8px;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 900;
+    transition:
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .hero-login-link:hover {
+    color: #0891b2;
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 640px) {
+    .hero-premium-cta,
+    .hero-preview-cta {
+      width: 100%;
+    }
+
+    .hero-login-link {
+      width: fit-content;
+      align-self: center;
+    }
+  }
 }

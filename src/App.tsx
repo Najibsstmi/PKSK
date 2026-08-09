@@ -35,6 +35,7 @@ import {
   UserRound,
   X,
   Zap,
+  Play,
   type LucideIcon,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -1558,21 +1559,25 @@ function LandingPage({
                 Berlatih melalui simulasi, soalan rawak dan rekod pencapaian dalam platform yang sesuai untuk calon Tahun 6 dan ibu bapa.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-                Cuba Percuma
-              </button>
-              <button type="button" className="secondary-button" onClick={onShowPaywall}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
+                <span className="hero-popular-badge">Paling Popular</span>
+                <Crown size={18} aria-hidden="true" />
                 Dapatkan Premium
               </button>
+              <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
+                <Play size={16} fill="currentColor" aria-hidden="true" />
+                Cuba 10 Soalan Percuma
+              </button>
+              <button
+                type="button"
+                className="hero-login-link"
+                onClick={() => (isLoggedIn && access.canUsePremiumFeature() ? onNavigate("/app") : onAuthMode("login"))}
+              >
+                <UserRound size={15} aria-hidden="true" />
+                {isLoggedIn && access.canUsePremiumFeature() ? "Buka PKSK Academy" : "Log Masuk"}
+              </button>
             </div>
-            <button
-              type="button"
-              className="w-fit text-sm font-black text-ocean-700 hover:text-ocean-900"
-              onClick={() => (isLoggedIn && access.canUsePremiumFeature() ? onNavigate("/app") : onAuthMode("login"))}
-            >
-              {isLoggedIn && access.canUsePremiumFeature() ? "Buka PKSK Academy" : "Log Masuk"}
-            </button>
           </div>
         </div>
       </section>
