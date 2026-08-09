@@ -625,8 +625,15 @@ function App() {
   }
 
   async function handleStartGuestPreview(section: "A" | "B") {
-    const storageKey = `pksk-guest-preview-completed-${section}`;
-    if (window.localStorage.getItem(storageKey) === "true") {
+    const sectionACompleted = window.localStorage.getItem("pksk-guest-preview-completed-A") === "true";
+    const sectionBCompleted = window.localStorage.getItem("pksk-guest-preview-completed-B") === "true";
+
+    if (section === "A" && sectionACompleted && !sectionBCompleted) {
+      await handleStartGuestPreview("B");
+      return;
+    }
+
+    if ((section === "A" && sectionACompleted && sectionBCompleted) || (section === "B" && sectionBCompleted)) {
       openPaywall();
       return;
     }
@@ -736,6 +743,8 @@ function App() {
           onComplete={handleCompleteGuestPreview}
           onNavigate={navigate}
           onShowPaywall={openPaywall}
+          onAuthMode={openAuth}
+          onStartGuestPreview={handleStartGuestPreview}
         />
       );
     }
@@ -1375,7 +1384,7 @@ function Dashboard({
       </section>
 
       {!isLoggedIn ? (
-        <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onLogin={() => onAuthMode("login")} />
+        <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
       ) : null}
 
       {isLoggedIn && !access.isPremium ? <InlinePaywall access={access} onShowPaywall={onShowPaywall} /> : null}
@@ -1403,67 +1412,41 @@ function Dashboard({
 function FreePreviewSection({
   settings,
   onStartGuestPreview,
-  onLogin,
+  onShowPaywall,
 }: {
   settings: AppSettings;
   onStartGuestPreview: (section: "A" | "B") => void;
-  onLogin: () => void;
+  onShowPaywall: () => void;
 }) {
   return (
-    <section className="grid gap-5 lg:grid-cols-[1fr_1fr_0.9fr]">
-      <PreviewCard
-        title="Bahagian A"
-        text="Cuba soalan Kecerdasan Insaniah secara percuma."
-        count={settings.free_preview_section_a_limit}
-        icon={HeartHandshake}
-        onClick={() => onStartGuestPreview("A")}
-      />
-      <PreviewCard
-        title="Bahagian B"
-        text="Cuba soalan Kecerdasan Intelek secara percuma."
-        count={settings.free_preview_section_b_limit}
-        icon={Brain}
-        onClick={() => onStartGuestPreview("B")}
-      />
+    <section className="grid gap-5 lg:grid-cols-2">
+      <article className="rounded-2xl bg-white p-6 shadow-soft">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <Sparkles size={23} aria-hidden="true" />
+        </span>
+        <p className="mt-5 text-sm font-black uppercase text-ocean-700">Preview Percuma</p>
+        <h2 className="mt-2 text-2xl font-black text-slate-950">Cuba PKSK Percuma</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Jawab {settings.free_preview_section_a_limit} soalan Bahagian A dan {settings.free_preview_section_b_limit} soalan Bahagian B sebelum melihat pilihan Premium.
+        </p>
+        <button type="button" className="primary-button mt-5 w-full" onClick={() => onStartGuestPreview("A")}>
+          Mula Preview
+        </button>
+      </article>
       <article className="rounded-2xl bg-white p-6 shadow-soft">
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sun-100 text-amber-700">
           <Crown size={23} aria-hidden="true" />
         </span>
-        <h2 className="mt-5 text-xl font-black">Akses Penuh</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">Log masuk apabila akses premium telah diaktifkan oleh pentadbir.</p>
-        <button type="button" className="secondary-button mt-5 w-full" onClick={onLogin}>
-          Log Masuk
+        <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
+        <h2 className="mt-2 text-2xl font-black text-slate-950">Latihan Tanpa Had</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Nikmati simulasi tanpa had, bank soalan penuh, rekod prestasi, sejarah cubaan, XP, level dan lencana.
+        </p>
+        <button type="button" className="secondary-button mt-5 w-full" onClick={onShowPaywall}>
+          Lihat Premium
         </button>
       </article>
     </section>
-  );
-}
-
-function PreviewCard({
-  title,
-  text,
-  count,
-  icon: Icon,
-  onClick,
-}: {
-  title: string;
-  text: string;
-  count: number;
-  icon: LucideIcon;
-  onClick: () => void;
-}) {
-  return (
-    <article className="rounded-2xl bg-white p-6 shadow-soft">
-      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
-        <Icon size={23} aria-hidden="true" />
-      </span>
-      <p className="mt-5 text-sm font-black uppercase text-ocean-700">Cuba {count} Soalan Percuma</p>
-      <h2 className="mt-2 text-2xl font-black text-slate-950">{title}</h2>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{text}</p>
-      <button type="button" className="primary-button mt-5 w-full" onClick={onClick}>
-        Mula Preview
-      </button>
-    </article>
   );
 }
 
@@ -1497,6 +1480,8 @@ function GuestPreviewPage({
   onComplete,
   onNavigate,
   onShowPaywall,
+  onAuthMode,
+  onStartGuestPreview,
 }: {
   payload: GuestPreviewPayload | null;
   answers: Record<string, string>;
@@ -1506,9 +1491,27 @@ function GuestPreviewPage({
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
   onShowPaywall: () => void;
+  onAuthMode: (mode: AuthMode) => void;
+  onStartGuestPreview: (section: "A" | "B") => void;
 }) {
   if (!payload) {
-    return <EmptyState title="Preview belum dimulakan" text="Pilih Bahagian A atau B untuk mencuba soalan percuma." onNavigate={onNavigate} />;
+    return (
+      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <Sparkles size={26} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba soalan contoh Bahagian A dan Bahagian B tanpa daftar akaun.</p>
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+          <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
+            Mula Preview
+          </button>
+          <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
+            Kembali
+          </button>
+        </div>
+      </section>
+    );
   }
 
   const allAnswered = payload.questions.every((question) => Boolean(answers[question.id]));
@@ -1544,18 +1547,30 @@ function GuestPreviewPage({
       </section>
       {result ? (
         <section className="rounded-2xl border border-sun-200 bg-sun-50 p-6 shadow-soft">
-          <h2 className="text-2xl font-black">Anda telah menyelesaikan versi percuma.</h2>
+          <h2 className="text-2xl font-black">{payload.section === "A" ? "Bahagian A selesai." : "Anda telah menyelesaikan versi percuma."}</h2>
           <p className="mt-2 text-lg font-black text-ocean-700">
             Skor ringkas: {result.correct_answers}/{result.total_questions} betul ({result.percentage}%)
           </p>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">Buka akses penuh untuk simulasi tanpa had, bank soalan penuh, sejarah cubaan dan lencana pencapaian.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">
+            {payload.section === "A"
+              ? "Teruskan dengan preview Bahagian B untuk lengkapkan versi percuma."
+              : "Naik taraf ke Premium untuk membuka akses penuh."}
+          </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <button type="button" className="primary-button" onClick={onShowPaywall}>
-              Daftar & Dapatkan Premium
-            </button>
-            <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
-              Kembali
-            </button>
+            {payload.section === "A" ? (
+              <button type="button" className="primary-button" onClick={() => onStartGuestPreview("B")}>
+                Teruskan Bahagian B
+              </button>
+            ) : (
+              <>
+                <button type="button" className="primary-button" onClick={onShowPaywall}>
+                  Daftar & Dapatkan Premium
+                </button>
+                <button type="button" className="secondary-button" onClick={() => onAuthMode("login")}>
+                  Sudah ada akaun? Log Masuk
+                </button>
+              </>
+            )}
           </div>
         </section>
       ) : (
@@ -1584,7 +1599,7 @@ function PaywallPage({
       ? "Akses premium telah tamat."
       : isLoggedIn
         ? "Akaun anda belum mempunyai akses premium."
-        : "Cuba preview percuma dahulu, kemudian daftar untuk membuka akses penuh.";
+        : "Naik taraf ke Premium untuk membuka akses penuh. Sudah mempunyai akaun Premium? Log masuk untuk meneruskan latihan.";
 
   return (
     <section className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-soft sm:p-8">
@@ -1593,13 +1608,13 @@ function PaywallPage({
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
             <Crown size={28} aria-hidden="true" />
           </span>
-          <h1 className="mt-6 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Unlock PKSK Premium</h1>
+          <h1 className="mt-6 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Akses Premium PKSK</h1>
           <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <h2 className="text-xl font-black">Premium includes:</h2>
+          <h2 className="text-xl font-black">Manfaat Premium</h2>
           <div className="mt-5 grid gap-3">
-            {["Unlimited Simulations", "Full Question Bank", "Performance Tracking", "Attempt History", "Mata & Level", "Professional Badges", "Randomized Practice"].map((item) => (
+            {["Simulasi tanpa had", "Bank soalan penuh", "Rekod prestasi", "Sejarah cubaan", "XP dan level", "Lencana pencapaian", "Latihan rawak setiap kali mula"].map((item) => (
               <div key={item} className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-700">
                 <span className="grid h-6 w-6 place-items-center rounded-full bg-leaf-100 text-xs font-black text-leaf-700">OK</span>
                 {item}
@@ -1608,10 +1623,10 @@ function PaywallPage({
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <button type="button" className="primary-button" onClick={() => onAuth("register")}>
-              Get Premium
+              Daftar & Dapatkan Premium
             </button>
             <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/") : onAuth("login"))}>
-              {isLoggedIn ? "Kembali" : "Login"}
+              {isLoggedIn ? "Kembali" : "Sudah ada akaun? Log Masuk"}
             </button>
           </div>
         </div>
