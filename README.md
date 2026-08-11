@@ -76,8 +76,9 @@ Guest tanpa akaun bukan subscription user. Guest hanya boleh menggunakan Free Pr
 
 Pelawat boleh terus mencuba tanpa daftar dan tanpa log masuk:
 
-- Bahagian A: maksimum 5 soalan
-- Bahagian B: maksimum 5 soalan
+- Bahagian A: maksimum 15 soalan
+- Bahagian B: maksimum 20 soalan
+- Bahagian C dikunci untuk preview percuma
 - Tiada sejarah cubaan
 - Tiada mata/level
 - Tiada lencana
@@ -208,6 +209,18 @@ Workflow admin:
 7. Klik `Import Approved Questions`
 
 Admin tidak perlu isi metadata satu per satu. Metadata seperti bahagian, kategori, topik, aras dan jawapan disimpan sebagai cadangan draft dahulu.
+
+Workflow CSV:
+
+1. Buka `/admin/questions`
+2. Klik `Import Excel/CSV`
+3. Download template CSV
+4. Isi soalan objektif atau esei dalam template
+5. Untuk soalan bergambar, upload gambar melalui modal CSV atau borang `Tambah Soalan`
+6. Salin URL gambar ke kolum `question_image_url`
+7. Upload CSV untuk import ke bank soalan
+
+Kolum gambar pilihan jawapan juga disokong melalui `option_a_image_url`, `option_b_image_url`, `option_c_image_url` dan `option_d_image_url`.
 
 ## Supabase Storage
 

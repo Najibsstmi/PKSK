@@ -74,6 +74,25 @@ export async function createManualQuestion(input: ManualQuestionInput): Promise<
   return data;
 }
 
+export async function uploadQuestionImage(file: File): Promise<string> {
+  const client = requireSupabase();
+  const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+  const safeExtension = ["png", "jpg", "jpeg", "webp", "svg"].includes(extension) ? extension : "png";
+  const path = `manual/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${safeExtension}`;
+  const { error } = await client.storage.from("question-assets").upload(path, file, {
+    cacheControl: "31536000",
+    contentType: file.type || "image/png",
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
+
+  const { data } = client.storage.from("question-assets").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export async function updateQuestion(input: ManualQuestionInput & { id: string; is_active?: boolean }): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("admin_update_question", {

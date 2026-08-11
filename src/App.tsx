@@ -58,6 +58,7 @@ import {
   unblockUser,
   updateQuestion,
   updateQuestionStatus,
+  uploadQuestionImage,
 } from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
@@ -180,10 +181,20 @@ const appLogoMarkPath = "/assets/pksk-academy-mark.png";
 const rememberedEmailKey = "pksk-remembered-email";
 const spaRedirectStorageKey = "pksk-spa-redirect";
 const defaultAppSettings: AppSettings = {
-  free_preview_section_a_limit: 5,
-  free_preview_section_b_limit: 5,
+  free_preview_section_a_limit: 15,
+  free_preview_section_b_limit: 20,
   free_preview_section_c_enabled: false,
 };
+const freePreviewLimits = {
+  A: 15,
+  B: 20,
+} as const;
+const fullPreviewTotals = {
+  A: 30,
+  B: 70,
+  C: 1,
+} as const;
+const freePreviewDurationSeconds = 90 * 60;
 const databaseSetupMessage = "Sistem akses premium sedang disiapkan. Sila cuba semula sebentar lagi.";
 
 function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
@@ -231,6 +242,7 @@ function App() {
   const [guestPayload, setGuestPayload] = useState<GuestPreviewPayload | null>(null);
   const [guestResult, setGuestResult] = useState<GuestPreviewResult | null>(null);
   const [guestAnswers, setGuestAnswers] = useState<Record<string, string>>({});
+  const [guestSkipped, setGuestSkipped] = useState<Record<string, boolean>>({});
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isInstalledApp, setIsInstalledApp] = useState(false);
@@ -761,13 +773,21 @@ function App() {
   }
 
   async function handleStartGuestPreview(section: "A" | "B") {
-    const limit = section === "A" ? appSettings.free_preview_section_a_limit : appSettings.free_preview_section_b_limit;
     setBusy(true);
     setMessage(null);
     setGuestResult(null);
     setGuestAnswers({});
+    setGuestSkipped({});
     try {
-      const payload = await fetchGuestPreview(section, limit);
+      const [sectionAPayload, sectionBPayload] = await Promise.all([
+        fetchGuestPreview("A", freePreviewLimits.A),
+        fetchGuestPreview("B", freePreviewLimits.B),
+      ]);
+      const payload: GuestPreviewPayload = {
+        section,
+        limit: freePreviewLimits.A + freePreviewLimits.B,
+        questions: [...sectionAPayload.questions, ...sectionBPayload.questions],
+      };
       setGuestPayload(payload);
       navigate("/preview");
     } catch (error) {
@@ -782,6 +802,23 @@ function App() {
       ...current,
       [questionId]: optionId,
     }));
+    setGuestSkipped((current) => {
+      const nextSkipped = { ...current };
+      delete nextSkipped[questionId];
+      return nextSkipped;
+    });
+  }
+
+  function handleGuestSkip(questionId: string) {
+    setGuestSkipped((current) => ({
+      ...current,
+      [questionId]: true,
+    }));
+    setGuestAnswers((current) => {
+      const nextAnswers = { ...current };
+      delete nextAnswers[questionId];
+      return nextAnswers;
+    });
   }
 
   async function handleCompleteGuestPreview() {
@@ -836,7 +873,6 @@ function App() {
     if (currentRoute === "/") {
       return (
         <LandingPage
-          settings={appSettings}
           onStartGuestPreview={handleStartGuestPreview}
           onShowPaywall={openPaywall}
         />
@@ -847,9 +883,11 @@ function App() {
         <GuestPreviewPage
           payload={guestPayload}
           answers={guestAnswers}
+          skipped={guestSkipped}
           result={guestResult}
           busy={busy}
           onAnswer={handleGuestAnswer}
+          onSkip={handleGuestSkip}
           onComplete={handleCompleteGuestPreview}
           onNavigate={navigate}
           onShowPaywall={openPaywall}
@@ -928,7 +966,6 @@ function App() {
           performance={performance}
           activePayload={activePayload}
           activeEssayPayload={activeEssayPayload}
-          settings={appSettings}
           onNavigate={navigate}
           onResume={handleResumeQuiz}
           onResumeEssay={handleResumeEssay}
@@ -1560,11 +1597,9 @@ function AuthPage({
 }
 
 function LandingPage({
-  settings,
   onStartGuestPreview,
   onShowPaywall,
 }: {
-  settings: AppSettings;
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
@@ -1607,7 +1642,7 @@ function LandingPage({
             </button>
             <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
               <Play size={16} fill="currentColor" aria-hidden="true" />
-              Cuba 10 Soalan Percuma
+              Cuba Percuma
             </button>
           </div>
           <div className="landing-trust-line">
@@ -1653,7 +1688,7 @@ function LandingPage({
         </div>
       </section>
 
-      <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
+      <FreePreviewSection onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
     </div>
   );
 }
@@ -1700,7 +1735,6 @@ function Dashboard({
   performance,
   activePayload,
   activeEssayPayload,
-  settings,
   onNavigate,
   onResume,
   onResumeEssay,
@@ -1717,7 +1751,6 @@ function Dashboard({
   performance: ReturnType<typeof calculatePerformance>;
   activePayload: AttemptPayload | null;
   activeEssayPayload: EssayAttemptPayload | null;
-  settings: AppSettings;
   onNavigate: (route: AppRoute) => void;
   onResume: () => void;
   onResumeEssay: () => void;
@@ -1800,7 +1833,7 @@ function Dashboard({
       </section>
 
       {!isLoggedIn ? (
-        <FreePreviewSection settings={settings} onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
+        <FreePreviewSection onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
       ) : null}
 
       {isLoggedIn && !access.isPremium ? <InlinePaywall access={access} onShowPaywall={onShowPaywall} /> : null}
@@ -1829,11 +1862,9 @@ function Dashboard({
 }
 
 function FreePreviewSection({
-  settings,
   onStartGuestPreview,
   onShowPaywall,
 }: {
-  settings: AppSettings;
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
@@ -1846,10 +1877,10 @@ function FreePreviewSection({
         <p className="mt-5 text-sm font-black uppercase text-ocean-700">Preview Percuma</p>
         <h2 className="mt-2 text-2xl font-black text-slate-950">Cuba PKSK Percuma</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Jawab {settings.free_preview_section_a_limit} soalan Bahagian A dan {settings.free_preview_section_b_limit} soalan Bahagian B sebelum melihat pilihan Premium.
+          Cuba pengalaman PKSK Academy tanpa daftar akaun. Sebahagian soalan dibuka dahulu, selebihnya boleh dibuka melalui Premium.
         </p>
         <button type="button" className="primary-button mt-5 w-full" onClick={() => onStartGuestPreview("A")}>
-          Mula 10 Soalan Percuma
+          Cuba Percuma
         </button>
       </article>
       <article className="rounded-2xl bg-white p-6 shadow-soft">
@@ -1893,9 +1924,11 @@ function InlinePaywall({ access, onShowPaywall }: { access: ReturnType<typeof us
 function GuestPreviewPage({
   payload,
   answers,
+  skipped,
   result,
   busy,
   onAnswer,
+  onSkip,
   onComplete,
   onNavigate,
   onShowPaywall,
@@ -1904,26 +1937,49 @@ function GuestPreviewPage({
 }: {
   payload: GuestPreviewPayload | null;
   answers: Record<string, string>;
+  skipped: Record<string, boolean>;
   result: GuestPreviewResult | null;
   busy: boolean;
   onAnswer: (questionId: string, optionId: string) => void;
+  onSkip: (questionId: string) => void;
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
   onShowPaywall: () => void;
   onAuthMode: (mode: AuthMode) => void;
   onStartGuestPreview: (section: "A" | "B") => void;
 }) {
+  const [index, setIndex] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(freePreviewDurationSeconds);
+  const payloadKey = payload?.questions.map((question) => question.id).join("|") ?? "empty";
+
+  useEffect(() => {
+    setIndex(0);
+    setRemainingSeconds(freePreviewDurationSeconds);
+  }, [payloadKey]);
+
+  useEffect(() => {
+    if (!payload || result) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setRemainingSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [payload, result]);
+
   if (!payload) {
     return (
       <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
           <Sparkles size={26} aria-hidden="true" />
         </div>
-          <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba 5 soalan Bahagian A dahulu, kemudian sambung 5 soalan Bahagian B. Tidak perlu daftar akaun.</p>
+        <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba pengalaman simulasi percuma dahulu. Tiada akaun diperlukan.</p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-            Mula 10 Soalan Percuma
+            Cuba Percuma
           </button>
           <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
             Kembali
@@ -1933,72 +1989,230 @@ function GuestPreviewPage({
     );
   }
 
-  const allAnswered = payload.questions.every((question) => Boolean(answers[question.id]));
+  const orderedQuestions = [...payload.questions].sort((first, second) => {
+    const sectionOrder = sectionSortOrder(first.section) - sectionSortOrder(second.section);
+    return sectionOrder !== 0 ? sectionOrder : first.question_order - second.question_order;
+  });
+  const current = orderedQuestions[index] ?? orderedQuestions[0];
+  const sectionAQuestions = orderedQuestions.filter((question) => question.section === "A");
+  const sectionBQuestions = orderedQuestions.filter((question) => question.section === "B");
+  const questionIndexById = new Map(orderedQuestions.map((question, questionIndex) => [question.id, questionIndex]));
+  const getPreviewStatus = (question: QuizQuestion): "unanswered" | "answered" | "skipped" => {
+    if (answers[question.id]) {
+      return "answered";
+    }
+    if (skipped[question.id]) {
+      return "skipped";
+    }
+    return "unanswered";
+  };
+  const answered = orderedQuestions.filter((question) => getPreviewStatus(question) === "answered").length;
+  const skippedCount = orderedQuestions.filter((question) => getPreviewStatus(question) === "skipped").length;
+  const completed = answered + skippedCount;
+  const unanswered = orderedQuestions.length - completed;
+  const allComplete = orderedQuestions.length > 0 && unanswered === 0;
+  const currentReady = current ? getPreviewStatus(current) !== "unanswered" : false;
+  const timerTone = remainingSeconds <= 300 ? "bg-coral-50 text-coral-600" : "bg-ocean-50 text-ocean-700";
+
+  function handleNextPreview() {
+    if (!currentReady) {
+      return;
+    }
+    if (index < orderedQuestions.length - 1) {
+      setIndex((currentIndex) => currentIndex + 1);
+      return;
+    }
+    onComplete();
+  }
+
+  function handleSkipPreview() {
+    if (!current) {
+      return;
+    }
+    onSkip(current.id);
+    if (index < orderedQuestions.length - 1) {
+      setIndex((currentIndex) => currentIndex + 1);
+    }
+  }
+
+  function renderPreviewGroup(title: string, total: number, startNumber: number, questions: QuizQuestion[]) {
+    const completedInGroup = questions.filter((question) => getPreviewStatus(question) !== "unanswered").length;
+    return (
+      <div key={title}>
+        <div className="mb-2 flex items-center justify-between text-xs font-black uppercase text-slate-500">
+          <span>{title}</span>
+          <span>{completedInGroup}/{questions.length} dibuka</span>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {Array.from({ length: total }, (_, itemIndex) => {
+            const question = questions[itemIndex];
+            const number = startNumber + itemIndex;
+            if (!question) {
+              return (
+                <button
+                  key={`${title}-locked-${number}`}
+                  type="button"
+                  disabled
+                  aria-label={`Soalan ${number} dikunci dalam versi percuma`}
+                  className="grid h-10 cursor-not-allowed place-items-center rounded-xl bg-slate-50 text-slate-300"
+                >
+                  <LockKeyhole size={15} aria-hidden="true" />
+                </button>
+              );
+            }
+            const questionIndex = questionIndexById.get(question.id) ?? 0;
+            const status = getPreviewStatus(question);
+            return (
+              <button
+                key={question.id}
+                type="button"
+                onClick={() => setIndex(questionIndex)}
+                className={`grid h-10 place-items-center rounded-xl text-sm font-black transition ${questionStatusClass(status, questionIndex === index, false)}`}
+              >
+                {number}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (!current) {
+    return (
+      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+        <h1 className="text-2xl font-black">Preview belum tersedia</h1>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Bank soalan percuma belum mempunyai soalan aktif. Sila cuba semula selepas admin tambah soalan.</p>
+        <button type="button" className="secondary-button mx-auto mt-6" onClick={() => onNavigate("/")}>
+          Kembali
+        </button>
+      </section>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <PageHeader icon={Sparkles} title={`Preview Percuma Bahagian ${payload.section}`} text="Jawab soalan contoh ini dahulu. Tiada akaun diperlukan." />
-      <section className="grid gap-4">
-        {payload.questions.map((question, index) => (
-          <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
-            <p className="text-sm font-black text-ocean-700">Soalan {index + 1}</p>
-            <h2 className="mt-2 text-lg font-black leading-7 text-slate-950">{question.question_text}</h2>
-            {question.question_image_url ? <QuestionImage src={question.question_image_url} /> : null}
-            <div className="mt-5 grid gap-3">
-              {question.options.map((option) => {
-                const selected = answers[question.id] === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onAnswer(question.id, option.id)}
-                    className={`rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${
-                      selected ? "border-ocean-500 bg-ocean-50 text-ocean-800" : "border-slate-200 bg-white text-slate-700 hover:border-ocean-200"
-                    }`}
-                  >
-                    <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
-                  </button>
-                );
-              })}
-            </div>
-          </article>
-        ))}
-      </section>
+    <div className="grid gap-6 lg:grid-cols-[0.72fr_0.28fr]">
       {result ? (
-        <section className="rounded-2xl border border-sun-200 bg-sun-50 p-6 shadow-soft">
-          <h2 className="text-2xl font-black">{payload.section === "A" ? "Bahagian A selesai." : "Anda telah menyelesaikan versi percuma."}</h2>
+        <section className="rounded-2xl border border-sun-200 bg-sun-50 p-8 shadow-soft lg:col-span-2">
+          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <h2 className="text-3xl font-black">Anda telah menyelesaikan versi percuma.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">Naik taraf ke Premium untuk membuka akses penuh, sejarah cubaan, XP, lencana dan Bahagian C.</p>
+            </div>
+            <div className="rounded-2xl bg-white px-5 py-4 text-center shadow-sm">
+              <p className="text-xs font-black uppercase text-slate-500">Skor ringkas</p>
+              <p className="mt-1 text-2xl font-black text-ocean-700">{result.percentage}%</p>
+            </div>
+          </div>
           <p className="mt-2 text-lg font-black text-ocean-700">
-            Skor ringkas: {result.correct_answers}/{result.total_questions} betul ({result.percentage}%)
-          </p>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">
-            {payload.section === "A"
-              ? "Teruskan dengan preview Bahagian B untuk lengkapkan versi percuma."
-              : "Naik taraf ke Premium untuk membuka akses penuh."}
+            {result.correct_answers}/{result.total_questions} betul. {skippedCount} soalan diskip.
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            {payload.section === "A" ? (
-              <button type="button" className="primary-button" onClick={() => onStartGuestPreview("B")}>
-                Teruskan Bahagian B
-              </button>
-            ) : (
-              <>
-                <button type="button" className="primary-button" onClick={onShowPaywall}>
-                  Daftar & Dapatkan Premium
-                </button>
-                <button type="button" className="secondary-button" onClick={() => onStartGuestPreview("A")}>
-                  Cuba Semula Preview
-                </button>
-                <button type="button" className="secondary-button" onClick={() => onAuthMode("login")}>
-                  Sudah ada akaun? Log Masuk
-                </button>
-              </>
-            )}
+            <button type="button" className="primary-button" onClick={onShowPaywall}>
+              Daftar & Dapatkan Premium
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onStartGuestPreview("A")}>
+              Cuba Semula
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onAuthMode("login")}>
+              Sudah ada akaun? Log Masuk
+            </button>
           </div>
         </section>
       ) : (
-        <button type="button" className="primary-button w-full sm:w-auto" disabled={busy || !allAnswered} onClick={onComplete}>
-          {busy ? "Menyemak..." : "Semak Jawapan"}
-        </button>
+        <>
+          <section className="rounded-2xl bg-white p-6 shadow-soft">
+            <div className="mb-5 flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
+                  Soalan {index + 1} / {orderedQuestions.length}
+                </span>
+                <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-600">
+                  Bahagian {current.section} {current.section === "A" ? "- Kecerdasan Insaniah" : "- Kecerdasan Intelek"}
+                </span>
+              </div>
+              <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>
+                <Clock3 size={17} aria-hidden="true" />
+                {formatTimer(remainingSeconds)}
+              </span>
+            </div>
+            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-sm font-bold text-slate-500">{current.category ?? current.topic ?? "Soalan Objektif"}</span>
+              <span className="text-sm font-black text-ocean-700">Preview percuma: Bahagian C dikunci</span>
+            </div>
+            <h1 className="text-2xl font-black leading-snug text-slate-950">{current.question_text}</h1>
+            {current.question_image_url ? <QuestionImage src={current.question_image_url} /> : null}
+            <div className="mt-6 grid gap-3">
+              {current.options.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onAnswer(current.id, option.id)}
+                  className={`rounded-2xl border p-4 text-left text-sm font-bold transition ${
+                    answers[current.id] === option.id ? "border-amber-400 bg-sun-50 text-slate-950" : "border-slate-200 bg-white hover:border-ocean-200"
+                  }`}
+                >
+                  <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
+                  Sebelum
+                </button>
+                <button type="button" className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50" onClick={handleSkipPreview}>
+                  Skip Soalan Ini
+                </button>
+              </div>
+              <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                {!currentReady ? <p className="text-sm font-black text-coral-600">Pilih jawapan atau tekan Skip Soalan Ini untuk teruskan.</p> : null}
+                {index === orderedQuestions.length - 1 && !allComplete ? <p className="text-sm font-black text-coral-600">Jawab atau skip semua soalan percuma sebelum hantar.</p> : null}
+                <button type="button" className="primary-button" disabled={busy || !currentReady || (index === orderedQuestions.length - 1 && !allComplete)} onClick={handleNextPreview}>
+                  {index < orderedQuestions.length - 1 ? "Seterusnya" : busy ? "Menyemak..." : "Hantar Preview"}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <aside className="rounded-2xl bg-white p-6 shadow-soft">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black">Kemajuan</h2>
+                <p className="mt-1 text-xs font-black uppercase text-ocean-700">Preview percuma</p>
+              </div>
+              <span className={`rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>{formatTimer(remainingSeconds)}</span>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.round((completed / Math.max(1, orderedQuestions.length)) * 100)}%` }} />
+            </div>
+            <div className="mt-3 grid gap-1 text-sm font-semibold text-slate-600">
+              <p>{completed} daripada {orderedQuestions.length} soalan percuma selesai.</p>
+              <p><span className="font-black text-amber-700">{answered}</span> dijawab, <span className="font-black text-coral-600">{skippedCount}</span> skip, <span className="font-black text-slate-500">{unanswered}</span> belum.</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-slate-600">
+              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sun-100 ring-1 ring-amber-300" /> Dijawab</span>
+              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-100 ring-1 ring-coral-500" /> Skip</span>
+              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100" /> Belum</span>
+              <span className="inline-flex items-center gap-1"><LockKeyhole size={13} aria-hidden="true" /> Premium</span>
+            </div>
+            <div className="mt-5 space-y-5">
+              {renderPreviewGroup("Bahagian A", fullPreviewTotals.A, 1, sectionAQuestions)}
+              {renderPreviewGroup("Bahagian B", fullPreviewTotals.B, 31, sectionBQuestions)}
+              <div>
+                <div className="mb-2 flex items-center justify-between text-xs font-black uppercase text-slate-500">
+                  <span>Bahagian C</span>
+                  <span>Premium</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  <button type="button" disabled className="grid h-10 cursor-not-allowed place-items-center rounded-xl bg-slate-50 text-slate-300" aria-label="Bahagian C dikunci dalam versi percuma">
+                    <LockKeyhole size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </>
       )}
     </div>
   );
@@ -2419,6 +2633,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
+  const [csvOpen, setCsvOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<AdminQuestionRow | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<AdminQuestionRow | null>(null);
 
@@ -2460,7 +2675,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
             <FileUp size={18} aria-hidden="true" />
             Import PDF
           </button>
-          <button type="button" className="secondary-button" onClick={() => onMessage("Import Excel/CSV akan ditambah selepas workflow PDF stabil.")}>
+          <button type="button" className="secondary-button" onClick={() => setCsvOpen(true)}>
             <FileSpreadsheet size={18} aria-hidden="true" />
             Import Excel/CSV
           </button>
@@ -2554,9 +2769,148 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
       </section>
 
       {manualOpen ? <ManualQuestionModal onClose={() => setManualOpen(false)} onCreated={loadQuestions} onMessage={onMessage} /> : null}
+      {csvOpen ? <CsvImportModal onClose={() => setCsvOpen(false)} onImported={loadQuestions} onMessage={onMessage} /> : null}
       {selectedQuestion ? <QuestionViewModal question={selectedQuestion} onClose={() => setSelectedQuestion(null)} /> : null}
       {editingQuestion ? <QuestionEditModal question={editingQuestion} onClose={() => setEditingQuestion(null)} onSaved={loadQuestions} onMessage={onMessage} /> : null}
     </AdminShell>
+  );
+}
+
+function CsvImportModal({
+  onClose,
+  onImported,
+  onMessage,
+}: {
+  onClose: () => void;
+  onImported: () => Promise<void>;
+  onMessage: (message: string | null) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+
+  async function handleImageUpload(nextFile: File | null) {
+    if (!nextFile) {
+      return;
+    }
+
+    setUploadingImage(true);
+    onMessage(null);
+    try {
+      const publicUrl = await uploadQuestionImage(nextFile);
+      setUploadedImageUrl(publicUrl);
+      onMessage("Gambar berjaya dimuat naik. URL boleh digunakan dalam template CSV.");
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  async function handleImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!file) {
+      onMessage("Pilih fail CSV dahulu.");
+      return;
+    }
+
+    setBusy(true);
+    onMessage(null);
+    try {
+      const csvText = await file.text();
+      const records = parseCsvRecords(csvText);
+      const questions = records.map((record, index) => csvRecordToManualQuestion(record, index + 2));
+
+      for (const question of questions) {
+        await createManualQuestion(question);
+      }
+
+      await onImported();
+      onMessage(`${questions.length} soalan berjaya diimport daripada CSV.`);
+      onClose();
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyUploadedUrl() {
+    if (!uploadedImageUrl) {
+      return;
+    }
+    await navigator.clipboard.writeText(uploadedImageUrl);
+    onMessage("URL gambar disalin.");
+  }
+
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <form className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleImport}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black">Import CSV</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Muat turun template, isi soalan, kemudian upload semula. Excel boleh disimpan sebagai CSV.</p>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <section className="rounded-2xl border border-ocean-100 bg-ocean-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-black text-ocean-900">Template CSV</h3>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">Kolum gambar menggunakan URL. Untuk soalan bergambar, upload gambar dahulu dan letakkan URL dalam `question_image_url`.</p>
+              </div>
+              <button type="button" className="secondary-button bg-white" onClick={downloadCsvTemplate}>
+                <Download size={18} aria-hidden="true" />
+                Download Template
+              </button>
+            </div>
+          </section>
+
+          <section className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-black text-slate-700">
+              <ImageIcon size={18} aria-hidden="true" />
+              Upload gambar untuk CSV
+            </div>
+            <input className="field bg-white" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleImageUpload(event.target.files?.[0] ?? null)} />
+            {uploadingImage ? <p className="text-sm font-bold text-ocean-700">Memuat naik gambar...</p> : null}
+            {uploadedImageUrl ? (
+              <div className="grid gap-3">
+                <img src={uploadedImageUrl} alt="" className="max-h-56 rounded-xl border border-slate-200 bg-white object-contain p-2" />
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input className="field bg-white" value={uploadedImageUrl} readOnly />
+                  <button type="button" className="secondary-button bg-white" onClick={copyUploadedUrl}>
+                    Salin URL
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <Label text="Fail CSV">
+            <input className="field" type="file" accept=".csv,text/csv" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
+          </Label>
+
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            Bahagian A dan B ialah objektif. Bahagian C boleh diisi sebagai `essay`. Untuk pilihan jawapan bergambar, gunakan kolum `option_a_image_url`, `option_b_image_url` dan seterusnya.
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Batal
+            </button>
+            <button type="submit" className="primary-button" disabled={busy}>
+              <FileSpreadsheet size={18} aria-hidden="true" />
+              {busy ? "Mengimport..." : "Import CSV"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -2824,11 +3178,13 @@ function ManualQuestionModal({
   const [section, setSection] = useState<PkskSectionCode>("B");
   const [difficulty, setDifficulty] = useState<QuestionDifficulty>("medium");
   const [questionText, setQuestionText] = useState("");
+  const [questionImageUrl, setQuestionImageUrl] = useState("");
   const [category, setCategory] = useState("");
   const [topic, setTopic] = useState("");
   const [correctLabel, setCorrectLabel] = useState("A");
   const [options, setOptions] = useState(() => defaultDraftOptions());
   const [busy, setBusy] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   function fillSuggestedMetadata() {
     if (section === "A") {
@@ -2846,6 +3202,24 @@ function ManualQuestionModal({
     onMessage("Cadangan metadata awal diisi. OCR/AI server-side boleh ditambah kemudian selepas tuan beri kebenaran untuk memproses PDF melalui provider luar.");
   }
 
+  async function handleQuestionImageUpload(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setUploadingImage(true);
+    onMessage(null);
+    try {
+      const publicUrl = await uploadQuestionImage(file);
+      setQuestionImageUrl(publicUrl);
+      onMessage("Gambar soalan berjaya dimuat naik.");
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!questionText.trim()) {
@@ -2860,6 +3234,7 @@ function ManualQuestionModal({
       category: category || null,
       topic: topic || null,
       difficulty,
+      question_image_url: questionImageUrl.trim() || null,
       correct_option_label: questionType === "objective" ? correctLabel : null,
       options:
         questionType === "objective"
@@ -2921,8 +3296,26 @@ function ManualQuestionModal({
             </Label>
           </div>
           <Label text="Soalan">
-            <textarea className="field" value={questionText} onChange={(event) => setQuestionText(event.target.value)} placeholder="Tulis soalan di sini" required />
+            <textarea
+              className="field"
+              value={questionText}
+              onChange={(event) => setQuestionText(event.target.value)}
+              onPaste={(event) => handleQuestionImagePaste(event, setQuestionImageUrl, setUploadingImage, onMessage)}
+              placeholder="Tulis soalan di sini"
+              required
+            />
           </Label>
+          <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <Label text="Gambar soalan">
+              <input className="field bg-white" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleQuestionImageUpload(event.target.files?.[0] ?? null)} />
+            </Label>
+            <p className="text-sm font-semibold leading-6 text-slate-500">Tip: boleh paste screenshot terus dalam ruang soalan di atas.</p>
+            <Label text="URL gambar soalan">
+              <input className="field bg-white" value={questionImageUrl} onChange={(event) => setQuestionImageUrl(event.target.value)} placeholder="Kosongkan jika tiada gambar" />
+            </Label>
+            {uploadingImage ? <p className="text-sm font-bold text-ocean-700">Memuat naik gambar...</p> : null}
+            {questionImageUrl ? <img src={questionImageUrl} alt="" className="max-h-64 rounded-xl border border-slate-200 bg-white object-contain p-2" /> : null}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Label text="Kategori">
               <input className="field" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Optional" />
@@ -3001,6 +3394,7 @@ function QuestionEditModal({
   const [isActive, setIsActive] = useState(question.is_active);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -3071,6 +3465,24 @@ function QuestionEditModal({
       }
       return nextOptions.map((option, optionIndex) => ({ ...option, sort_order: optionIndex + 1 }));
     });
+  }
+
+  async function handleQuestionImageUpload(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setUploadingImage(true);
+    onMessage(null);
+    try {
+      const publicUrl = await uploadQuestionImage(file);
+      setImageUrl(publicUrl);
+      onMessage("Gambar soalan berjaya dimuat naik.");
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setUploadingImage(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -3180,7 +3592,13 @@ function QuestionEditModal({
             </div>
 
             <Label text="Soalan">
-              <textarea className="field min-h-32" value={questionText} onChange={(event) => setQuestionText(event.target.value)} required />
+              <textarea
+                className="field min-h-32"
+                value={questionText}
+                onChange={(event) => setQuestionText(event.target.value)}
+                onPaste={(event) => handleQuestionImagePaste(event, setImageUrl, setUploadingImage, onMessage)}
+                required
+              />
             </Label>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -3192,9 +3610,17 @@ function QuestionEditModal({
               </Label>
             </div>
 
-            <Label text="URL imej soalan">
-              <input className="field" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="Kosongkan jika tiada imej" />
-            </Label>
+            <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <Label text="Gambar soalan">
+                <input className="field bg-white" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleQuestionImageUpload(event.target.files?.[0] ?? null)} />
+              </Label>
+              <p className="text-sm font-semibold leading-6 text-slate-500">Tip: boleh paste screenshot terus dalam ruang soalan di atas.</p>
+              <Label text="URL gambar soalan">
+                <input className="field bg-white" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="Kosongkan jika tiada gambar" />
+              </Label>
+              {uploadingImage ? <p className="text-sm font-bold text-ocean-700">Memuat naik gambar...</p> : null}
+              {imageUrl ? <img src={imageUrl} alt="" className="max-h-64 rounded-xl border border-slate-200 bg-white object-contain p-2" /> : null}
+            </div>
 
             {questionType === "objective" ? (
               <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
@@ -3550,6 +3976,328 @@ function defaultDraftOptions() {
     is_correct: label === "A",
     sort_order: index + 1,
   }));
+}
+
+async function handleQuestionImagePaste(
+  event: React.ClipboardEvent<HTMLTextAreaElement>,
+  setImageUrl: (imageUrl: string) => void,
+  setUploading: (uploading: boolean) => void,
+  onMessage: (message: string | null) => void,
+) {
+  const imageFile = getClipboardImageFile(event.clipboardData);
+  if (!imageFile) {
+    return;
+  }
+
+  event.preventDefault();
+  setUploading(true);
+  onMessage(null);
+  try {
+    const publicUrl = await uploadQuestionImage(imageFile);
+    setImageUrl(publicUrl);
+    onMessage("Gambar daripada clipboard berjaya dimuat naik.");
+  } catch (error) {
+    onMessage(toMessage(error));
+  } finally {
+    setUploading(false);
+  }
+}
+
+function getClipboardImageFile(clipboardData: DataTransfer): File | null {
+  for (const item of Array.from(clipboardData.items)) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      return item.getAsFile();
+    }
+  }
+
+  for (const file of Array.from(clipboardData.files)) {
+    if (file.type.startsWith("image/")) {
+      return file;
+    }
+  }
+
+  return null;
+}
+
+const csvTemplateHeaders = [
+  "question_type",
+  "section",
+  "difficulty",
+  "category",
+  "topic",
+  "question_text",
+  "question_image_url",
+  "option_a",
+  "option_b",
+  "option_c",
+  "option_d",
+  "option_a_image_url",
+  "option_b_image_url",
+  "option_c_image_url",
+  "option_d_image_url",
+  "correct_option_label",
+  "explanation",
+  "essay_min_words",
+  "essay_time_limit",
+];
+
+const csvTemplateRows = [
+  [
+    "objective",
+    "A",
+    "medium",
+    "SSQ",
+    "Kecerdasan Insaniah",
+    "Guru menegur kamu kerana lewat masuk kelas. Apa reaksi kamu?",
+    "",
+    "Marah dan merungut",
+    "Rasa malu tapi terima teguran",
+    "Tidak peduli",
+    "Ketawa sahaja",
+    "",
+    "",
+    "",
+    "",
+    "B",
+    "Jawapan menunjukkan murid menerima teguran dengan baik.",
+    "",
+    "",
+  ],
+  [
+    "objective",
+    "B",
+    "medium",
+    "Matematik",
+    "Nombor",
+    "Lihat gambar rajah berikut dan pilih jawapan yang betul.",
+    "https://contoh.com/gambar-soalan.png",
+    "24",
+    "36",
+    "48",
+    "60",
+    "",
+    "",
+    "",
+    "",
+    "C",
+    "",
+    "",
+    "",
+  ],
+  [
+    "essay",
+    "C",
+    "medium",
+    "Penulisan",
+    "Kesihatan diri",
+    "Kesihatan diri perlu dijaga sejak kecil. Huraikan langkah-langkah menjaga kesihatan fizikal dan mental sebagai seorang murid.",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "100",
+    "45",
+  ],
+];
+
+function downloadCsvTemplate() {
+  const csvText = [csvTemplateHeaders, ...csvTemplateRows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "template-import-soalan-pksk.csv";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+  return value;
+}
+
+function parseCsvRecords(csvText: string): Record<string, string>[] {
+  const rows = parseCsvRows(csvText).filter((row) => row.some((cell) => cell.trim()));
+  if (rows.length < 2) {
+    throw new Error("CSV kosong atau tiada baris soalan.");
+  }
+
+  const headers = rows[0].map((header) => normalizeCsvHeader(header));
+  if (!headers.includes("question_text") || !headers.includes("section")) {
+    throw new Error("CSV mesti ada kolum `question_text` dan `section`.");
+  }
+
+  return rows.slice(1).map((row) =>
+    headers.reduce<Record<string, string>>((record, header, index) => {
+      record[header] = row[index]?.trim() ?? "";
+      return record;
+    }, {}),
+  );
+}
+
+function parseCsvRows(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = "";
+  let insideQuotes = false;
+
+  for (let index = 0; index < csvText.length; index += 1) {
+    const character = csvText[index];
+    const nextCharacter = csvText[index + 1];
+
+    if (character === "\"") {
+      if (insideQuotes && nextCharacter === "\"") {
+        currentCell += "\"";
+        index += 1;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !insideQuotes) {
+      currentRow.push(currentCell);
+      currentCell = "";
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !insideQuotes) {
+      if (character === "\r" && nextCharacter === "\n") {
+        index += 1;
+      }
+      currentRow.push(currentCell);
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+
+    currentCell += character;
+  }
+
+  currentRow.push(currentCell);
+  rows.push(currentRow);
+  return rows;
+}
+
+function csvRecordToManualQuestion(record: Record<string, string>, rowNumber: number): ManualQuestionInput {
+  const section = parseCsvSection(getCsvValue(record, ["section", "bahagian"]), rowNumber);
+  const questionType = parseCsvQuestionType(getCsvValue(record, ["question_type", "jenis"]), section);
+  const difficulty = parseCsvDifficulty(getCsvValue(record, ["difficulty", "aras"]));
+  const questionText = getCsvValue(record, ["question_text", "soalan"]);
+
+  if (!questionText) {
+    throw new Error(`Baris ${rowNumber}: teks soalan kosong.`);
+  }
+
+  if (questionType === "essay") {
+    return {
+      question_type: "essay",
+      section,
+      question_text: questionText,
+      category: getCsvValue(record, ["category", "kategori"]) || null,
+      topic: getCsvValue(record, ["topic", "topik"]) || null,
+      difficulty,
+      question_image_url: getCsvValue(record, ["question_image_url", "gambar_soalan"]) || null,
+      explanation: getCsvValue(record, ["explanation", "nota"]) || null,
+      essay_min_words: Number(getCsvValue(record, ["essay_min_words", "minimum_patah_perkataan"])) || 100,
+      essay_time_limit: Number(getCsvValue(record, ["essay_time_limit", "masa_minit"])) || 45,
+      correct_option_label: null,
+      options: [],
+    };
+  }
+
+  const correctLabel = (getCsvValue(record, ["correct_option_label", "jawapan_betul"]) || "A").toUpperCase();
+  if (!optionLabels.includes(correctLabel)) {
+    throw new Error(`Baris ${rowNumber}: jawapan betul mesti A, B, C atau D.`);
+  }
+
+  const options = optionLabels
+    .map((label, index) => ({
+      option_label: label,
+      option_text: getCsvValue(record, [`option_${label.toLowerCase()}`, `pilihan_${label.toLowerCase()}`, `jawapan_${label.toLowerCase()}`]) || null,
+      option_image_url: getCsvValue(record, [`option_${label.toLowerCase()}_image_url`, `gambar_pilihan_${label.toLowerCase()}`]) || null,
+      is_correct: label === correctLabel,
+      sort_order: index + 1,
+    }))
+    .filter((option) => option.option_text || option.option_image_url);
+
+  if (options.length < 2) {
+    throw new Error(`Baris ${rowNumber}: soalan objektif perlukan sekurang-kurangnya dua pilihan jawapan.`);
+  }
+
+  if (!options.some((option) => option.option_label === correctLabel)) {
+    throw new Error(`Baris ${rowNumber}: pilihan jawapan betul ${correctLabel} belum diisi.`);
+  }
+
+  return {
+    question_type: "objective",
+    section,
+    question_text: questionText,
+    category: getCsvValue(record, ["category", "kategori"]) || null,
+    topic: getCsvValue(record, ["topic", "topik"]) || null,
+    difficulty,
+    question_image_url: getCsvValue(record, ["question_image_url", "gambar_soalan"]) || null,
+    explanation: getCsvValue(record, ["explanation", "nota"]) || null,
+    correct_option_label: correctLabel,
+    options,
+  };
+}
+
+function normalizeCsvHeader(header: string): string {
+  return header.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function getCsvValue(record: Record<string, string>, keys: string[]): string {
+  for (const key of keys) {
+    const normalizedKey = normalizeCsvHeader(key);
+    const value = record[normalizedKey];
+    if (value) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function parseCsvSection(value: string, rowNumber: number): PkskSectionCode {
+  const section = value.trim().toUpperCase();
+  if (section === "A" || section === "B" || section === "C") {
+    return section;
+  }
+  throw new Error(`Baris ${rowNumber}: bahagian mesti A, B atau C.`);
+}
+
+function parseCsvQuestionType(value: string, section: PkskSectionCode): QuestionType {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "essay" || normalized === "esei" || normalized === "karangan") {
+    return "essay";
+  }
+  if (normalized === "objective" || normalized === "objektif" || normalized === "") {
+    return section === "C" ? "essay" : "objective";
+  }
+  return "objective";
+}
+
+function parseCsvDifficulty(value: string): QuestionDifficulty {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "easy" || normalized === "mudah") {
+    return "easy";
+  }
+  if (normalized === "hard" || normalized === "sukar") {
+    return "hard";
+  }
+  return "medium";
 }
 
 function questionStatusLabel(question: AdminQuestionRow): string {

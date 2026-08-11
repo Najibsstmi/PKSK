@@ -2,8 +2,8 @@ import { requireSupabase, supabase } from "../lib/supabase";
 import type { AccessStatus, AppSettings } from "../types/access";
 
 const defaultSettings: AppSettings = {
-  free_preview_section_a_limit: 5,
-  free_preview_section_b_limit: 5,
+  free_preview_section_a_limit: 15,
+  free_preview_section_b_limit: 20,
   free_preview_section_c_enabled: false,
 };
 
