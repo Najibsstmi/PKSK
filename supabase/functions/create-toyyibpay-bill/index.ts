@@ -5,6 +5,39 @@ import { corsHeaders, json, requireEnv } from "../_shared/cors.ts";
 const PREMIUM_AMOUNT_RM = 49;
 const PREMIUM_AMOUNT_CENTS = 4900;
 const RETURN_URL = "https://pksk.cikgustem.com/payment-result";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type AuthUser = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+  email_confirmed_at?: string | null;
+};
+
+type CheckoutCustomerPayload = {
+  displayName?: string;
+  email?: string;
+  password?: string;
+};
+
+type CreateBillPayload = {
+  customer?: CheckoutCustomerPayload;
+};
+
+type PaymentProfile = {
+  id: string;
+  display_name: string | null;
+  full_name: string | null;
+  subscription_status: string | null;
+  subscription_ends_at: string | null;
+  is_blocked: boolean | null;
+};
+
+type CheckoutUser = {
+  id: string;
+  email: string;
+  displayName: string;
+};
 
 serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -23,68 +56,28 @@ serve(async (request) => {
     const categoryCode = requireEnv("TOYYIBPAY_CATEGORY_CODE");
     const baseUrl = normalizeBaseUrl(Deno.env.get("TOYYIBPAY_BASE_URL") ?? "https://toyyibpay.com");
     const authHeader = request.headers.get("Authorization") ?? "";
-
-    if (!authHeader) {
-      return json(request, { error: "LOGIN_REQUIRED" }, 401);
-    }
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const requestPayload = await readRequestPayload(request);
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+    const authenticatedUser = authHeader ? await getAuthenticatedUser(supabaseUrl, anonKey, authHeader) : null;
+    const checkoutUser = authenticatedUser
+      ? await resolveAuthenticatedCheckoutUser(serviceClient, authenticatedUser)
+      : await resolveGuestCheckoutUser(serviceClient, requestPayload.customer);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await userClient.auth.getUser();
-
-    if (userError || !user) {
-      return json(request, { error: "LOGIN_REQUIRED" }, 401);
-    }
-
-    const { data: profile, error: profileError } = await serviceClient
-      .from("profiles")
-      .select("id,display_name,full_name,subscription_status,subscription_ends_at,is_blocked")
-      .eq("id", user.id)
-      .single();
-
-    if (profileError || !profile) {
-      return json(request, { error: "PROFILE_NOT_FOUND" }, 404);
-    }
-
-    if (profile.is_blocked || profile.subscription_status === "blocked") {
-      return json(request, { error: "ACCOUNT_BLOCKED" }, 403);
-    }
-
-    const isPremium =
-      profile.subscription_status === "premium" &&
-      (!profile.subscription_ends_at || new Date(profile.subscription_ends_at).getTime() > Date.now());
-
-    if (isPremium) {
-      return json(request, { error: "PREMIUM_ALREADY_ACTIVE" }, 409);
-    }
-
-    const email = user.email ?? "";
-    if (!email) {
-      return json(request, { error: "EMAIL_REQUIRED" }, 400);
-    }
-
-    const displayName = profile.display_name || profile.full_name || user.user_metadata?.display_name || email;
-    const externalReference = `PKSK-${user.id}-${Date.now()}`;
+    const externalReference = `PKSK-${checkoutUser.id}-${Date.now()}`;
     const callbackUrl = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/toyyibpay-callback`;
 
     const { data: payment, error: insertError } = await serviceClient
       .from("payment_requests")
       .insert({
-        user_id: user.id,
-        email,
+        user_id: checkoutUser.id,
+        email: checkoutUser.email,
         amount: PREMIUM_AMOUNT_RM,
         currency: "MYR",
         status: "pending",
         provider: "toyyibpay",
         payment_method: "toyyibpay",
         external_reference: externalReference,
-        notes: "ToyyibPay online banking",
+        notes: authenticatedUser ? "ToyyibPay online banking" : "ToyyibPay checkout with customer signup",
       })
       .select("id")
       .single();
@@ -104,8 +97,8 @@ serve(async (request) => {
       billReturnUrl: RETURN_URL,
       billCallbackUrl: callbackUrl,
       billExternalReferenceNo: externalReference,
-      billTo: displayName,
-      billEmail: email,
+      billTo: checkoutUser.displayName,
+      billEmail: checkoutUser.email,
       billPhone: "",
       billPaymentChannel: "0",
       billContentEmail: "Terima kasih kerana melanggan PKSK Academy Premium.",
@@ -151,6 +144,160 @@ serve(async (request) => {
     return json(request, { error: message }, 500);
   }
 });
+
+async function readRequestPayload(request: Request): Promise<CreateBillPayload> {
+  const contentType = request.headers.get("Content-Type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return {};
+  }
+
+  try {
+    return (await request.json()) as CreateBillPayload;
+  } catch {
+    return {};
+  }
+}
+
+async function getAuthenticatedUser(supabaseUrl: string, anonKey: string, authHeader: string): Promise<AuthUser | null> {
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const {
+    data: { user },
+    error,
+  } = await userClient.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  return user as AuthUser;
+}
+
+async function resolveAuthenticatedCheckoutUser(serviceClient: ReturnType<typeof createClient>, user: AuthUser): Promise<CheckoutUser> {
+  const email = cleanEmail(user.email ?? "");
+  if (!email) {
+    throw new Error("EMAIL_REQUIRED");
+  }
+
+  const profile = await ensureProfileExists(serviceClient, user.id, getMetadataDisplayName(user) || email);
+  assertProfileCanPurchase(profile);
+
+  return {
+    id: user.id,
+    email,
+    displayName: profile.display_name || profile.full_name || getMetadataDisplayName(user) || email,
+  };
+}
+
+async function resolveGuestCheckoutUser(serviceClient: ReturnType<typeof createClient>, customer?: CheckoutCustomerPayload): Promise<CheckoutUser> {
+  const displayName = (customer?.displayName ?? "").trim();
+  const email = cleanEmail(customer?.email ?? "");
+  const password = (customer?.password ?? "").trim();
+
+  if (!displayName || !email || !password) {
+    throw new Error("CUSTOMER_INFO_REQUIRED");
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    throw new Error("INVALID_EMAIL");
+  }
+  if (password.length < 6) {
+    throw new Error("PASSWORD_TOO_SHORT");
+  }
+
+  const user = await findAuthUserByEmail(serviceClient, email);
+  if (!user) {
+    throw new Error("CHECKOUT_SIGNUP_REQUIRED");
+  }
+
+  const profile = await ensureProfileExists(serviceClient, user.id, displayName);
+  assertProfileCanPurchase(profile);
+
+  return {
+    id: user.id,
+    email,
+    displayName: profile.display_name || profile.full_name || displayName,
+  };
+}
+
+async function findAuthUserByEmail(serviceClient: ReturnType<typeof createClient>, email: string): Promise<AuthUser | null> {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await serviceClient.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const match = data.users.find((user) => cleanEmail(user.email ?? "") === email);
+    if (match) {
+      return match as AuthUser;
+    }
+    if (data.users.length < 1000) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function ensureProfileExists(serviceClient: ReturnType<typeof createClient>, userId: string, displayName: string): Promise<PaymentProfile> {
+  const { data: profile, error } = await serviceClient
+    .from("profiles")
+    .select("id,display_name,full_name,subscription_status,subscription_ends_at,is_blocked")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (profile) {
+    return profile as PaymentProfile;
+  }
+
+  const { error: insertError } = await serviceClient.from("profiles").insert({
+    id: userId,
+    full_name: displayName,
+    display_name: displayName,
+  });
+
+  if (insertError && insertError.code !== "23505") {
+    throw new Error(insertError.message);
+  }
+
+  return {
+    id: userId,
+    display_name: displayName,
+    full_name: displayName,
+    subscription_status: "free",
+    subscription_ends_at: null,
+    is_blocked: false,
+  };
+}
+
+function assertProfileCanPurchase(profile: PaymentProfile) {
+  if (profile.is_blocked || profile.subscription_status === "blocked") {
+    throw new Error("ACCOUNT_BLOCKED");
+  }
+
+  const isPremium =
+    profile.subscription_status === "premium" &&
+    (!profile.subscription_ends_at || new Date(profile.subscription_ends_at).getTime() > Date.now());
+
+  if (isPremium) {
+    throw new Error("PREMIUM_ALREADY_ACTIVE");
+  }
+}
+
+function getMetadataDisplayName(user: AuthUser): string {
+  const metadata = user.user_metadata ?? {};
+  const displayName = metadata.display_name ?? metadata.full_name;
+  return typeof displayName === "string" ? displayName.trim() : "";
+}
+
+function cleanEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/$/, "");

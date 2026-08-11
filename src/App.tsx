@@ -96,7 +96,7 @@ import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
 import type { DraftOption, DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
-import type { AdminPaymentRequestRow, PaymentRequest } from "./types/payment";
+import type { AdminPaymentRequestRow, PaymentRequest, ToyyibPayCustomerInput } from "./types/payment";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
@@ -2449,18 +2449,14 @@ function PaywallPage({
       onNavigate("/app");
       return;
     }
-    if (!isLoggedIn) {
-      onAuth("register");
-      return;
-    }
     setPaymentError(null);
     setPaymentMethodOpen(true);
   };
-  const handleToyyibPay = async () => {
+  const handleToyyibPay = async (customer?: ToyyibPayCustomerInput) => {
     setToyyibPayBusy(true);
     setPaymentError(null);
     try {
-      const bill = await ToyyibPayService.createBill();
+      const bill = await ToyyibPayService.createBill(customer);
       window.location.href = bill.paymentUrl;
     } catch (error) {
       setPaymentError(toMessage(error));
@@ -2595,6 +2591,8 @@ function PaywallPage({
       {paymentMethodOpen ? (
         <PaymentMethodDialog
           settings={settings}
+          isLoggedIn={isLoggedIn}
+          userEmail={userEmail}
           error={paymentError}
           toyyibPayBusy={toyyibPayBusy}
           onClose={() => setPaymentMethodOpen(false)}
@@ -2622,6 +2620,8 @@ function PaywallPage({
 
 function PaymentMethodDialog({
   settings,
+  isLoggedIn,
+  userEmail,
   error,
   toyyibPayBusy,
   onClose,
@@ -2629,13 +2629,46 @@ function PaymentMethodDialog({
   onManualQr,
 }: {
   settings: AppSettings;
+  isLoggedIn: boolean;
+  userEmail: string;
   error: string | null;
   toyyibPayBusy: boolean;
   onClose: () => void;
-  onToyyibPay: () => Promise<void>;
+  onToyyibPay: (customer?: ToyyibPayCustomerInput) => Promise<void>;
   onManualQr: () => void;
 }) {
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState(userEmail);
+  const [customerPassword, setCustomerPassword] = useState("");
+  const [customerError, setCustomerError] = useState<string | null>(null);
+
+  function handleToyyibPayClick() {
+    if (isLoggedIn) {
+      void onToyyibPay();
+      return;
+    }
+
+    const displayName = customerName.trim();
+    const email = customerEmail.trim().toLowerCase();
+    const password = customerPassword.trim();
+
+    if (!displayName) {
+      setCustomerError("Sila isi nama pelanggan.");
+      return;
+    }
+    if (!email || !email.includes("@")) {
+      setCustomerError("Sila isi e-mel yang sah.");
+      return;
+    }
+    if (password.length < 6) {
+      setCustomerError("Kata laluan perlu sekurang-kurangnya 6 aksara.");
+      return;
+    }
+
+    setCustomerError(null);
+    void onToyyibPay({ displayName, email, password });
+  }
 
   return (
     <section className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
@@ -2655,7 +2688,59 @@ function PaymentMethodDialog({
           </button>
         </div>
 
-        {error ? <p className="mt-5 rounded-2xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-700">{error}</p> : null}
+        {error || customerError ? <p className="mt-5 rounded-2xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-700">{customerError ?? error}</p> : null}
+
+        {!isLoggedIn ? (
+          <div className="mt-5 rounded-3xl border border-ocean-100 bg-ocean-50/70 p-5">
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
+                <UserRound size={22} aria-hidden="true" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Maklumat pelanggan</h3>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                  Akaun Premium akan disediakan menggunakan maklumat ini selepas bayaran ToyyibPay berjaya.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Label text="Nama pelanggan">
+                <input
+                  className="field bg-white"
+                  value={customerName}
+                  onChange={(event) => setCustomerName(event.target.value)}
+                  placeholder="Contoh: Najib"
+                  autoComplete="name"
+                />
+              </Label>
+              <Label text="E-mel">
+                <input
+                  className="field bg-white"
+                  type="email"
+                  value={customerEmail}
+                  onChange={(event) => setCustomerEmail(event.target.value)}
+                  placeholder="nama@email.com"
+                  autoComplete="email"
+                />
+              </Label>
+              <div className="sm:col-span-2">
+                <Label text="Kata laluan akaun">
+                  <input
+                    className="field bg-white"
+                    type="password"
+                    value={customerPassword}
+                    onChange={(event) => setCustomerPassword(event.target.value)}
+                    placeholder="Minimum 6 aksara"
+                    autoComplete="new-password"
+                  />
+                </Label>
+                <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                  Jika e-mel ini sudah pernah didaftarkan, bayaran akan dipautkan kepada akaun tersebut dan kata laluan sedia ada tidak ditukar.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <article className="relative overflow-hidden rounded-3xl border border-ocean-200 bg-gradient-to-br from-ocean-50 via-white to-teal-50 p-5 shadow-[0_18px_46px_rgba(8,145,178,0.18)]">
@@ -2667,9 +2752,9 @@ function PaymentMethodDialog({
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
               Bayar melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
             </p>
-            <button type="button" className="primary-button mt-5 w-full" onClick={onToyyibPay} disabled={toyyibPayBusy}>
+            <button type="button" className="primary-button mt-5 w-full" onClick={handleToyyibPayClick} disabled={toyyibPayBusy}>
               <CreditCard size={18} aria-hidden="true" />
-              {toyyibPayBusy ? "Menyediakan bil..." : "Bayar dengan ToyyibPay"}
+              {toyyibPayBusy ? "Menyediakan bil..." : "Teruskan ke ToyyibPay"}
             </button>
           </article>
 
@@ -2894,14 +2979,14 @@ function PaymentResultPage({
         </div>
         <h1 className="mt-5 text-3xl font-black text-slate-950">Log masuk untuk semak bayaran</h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-          Selepas bayaran, sistem perlu padankan akaun anda dengan rekod ToyyibPay.
+          Gunakan e-mel dan kata laluan yang diisi semasa pembayaran. Jika Supabase meminta pengesahan e-mel, sahkan dahulu melalui inbox.
         </p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <button type="button" className="primary-button" onClick={() => onAuth("login")}>
             Log Masuk
           </button>
-          <button type="button" className="secondary-button" onClick={() => onAuth("register")}>
-            Daftar Akaun
+          <button type="button" className="secondary-button" onClick={() => onNavigate("/premium")}>
+            Kembali ke Premium
           </button>
         </div>
       </section>

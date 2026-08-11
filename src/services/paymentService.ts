@@ -1,5 +1,13 @@
 import { requireSupabase } from "../lib/supabase";
-import type { AdminPaymentRequestRow, CreatePaymentRequestResult, ManualPaymentConfig, PaymentRequest, PaymentRequestStatus, ToyyibPayBillResult } from "../types/payment";
+import type {
+  AdminPaymentRequestRow,
+  CreatePaymentRequestResult,
+  ManualPaymentConfig,
+  PaymentRequest,
+  PaymentRequestStatus,
+  ToyyibPayBillResult,
+  ToyyibPayCustomerInput,
+} from "../types/payment";
 
 type PaymentProvider = {
   createRequest: (email: string | null) => Promise<CreatePaymentRequestResult>;
@@ -40,10 +48,18 @@ export const ManualPaymentService: PaymentProvider = {
 };
 
 export const ToyyibPayService = {
-  async createBill(): Promise<ToyyibPayBillResult> {
+  async createBill(customer?: ToyyibPayCustomerInput): Promise<ToyyibPayBillResult> {
     const client = requireSupabase();
+    if (customer) {
+      await prepareCheckoutAccount(customer);
+    }
+
     const { data, error } = await client.functions.invoke("create-toyyibpay-bill", {
-      body: {},
+      body: customer
+        ? {
+            customer,
+          }
+        : {},
     });
 
     if (error) {
@@ -63,6 +79,35 @@ export const ToyyibPayService = {
     };
   },
 };
+
+async function prepareCheckoutAccount(customer: ToyyibPayCustomerInput): Promise<void> {
+  const client = requireSupabase();
+  const {
+    data: { session },
+  } = await client.auth.getSession();
+
+  if (session) {
+    return;
+  }
+
+  const email = customer.email.trim().toLowerCase();
+  const displayName = customer.displayName.trim();
+  const { error } = await client.auth.signUp({
+    email,
+    password: customer.password,
+    options: {
+      emailRedirectTo: window.location.origin,
+      data: {
+        display_name: displayName,
+        full_name: displayName,
+      },
+    },
+  });
+
+  if (error && !isExistingAccountMessage(error.message)) {
+    throw new Error(error.message);
+  }
+}
 
 export async function fetchMyPendingPaymentRequest(): Promise<PaymentRequest | null> {
   const client = requireSupabase();
@@ -198,7 +243,19 @@ function mapPaymentMessage(message: string): string {
     return "Akaun Premium sudah aktif.";
   }
   if (message.includes("LOGIN_REQUIRED")) {
-    return "Sila log masuk dahulu untuk meneruskan bayaran.";
+    return "Sila isi maklumat pelanggan untuk meneruskan bayaran.";
+  }
+  if (message.includes("CUSTOMER_INFO_REQUIRED")) {
+    return "Sila lengkapkan nama, e-mel dan kata laluan sebelum meneruskan bayaran.";
+  }
+  if (message.includes("INVALID_EMAIL")) {
+    return "Format e-mel tidak sah.";
+  }
+  if (message.includes("PASSWORD_TOO_SHORT")) {
+    return "Kata laluan perlu sekurang-kurangnya 6 aksara.";
+  }
+  if (message.includes("CHECKOUT_SIGNUP_REQUIRED")) {
+    return "Akaun pelanggan belum sempat disediakan. Sila cuba tekan ToyyibPay sekali lagi.";
   }
   if (message.includes("ACCOUNT_BLOCKED")) {
     return "Akaun ini sedang disemak oleh pentadbir.";
@@ -208,4 +265,9 @@ function mapPaymentMessage(message: string): string {
   }
 
   return message;
+}
+
+function isExistingAccountMessage(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  return lowerMessage.includes("already registered") || lowerMessage.includes("already exists") || lowerMessage.includes("user already");
 }

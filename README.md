@@ -59,13 +59,14 @@ Flow semasa:
 
 1. User buka `/premium`
 2. Klik `Dapatkan Premium RM49`
-3. Jika belum login, user daftar atau log masuk dahulu
-4. User pilih kaedah bayaran:
+3. Jika belum login, user isi nama, e-mel dan kata laluan dalam modal bayaran
+4. Sistem cuba daftar akaun menggunakan maklumat tersebut, kemudian cipta bil ToyyibPay
+5. User pilih kaedah bayaran:
    - ToyyibPay: sistem cipta bil dan redirect ke ToyyibPay
    - QR DuitNow: sistem kekalkan flow QR + WhatsApp manual
-5. Untuk ToyyibPay, callback server-to-server akan update `payment_requests` kepada `paid`
-6. Supabase aktifkan `profiles.subscription_status = 'premium'` dengan plan `lifetime`
-7. User kembali ke `/payment-result` untuk semak status
+6. Untuk ToyyibPay, callback server-to-server akan update `payment_requests` kepada `paid`
+7. Supabase aktifkan `profiles.subscription_status = 'premium'` dengan plan `lifetime`
+8. User kembali ke `/payment-result` untuk log masuk dan semak status
 
 Architecture payment diletakkan dalam `PaymentService`. `ToyyibPayService` memanggil Edge Function server-side, manakala `ManualPaymentService` mengekalkan flow QR DuitNow sedia ada.
 
