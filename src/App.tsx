@@ -1484,7 +1484,7 @@ function AuthPanel({
   return (
     <section className="mb-6 rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6">
       <BrandMark />
-      <div className="mb-4 flex items-center justify-between gap-4">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
           <p className="text-sm leading-6 text-slate-500">
@@ -1494,9 +1494,9 @@ function AuthPanel({
         <button
           type="button"
           onClick={() => onMode(mode === "login" ? "register" : "login")}
-          className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700"
+          className="inline-flex min-h-14 min-w-[112px] shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-slate-100 px-4 py-2 text-center text-sm font-bold leading-tight text-slate-700 transition hover:bg-ocean-50 hover:text-ocean-700"
         >
-          {mode === "login" ? "Daftar" : "Log masuk"}
+          {mode === "login" ? "Daftar Akaun" : "Log Masuk"}
         </button>
       </div>
       <form className="grid gap-4" onSubmit={handleSubmit}>
@@ -2644,6 +2644,7 @@ function AdminShell({ title, text, children }: { title: string; text: string; ch
 }
 
 function AdminNav() {
+  const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   const items: Array<{ to: AppRoute; label: string }> = [
     { to: "/admin", label: "Admin Dashboard" },
     { to: "/admin/users", label: "Users" },
@@ -2653,17 +2654,62 @@ function AdminNav() {
     { to: "/admin/questions/import-history", label: "Import History" },
     { to: "/admin/settings", label: "System Settings" },
   ];
+  const currentPath = window.location.pathname as AppRoute;
+  const activeItem = items.find((item) => item.to === currentPath) ?? (currentPath === "/admin/questions/import" ? items.find((item) => item.to === "/admin/questions") : null) ?? items[0];
+  const isActiveItem = (to: AppRoute) => to === currentPath || (to === "/admin/questions" && currentPath === "/admin/questions/import");
+
   function navigateAdmin(to: AppRoute) {
+    setIsAdminMenuOpen(false);
     navigateAdminRoute(to);
   }
 
   return (
-    <nav className="flex gap-2 overflow-x-auto rounded-2xl bg-white p-2 shadow-soft" aria-label="Admin navigation">
-      {items.map((item) => (
-        <button key={item.to} type="button" className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 hover:bg-ocean-50 hover:text-ocean-700" onClick={() => navigateAdmin(item.to)}>
-          {item.label}
+    <nav className="rounded-2xl bg-white p-2 shadow-soft" aria-label="Admin navigation">
+      <div className="md:hidden">
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl bg-ocean-50 px-4 py-3 text-left text-sm font-black text-ocean-800"
+          onClick={() => setIsAdminMenuOpen((current) => !current)}
+          aria-expanded={isAdminMenuOpen}
+        >
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <Menu size={17} className="shrink-0" aria-hidden="true" />
+            <span className="truncate">{activeItem.label}</span>
+          </span>
+          <ChevronRight size={17} className={`shrink-0 transition ${isAdminMenuOpen ? "rotate-90" : ""}`} aria-hidden="true" />
         </button>
-      ))}
+        {isAdminMenuOpen ? (
+          <div className="mt-2 grid gap-2">
+            {items.map((item) => (
+              <button
+                key={item.to}
+                type="button"
+                className={`flex min-h-11 w-full items-center rounded-xl px-4 py-2 text-left text-sm font-bold ${
+                  isActiveItem(item.to) ? "bg-ocean-600 text-white" : "bg-slate-50 text-slate-700 hover:bg-ocean-50 hover:text-ocean-700"
+                }`}
+                onClick={() => navigateAdmin(item.to)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="hidden gap-2 overflow-x-auto md:flex">
+        {items.map((item) => (
+          <button
+            key={item.to}
+            type="button"
+            className={`shrink-0 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold ${
+              isActiveItem(item.to) ? "bg-ocean-50 text-ocean-700" : "text-slate-600 hover:bg-ocean-50 hover:text-ocean-700"
+            }`}
+            onClick={() => navigateAdmin(item.to)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
     </nav>
   );
 }
