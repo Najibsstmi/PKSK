@@ -104,25 +104,40 @@ serve(async (request) => {
       billContentEmail: "Terima kasih kerana melanggan PKSK Academy Premium.",
     });
 
-    const toyResponse = await fetch(`${baseUrl}/index.php/api/createBill`, {
+    const toyEndpoint = buildCreateBillEndpoint(baseUrl);
+    console.log("[create-toyyibpay-bill] Creating ToyyibPay bill", {
+      paymentId: payment.id,
+      endpointHost: getHostName(toyEndpoint),
+      hasCategoryCode: Boolean(categoryCode),
+    });
+
+    const toyResponse = await fetch(toyEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: billPayload,
     });
-    const toyBody = await toyResponse.json().catch(() => null);
+    const toyBodyText = await toyResponse.text();
+    const toyBody = parseToyyibPayResponse(toyBodyText);
     const billCode = extractBillCode(toyBody);
 
     if (!toyResponse.ok || !billCode) {
+      const failureDetails = buildToyyibPayFailureDetails(toyResponse, toyBody, toyBodyText);
+      console.error("[create-toyyibpay-bill] ToyyibPay bill creation failed", {
+        paymentId: payment.id,
+        httpStatus: toyResponse.status,
+        details: failureDetails,
+      });
+
       await serviceClient
         .from("payment_requests")
         .update({
           status: "failed",
-          provider_response: toJsonObject(toyBody),
+          provider_response: toJsonObject(failureDetails),
           notes: "ToyyibPay bill creation failed",
         })
         .eq("id", payment.id);
 
-      return json(request, { error: "TOYYIBPAY_BILL_FAILED", details: toyBody }, 502);
+      return json(request, { error: "TOYYIBPAY_BILL_FAILED", details: failureDetails }, 502);
     }
 
     await serviceClient
@@ -313,7 +328,41 @@ function statusForErrorMessage(message: string): number {
 }
 
 function normalizeBaseUrl(value: string): string {
-  return value.replace(/\/$/, "");
+  return value.trim().replace(/\/+$/, "");
+}
+
+function buildCreateBillEndpoint(baseUrl: string): string {
+  const normalized = normalizeBaseUrl(baseUrl);
+
+  if (normalized.endsWith("/index.php/api/createBill")) {
+    return normalized;
+  }
+  if (normalized.endsWith("/index.php/api")) {
+    return `${normalized}/createBill`;
+  }
+
+  return `${normalized}/index.php/api/createBill`;
+}
+
+function getHostName(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "invalid-url";
+  }
+}
+
+function parseToyyibPayResponse(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return trimmed;
+  }
 }
 
 function extractBillCode(payload: unknown): string | null {
@@ -337,4 +386,13 @@ function extractBillCode(payload: unknown): string | null {
 
 function toJsonObject(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : { raw: payload };
+}
+
+function buildToyyibPayFailureDetails(response: Response, payload: unknown, rawText: string): Record<string, unknown> {
+  return {
+    httpStatus: response.status,
+    httpStatusText: response.statusText,
+    response: payload,
+    responseText: typeof payload === "string" ? payload : rawText.trim().slice(0, 500),
+  };
 }

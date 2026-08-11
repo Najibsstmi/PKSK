@@ -252,6 +252,8 @@ function normalizeWhatsAppNumber(phoneNumber: string): string {
 }
 
 function mapPaymentMessage(message: string): string {
+  const toyyibPayDetails = detailAfterCode(message, "TOYYIBPAY_BILL_FAILED");
+
   if (message.includes("ADMIN_REQUIRED")) {
     return "Akses admin diperlukan.";
   }
@@ -262,7 +264,13 @@ function mapPaymentMessage(message: string): string {
     return "Status bayaran tidak sah.";
   }
   if (message.includes("TOYYIBPAY_BILL_FAILED")) {
+    if (toyyibPayDetails) {
+      return `ToyyibPay belum dapat sediakan bil. Maklumat ralat: ${toyyibPayDetails}`;
+    }
     return "Bil ToyyibPay belum dapat disediakan. Sila cuba semula atau gunakan QR DuitNow.";
+  }
+  if (message.includes("TOYYIBPAY_SECRET_KEY") || message.includes("TOYYIBPAY_CATEGORY_CODE")) {
+    return "Tetapan ToyyibPay belum lengkap. Sila semak Secret Key dan Category Code dalam Supabase.";
   }
   if (message.includes("PREMIUM_ALREADY_ACTIVE")) {
     return "Akaun Premium sudah aktif.";
@@ -320,7 +328,7 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
       .json()
       .catch(() => null);
     if (payload && typeof payload === "object" && "error" in payload) {
-      return String((payload as { error: unknown }).error);
+      return formatFunctionErrorPayload(payload as Record<string, unknown>);
     }
 
     const text = await context
@@ -333,4 +341,66 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
   }
 
   return error instanceof Error ? error.message : "Bil ToyyibPay belum dapat disediakan. Sila cuba semula.";
+}
+
+function formatFunctionErrorPayload(payload: Record<string, unknown>): string {
+  const code = String(payload.error ?? "");
+  const details = summarizeErrorDetails(payload.details);
+  return details ? `${code}: ${details}` : code;
+}
+
+function detailAfterCode(message: string, code: string): string {
+  const marker = `${code}:`;
+  const index = message.indexOf(marker);
+  if (index === -1) {
+    return "";
+  }
+
+  return message.slice(index + marker.length).trim();
+}
+
+function summarizeErrorDetails(value: unknown): string {
+  const summary = summarizeUnknown(value);
+  return summary.length > 220 ? `${summary.slice(0, 217)}...` : summary;
+}
+
+function summarizeUnknown(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(summarizeUnknown).filter(Boolean).join("; ");
+  }
+  if (typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    const preferredKeys = [
+      "message",
+      "error",
+      "reason",
+      "status",
+      "httpStatus",
+      "httpStatusText",
+      "response",
+      "responseText",
+    ];
+    const parts = preferredKeys
+      .filter((key) => key in object)
+      .map((key) => `${key}: ${summarizeUnknown(object[key])}`)
+      .filter((part) => !part.endsWith(": "));
+
+    if (parts.length > 0) {
+      return parts.join("; ");
+    }
+
+    return Object.entries(object)
+      .slice(0, 4)
+      .map(([key, item]) => `${key}: ${summarizeUnknown(item)}`)
+      .filter((part) => !part.endsWith(": "))
+      .join("; ");
+  }
+
+  return "";
 }
