@@ -295,6 +295,8 @@ $$;
 revoke all on function public.activate_toyyibpay_premium(uuid, text, text, jsonb) from public;
 grant execute on function public.activate_toyyibpay_premium(uuid, text, text, jsonb) to service_role;
 
+drop function if exists public.admin_list_payment_requests(text, text, integer, integer);
+
 create or replace function public.admin_list_payment_requests(
   search_text text default null,
   status_filter text default 'pending',
