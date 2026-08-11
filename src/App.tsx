@@ -1256,7 +1256,22 @@ function TopBar({
                 Buka PKSK Academy
               </button>
             ) : isLoggedIn ? (
-              isPremiumPage ? null : (
+              isPremiumPage ? (
+                <>
+                  <button type="button" onClick={() => onNavigate("/app")} className="topbar-login-button">
+                    <UserRound size={17} aria-hidden="true" />
+                    {profile?.display_name ?? "Akaun"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600"
+                    aria-label="Log keluar"
+                  >
+                    <LogOut size={18} aria-hidden="true" />
+                  </button>
+                </>
+              ) : (
                 <button type="button" onClick={onPremiumCheckout} className="topbar-premium-button h-11">
                   <span className="topbar-premium-badge">Paling Popular</span>
                   <Crown size={17} aria-hidden="true" />
