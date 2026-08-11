@@ -45,6 +45,7 @@ import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { pkskSections, states } from "./data/pksk";
 import { useAccess } from "./hooks/useAccess";
+import premiumHeroImage from "./assets/pksk-premium-hero.png";
 import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
 import {
   blockUser,
@@ -2426,17 +2427,17 @@ function PaywallPage({
     }
     setPaymentOpen(true);
   };
-  const statusText = access.isBlocked
+  const accessNotice = access.isBlocked
     ? "Akaun ini sedang disemak oleh pentadbir."
     : access.isExpired
       ? "Akses premium telah tamat."
       : pendingPayment
         ? "Bayaran anda sedang disemak oleh Admin. Premium akan aktif selepas pembayaran disahkan."
-        : "Bayaran sekali sahaja. Tiada caj bulanan. Akses Premium dibuka selepas Admin mengesahkan bayaran.";
+        : "";
   const features = [
-    "Simulasi penuh",
+    "Simulasi tanpa had",
     "Semua bahagian",
-    "Bank soalan lengkap",
+    "Bank soalan penuh",
     "Soalan rawak",
     "Rekod prestasi",
     "XP & Level",
@@ -2447,39 +2448,56 @@ function PaywallPage({
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
-        <div className="grid gap-0 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="min-h-[240px] lg:min-h-[520px]">
-            <img src="/assets/pksk-hero.png" alt="PKSK Academy oleh CikguSTEM" className="h-full w-full object-cover object-left" />
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <div className="grid gap-0 lg:grid-cols-[1.12fr_0.88fr]">
+          <div className="bg-slate-100">
+            <img src={premiumHeroImage} alt="Poster promosi PKSK Academy Premium" className="h-auto w-full object-cover object-center" />
           </div>
-          <div className="flex flex-col justify-center gap-6 p-6 sm:p-8 lg:p-12">
+          <div className="flex flex-col justify-center gap-6 bg-gradient-to-br from-white via-white to-amber-50/45 p-6 sm:p-8 lg:p-12">
             <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-sun-100 px-3 py-2 text-sm font-black text-amber-700">
               <Crown size={17} aria-hidden="true" />
               Premium PKSK Academy
             </div>
             <div>
-              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">PKSK Academy Premium</h1>
-              <div className="mt-4 flex flex-wrap items-end gap-3">
-                <span className="text-5xl font-black leading-none text-ocean-700">{priceLabel}</span>
-                <span className="pb-2 text-sm font-black uppercase text-slate-500">Bayaran sekali sahaja</span>
+              <h1 className="text-4xl font-black leading-tight text-slate-950 sm:text-5xl">PKSK Academy Premium</h1>
+              <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
+                Persediaan lengkap untuk calon PKSK yang lebih yakin, berprestasi dan bersedia.
+              </p>
+            </div>
+            <div className="relative overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-5 shadow-[0_18px_42px_rgba(180,83,9,0.14)]">
+              <div className="mb-4 flex justify-end">
+                <span className="rounded-full bg-rose-500 px-4 py-1 text-xs font-black uppercase text-white shadow-lg">Jimat RM150</span>
               </div>
-              <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-black text-slate-500">Harga Asal</p>
+                  <p className="text-2xl font-black text-slate-500 line-through decoration-rose-500 decoration-4">RM199</p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="text-6xl font-black leading-none text-ocean-700">{priceLabel}</p>
+                  <p className="mt-2 inline-flex rounded-full bg-amber-100 px-4 py-1 text-sm font-black uppercase text-amber-700">Bayaran sekali sahaja</p>
+                  <p className="mt-2 text-sm font-bold text-slate-600">Akses seumur hidup</p>
+                </div>
+              </div>
+              {accessNotice ? <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-sm font-bold leading-6 text-slate-700">{accessNotice}</p> : null}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {features.map((feature) => (
-                <div key={feature} className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-black text-slate-700">
+                <div key={feature} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-black text-slate-700 ring-1 ring-slate-100">
                   <CheckCircle2 size={17} className="text-leaf-600" aria-hidden="true" />
                   {feature}
                 </div>
               ))}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <button type="button" className="primary-button" onClick={handlePrimary}>
+              <button type="button" className="hero-premium-cta w-full sm:w-auto" onClick={handlePrimary}>
+                <Crown size={18} aria-hidden="true" />
                 {primaryLabel}
               </button>
-              {!access.canUsePremiumFeature() ? (
-                <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/preview") : onAuth("login"))}>
-                  {isLoggedIn ? "Cuba Percuma" : "Sudah ada akaun? Log Masuk"}
+              {!access.canUsePremiumFeature() && !isLoggedIn ? (
+                <button type="button" className="secondary-button w-full sm:w-auto" onClick={() => onAuth("login")}>
+                  <UserRound size={17} aria-hidden="true" />
+                  Sudah ada akaun? Log Masuk
                 </button>
               ) : null}
             </div>
