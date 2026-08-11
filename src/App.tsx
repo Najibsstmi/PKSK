@@ -2693,12 +2693,6 @@ function PaymentMethodDialog({
   const [customerError, setCustomerError] = useState<string | null>(null);
 
   function handleToyyibPayClick() {
-    if (isLoggedIn) {
-      setCustomerError(null);
-      void onToyyibPay();
-      return;
-    }
-
     const displayName = customerName.trim();
     const email = customerEmail.trim().toLowerCase();
     const password = customerPassword.trim();
@@ -2711,13 +2705,17 @@ function PaymentMethodDialog({
       setCustomerError("Sila isi e-mel yang sah.");
       return;
     }
-    if (password.length < 6) {
+    if (!isLoggedIn && password.length < 6) {
       setCustomerError("Kata laluan perlu sekurang-kurangnya 6 aksara.");
       return;
     }
 
     setCustomerError(null);
-    void onToyyibPay({ displayName, email, password });
+    void onToyyibPay({
+      displayName,
+      email,
+      password: isLoggedIn ? "authenticated-checkout" : password,
+    });
   }
 
   return (
