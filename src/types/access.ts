@@ -104,6 +104,15 @@ export type AppSettings = {
   free_preview_section_a_limit: number;
   free_preview_section_b_limit: number;
   free_preview_section_c_enabled: boolean;
+  payment_provider: string;
+  payment_price: number;
+  payment_currency: string;
+  payment_plan_code: SubscriptionPlan;
+  payment_whatsapp_number: string;
+  payment_account_name: string;
+  payment_bank_name: string;
+  payment_account_number: string;
+  payment_qr_image_url: string;
 };
 
 export type GuestPreviewPayload = {

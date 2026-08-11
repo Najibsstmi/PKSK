@@ -7,6 +7,7 @@
   ClipboardList,
   Clock3,
   Crown,
+  CheckCircle2,
   Download,
   Eye,
   FileSpreadsheet,
@@ -19,6 +20,7 @@
   LayoutDashboard,
   LockKeyhole,
   LogOut,
+  MessageCircle,
   Menu,
   PenLine,
   Plus,
@@ -63,6 +65,7 @@ import {
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
 import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
+import { approvePaymentRequest, fetchAdminPaymentRequests, fetchMyPendingPaymentRequest, ManualPaymentService, rejectPaymentRequest } from "./services/paymentService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
 import {
   createPdfQuestionImport,
@@ -88,6 +91,7 @@ import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
 import type { DraftOption, DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
+import type { AdminPaymentRequestRow, PaymentRequest } from "./types/payment";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
@@ -110,6 +114,7 @@ type AppRoute =
   | "/admin"
   | "/admin/users"
   | "/admin/subscriptions"
+  | "/admin/payment-requests"
   | "/admin/questions"
   | "/admin/questions/import"
   | "/admin/questions/import-history"
@@ -131,7 +136,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
-const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
+const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
@@ -156,6 +161,7 @@ const validRoutes = new Set<AppRoute>(
     "/app/profile",
     "/admin/users",
     "/admin/subscriptions",
+    "/admin/payment-requests",
     "/admin/questions",
     "/admin/questions/import",
     "/admin/questions/import-history",
@@ -184,6 +190,15 @@ const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 15,
   free_preview_section_b_limit: 20,
   free_preview_section_c_enabled: false,
+  payment_provider: "manual_whatsapp",
+  payment_price: 49,
+  payment_currency: "MYR",
+  payment_plan_code: "lifetime",
+  payment_whatsapp_number: "60197259548",
+  payment_account_name: "PESONA STORE",
+  payment_bank_name: "Maybank",
+  payment_account_number: "551146529325",
+  payment_qr_image_url: "/assets/duitnow-qr-pesona-store.png",
 };
 const freePreviewLimits = {
   A: 15,
@@ -235,6 +250,7 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
   const [attempts, setAttempts] = useState<QuizAttemptRow[]>([]);
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
+  const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
   const [activeEssayPayload, setActiveEssayPayload] = useState<EssayAttemptPayload | null>(null);
@@ -287,6 +303,7 @@ function App() {
         setAccessStatus(null);
         setAttempts([]);
         setBadges([]);
+        setPendingPayment(null);
         setActivePayload(null);
         setActiveEssayPayload(null);
         setEssayResult(null);
@@ -356,10 +373,12 @@ function App() {
       const nextBadges = await fetchBadgesWithProgress(nextProfile, nextAttempts);
       const activeAttempt = nextAccessStatus.is_premium ? await fetchActiveAttempt() : null;
       const activeEssayAttemptId = nextAccessStatus.is_premium ? await fetchActiveEssayAttempt().catch(() => null) : null;
+      const nextPendingPayment = nextAccessStatus.is_premium ? null : await fetchMyPendingPaymentRequest().catch(() => null);
       setProfile(nextProfile);
       setAccessStatus(nextAccessStatus);
       setAttempts(nextAttempts);
       setBadges(nextBadges);
+      setPendingPayment(nextPendingPayment);
 
       const savedAttemptId = window.localStorage.getItem("pksk-active-attempt") ?? activeAttempt?.id;
       if (savedAttemptId) {
@@ -406,6 +425,14 @@ function App() {
 
   function openPaywall() {
     navigate("/premium");
+  }
+
+  async function handlePaymentSubmitted() {
+    if (session?.user.id) {
+      const nextPendingPayment = await fetchMyPendingPaymentRequest().catch(() => null);
+      setPendingPayment(nextPendingPayment);
+    }
+    setMessage("Terima kasih. Sila tunggu pengesahan daripada Admin. Akaun Premium akan diaktifkan selepas pembayaran disahkan.");
   }
 
   async function handleInstallApp() {
@@ -873,6 +900,7 @@ function App() {
     if (currentRoute === "/") {
       return (
         <LandingPage
+          settings={appSettings}
           onStartGuestPreview={handleStartGuestPreview}
           onShowPaywall={openPaywall}
         />
@@ -897,7 +925,18 @@ function App() {
       );
     }
     if (currentRoute === "/premium") {
-      return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
+      return (
+        <PaywallPage
+          isLoggedIn={isLoggedIn}
+          access={access}
+          settings={appSettings}
+          userEmail={session?.user.email ?? ""}
+          pendingPayment={pendingPayment}
+          onAuth={openAuth}
+          onNavigate={navigate}
+          onPaymentSubmitted={handlePaymentSubmitted}
+        />
+      );
     }
     if (currentRoute === "/checkout") {
       return <CheckoutPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
@@ -934,6 +973,9 @@ function App() {
       if (currentRoute === "/admin/subscriptions") {
         return <AdminSubscriptionsPage />;
       }
+      if (currentRoute === "/admin/payment-requests") {
+        return <AdminPaymentRequestsPage onMessage={setMessage} onPaymentUpdated={() => session?.user.id ? refreshData(session.user.id) : undefined} />;
+      }
       if (currentRoute === "/admin/settings") {
         return <AdminSettingsPage settings={appSettings} />;
       }
@@ -954,7 +996,18 @@ function App() {
       );
     }
     if (premiumRoutes.has(currentRoute) && !access.canUsePremiumFeature()) {
-      return <PaywallPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
+      return (
+        <PaywallPage
+          isLoggedIn={isLoggedIn}
+          access={access}
+          settings={appSettings}
+          userEmail={session?.user.email ?? ""}
+          pendingPayment={pendingPayment}
+          onAuth={openAuth}
+          onNavigate={navigate}
+          onPaymentSubmitted={handlePaymentSubmitted}
+        />
+      );
     }
     if (currentRoute === "/app") {
       return (
@@ -964,6 +1017,7 @@ function App() {
           profile={profile}
           profileReady={profileReady}
           performance={performance}
+          pendingPayment={pendingPayment}
           activePayload={activePayload}
           activeEssayPayload={activeEssayPayload}
           onNavigate={navigate}
@@ -1077,8 +1131,32 @@ function TopBar({
       : [{ to: "/premium", label: "Dapatkan Premium", tone: "primary" }]
     : [
         { to: "/preview", label: "Cuba Percuma" },
-        { to: "/premium", label: "Premium" },
+        { to: "/premium", label: "Dapatkan Premium", tone: "primary" },
       ];
+  const renderMarketingButton = (item: { to: AppRoute; label: string; tone?: "primary" | "secondary" }, compact = false) => {
+    const isPremiumCta = item.to === "/premium" || item.tone === "primary";
+
+    return (
+      <button
+        key={item.to}
+        type="button"
+        onClick={() => onNavigate(item.to)}
+        className={
+          isPremiumCta
+            ? `topbar-premium-button ${compact ? "min-h-12 w-full" : "h-11"}`
+            : `secondary-button ${compact ? "min-h-12 w-full" : "h-11"} px-4 py-0`
+        }
+      >
+        {isPremiumCta ? (
+          <>
+            <span className="topbar-premium-badge">Paling Popular</span>
+            <Crown size={16} aria-hidden="true" />
+          </>
+        ) : null}
+        {item.label}
+      </button>
+    );
+  };
 
   return (
     <div className="fixed inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -1097,16 +1175,7 @@ function TopBar({
           {isPublicShell
             ? currentRoute === "/"
               ? null
-              : marketingLinks.map((item) => (
-                  <button
-                    key={item.to}
-                    type="button"
-                    onClick={() => onNavigate(item.to)}
-                    className={item.tone === "primary" ? "primary-button h-10 px-4 py-0" : "secondary-button h-10 px-4 py-0"}
-                  >
-                    {item.label}
-                  </button>
-                ))
+              : marketingLinks.map((item) => renderMarketingButton(item))
             : navItems.map((item) => {
                 if (item.authOnly && !isLoggedIn) {
                   return null;
@@ -1143,7 +1212,8 @@ function TopBar({
                 Buka PKSK Academy
               </button>
             ) : isLoggedIn ? (
-              <button type="button" onClick={() => onNavigate("/premium")} className="topbar-login-button">
+              <button type="button" onClick={() => onNavigate("/premium")} className="topbar-premium-button h-11">
+                <span className="topbar-premium-badge">Paling Popular</span>
                 <Crown size={17} aria-hidden="true" />
                 Dapatkan Premium
               </button>
@@ -1189,18 +1259,7 @@ function TopBar({
         <nav className="border-t border-slate-100 bg-white px-4 py-3 lg:hidden" aria-label="Navigasi mudah alih">
           <div className="mx-auto grid max-w-7xl gap-2">
             {isPublicShell
-              ? marketingLinks.map((item) => (
-                  <button
-                    key={item.to}
-                    type="button"
-                    onClick={() => onNavigate(item.to)}
-                    className={`flex h-11 items-center rounded-xl px-3 text-left text-sm font-semibold ${
-                      currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-600"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))
+              ? marketingLinks.map((item) => renderMarketingButton(item, true))
               : navItems.map((item) => {
                   if (item.authOnly && !isLoggedIn) {
                     return null;
@@ -1597,12 +1656,15 @@ function AuthPage({
 }
 
 function LandingPage({
+  settings,
   onStartGuestPreview,
   onShowPaywall,
 }: {
+  settings: AppSettings;
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
+  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
   const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
     { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Simulasi seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
     { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
@@ -1638,7 +1700,7 @@ function LandingPage({
             <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
               <span className="hero-popular-badge">Paling Popular</span>
               <Crown size={18} aria-hidden="true" />
-              Dapatkan Premium
+              Dapatkan Premium {priceLabel}
             </button>
             <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
               <Play size={16} fill="currentColor" aria-hidden="true" />
@@ -1733,6 +1795,7 @@ function Dashboard({
   profile,
   profileReady,
   performance,
+  pendingPayment,
   activePayload,
   activeEssayPayload,
   onNavigate,
@@ -1749,6 +1812,7 @@ function Dashboard({
   profile: ProfileRow | null;
   profileReady: boolean;
   performance: ReturnType<typeof calculatePerformance>;
+  pendingPayment: PaymentRequest | null;
   activePayload: AttemptPayload | null;
   activeEssayPayload: EssayAttemptPayload | null;
   onNavigate: (route: AppRoute) => void;
@@ -1832,6 +1896,8 @@ function Dashboard({
         </div>
       </section>
 
+      {isLoggedIn && !access.isPremium && pendingPayment ? <PaymentPendingBanner payment={pendingPayment} /> : null}
+
       {!isLoggedIn ? (
         <FreePreviewSection onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
       ) : null}
@@ -1868,33 +1934,57 @@ function FreePreviewSection({
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
+  const premiumBenefits = [
+    "Simulasi tanpa had",
+    "Bank soalan penuh",
+    "Soalan rawak setiap cubaan",
+    "Rekod & analisis prestasi",
+    "XP, level dan lencana",
+    "Latihan semua bahagian",
+  ];
+
   return (
     <section className="grid gap-5 lg:grid-cols-2">
-      <article className="rounded-2xl bg-white p-6 shadow-soft">
+      <article className="rounded-2xl border border-ocean-100 bg-white p-6 shadow-soft">
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
           <Sparkles size={23} aria-hidden="true" />
         </span>
         <p className="mt-5 text-sm font-black uppercase text-ocean-700">Preview Percuma</p>
         <h2 className="mt-2 text-2xl font-black text-slate-950">Cuba PKSK Percuma</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Cuba pengalaman PKSK Academy tanpa daftar akaun. Sebahagian soalan dibuka dahulu, selebihnya boleh dibuka melalui Premium.
+          Cuba pengalaman PKSK Academy tanpa daftar akaun. Sebahagian soalan dibuka dahulu, selebihnya boleh diakses melalui Premium.
         </p>
-        <button type="button" className="primary-button mt-5 w-full" onClick={() => onStartGuestPreview("A")}>
+        <button type="button" className="secondary-button mt-5 w-full border-ocean-200 text-ocean-800" onClick={() => onStartGuestPreview("A")}>
           Cuba Percuma
         </button>
       </article>
-      <article className="rounded-2xl bg-white p-6 shadow-soft">
-        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sun-100 text-amber-700">
-          <Crown size={23} aria-hidden="true" />
-        </span>
-        <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
-        <h2 className="mt-2 text-2xl font-black text-slate-950">Simulasi Tanpa Had</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Nikmati simulasi tanpa had, bank soalan penuh, rekod prestasi, sejarah cubaan, XP, level dan lencana.
-        </p>
-        <button type="button" className="secondary-button mt-5 w-full" onClick={onShowPaywall}>
-          Lihat Premium
-        </button>
+      <article className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-6 shadow-[0_24px_54px_rgba(180,83,9,0.14)]">
+        <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-amber-200/40 blur-2xl" aria-hidden="true" />
+        <div className="absolute bottom-5 right-6 hidden text-amber-200/70 md:block" aria-hidden="true">
+          <Trophy size={82} />
+        </div>
+        <div className="relative">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-amber-100 text-amber-700 shadow-sm">
+            <Crown size={25} aria-hidden="true" />
+          </span>
+          <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">PKSK Academy Premium</h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">
+            Persediaan lebih lengkap, lebih tersusun dan boleh dipantau.
+          </p>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+            {premiumBenefits.map((benefit) => (
+              <div key={benefit} className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-black text-slate-800 ring-1 ring-amber-100">
+                <CheckCircle2 size={16} className="shrink-0 text-amber-600" aria-hidden="true" />
+                <span>{benefit}</span>
+              </div>
+            ))}
+          </div>
+          <button type="button" className="primary-button mt-5 w-full bg-amber-500 shadow-[0_16px_32px_rgba(245,158,11,0.24)] hover:bg-amber-600" onClick={onShowPaywall}>
+            <Crown size={17} aria-hidden="true" />
+            Lihat Premium
+          </button>
+        </div>
       </article>
     </section>
   );
@@ -1916,6 +2006,27 @@ function InlinePaywall({ access, onShowPaywall }: { access: ReturnType<typeof us
         <button type="button" className="primary-button" onClick={onShowPaywall}>
           Lihat Premium
         </button>
+      </div>
+    </section>
+  );
+}
+
+function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
+  return (
+    <section className="rounded-2xl border border-sun-200 bg-sun-50 p-5 shadow-soft">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-amber-700">
+            <Clock3 size={24} aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-xl font-black text-slate-950">Wang anda sedang disemak.</h2>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
+              Rekod bayaran RM{Number(payment.amount).toFixed(0)} sudah diterima. Akaun Premium akan aktif selepas Admin sahkan bayaran.
+            </p>
+          </div>
+        </div>
+        <span className="w-fit rounded-xl bg-white px-4 py-2 text-sm font-black text-amber-700">Pending</span>
       </div>
     </section>
   );
@@ -2221,33 +2332,50 @@ function GuestPreviewPage({
 function PaywallPage({
   isLoggedIn,
   access,
+  settings,
+  userEmail,
+  pendingPayment,
   onAuth,
   onNavigate,
+  onPaymentSubmitted,
 }: {
   isLoggedIn: boolean;
   access: ReturnType<typeof useAccess>;
+  settings: AppSettings;
+  userEmail: string;
+  pendingPayment: PaymentRequest | null;
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
+  onPaymentSubmitted: () => Promise<void>;
 }) {
-  const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : isLoggedIn ? "Teruskan ke Checkout" : "Dapatkan Premium";
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
   const handlePrimary = () => {
     if (access.canUsePremiumFeature()) {
       onNavigate("/app");
       return;
     }
-    if (isLoggedIn) {
-      onNavigate("/checkout");
-      return;
-    }
-    onAuth("register");
+    setPaymentOpen(true);
   };
   const statusText = access.isBlocked
     ? "Akaun ini sedang disemak oleh pentadbir."
     : access.isExpired
       ? "Akses premium telah tamat."
-      : isLoggedIn
-        ? "Akaun anda belum mempunyai akses premium."
-        : "Naik taraf ke Premium untuk membuka akses penuh. Sudah mempunyai akaun Premium? Log masuk untuk meneruskan simulasi.";
+      : pendingPayment
+        ? "Bayaran anda sedang disemak oleh Admin. Premium akan aktif selepas pembayaran disahkan."
+        : "Bayaran sekali sahaja. Tiada caj bulanan. Akses Premium dibuka selepas Admin mengesahkan bayaran.";
+  const features = [
+    "Simulasi penuh",
+    "Semua bahagian",
+    "Bank soalan lengkap",
+    "Soalan rawak",
+    "Rekod prestasi",
+    "XP & Level",
+    "Sistem Lencana",
+    "Bahagian C",
+    "Unlimited Practice",
+  ];
 
   return (
     <div className="space-y-8">
@@ -2262,8 +2390,20 @@ function PaywallPage({
               Premium PKSK Academy
             </div>
             <div>
-              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Persediaan PKSK yang lebih lengkap, tersusun dan boleh dipantau.</h1>
+              <h1 className="text-3xl font-black leading-tight text-slate-950 sm:text-5xl">PKSK Academy Premium</h1>
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <span className="text-5xl font-black leading-none text-ocean-700">{priceLabel}</span>
+                <span className="pb-2 text-sm font-black uppercase text-slate-500">Bayaran sekali sahaja</span>
+              </div>
               <p className="mt-4 text-base leading-7 text-slate-600">{statusText}</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {features.map((feature) => (
+                <div key={feature} className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-black text-slate-700">
+                  <CheckCircle2 size={17} className="text-leaf-600" aria-hidden="true" />
+                  {feature}
+                </div>
+              ))}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button type="button" className="primary-button" onClick={handlePrimary}>
@@ -2271,13 +2411,15 @@ function PaywallPage({
               </button>
               {!access.canUsePremiumFeature() ? (
                 <button type="button" className="secondary-button" onClick={() => (isLoggedIn ? onNavigate("/preview") : onAuth("login"))}>
-                  {isLoggedIn ? "Cuba Preview" : "Sudah ada akaun? Log Masuk"}
+                  {isLoggedIn ? "Cuba Percuma" : "Sudah ada akaun? Log Masuk"}
                 </button>
               ) : null}
             </div>
           </div>
         </div>
       </section>
+
+      {pendingPayment && !access.canUsePremiumFeature() ? <PaymentPendingBanner payment={pendingPayment} /> : null}
 
       <section className="grid gap-5 lg:grid-cols-[0.6fr_1.4fr]">
         <article className="rounded-2xl bg-white p-6 shadow-soft">
@@ -2314,8 +2456,8 @@ function PaywallPage({
         <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview percuma boleh digunakan tanpa e-mel dan kata laluan." />
-          <FaqItem title="Adakah payment sudah aktif?" text="Belum. Pembayaran akan ditambah pada fasa akan datang; admin masih boleh aktifkan Premium untuk testing." />
-          <FaqItem title="Bagaimana Premium diaktifkan nanti?" text="Melalui server webhook selepas bayaran berjaya, bukan melalui parameter frontend seperti paid=true." />
+          <FaqItem title="Bagaimana bayaran dibuat?" text="Buat bayaran manual melalui QR DuitNow, kemudian WhatsApp Admin untuk pengesahan." />
+          <FaqItem title="Bagaimana Premium diaktifkan?" text="Admin akan semak rekod bayaran dan aktifkan Premium selepas pembayaran disahkan." />
         </div>
         <div className="mt-6">
           <button type="button" className="primary-button" onClick={handlePrimary}>
@@ -2323,7 +2465,109 @@ function PaywallPage({
           </button>
         </div>
       </section>
+      {paymentOpen ? (
+        <ManualPaymentDialog
+          settings={settings}
+          userEmail={userEmail}
+          onClose={() => setPaymentOpen(false)}
+          onPaymentSubmitted={async () => {
+            await onPaymentSubmitted();
+            setPaymentOpen(false);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ManualPaymentDialog({
+  settings,
+  userEmail,
+  onClose,
+  onPaymentSubmitted,
+}: {
+  settings: AppSettings;
+  userEmail: string;
+  onClose: () => void;
+  onPaymentSubmitted: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState(userEmail);
+  const [busy, setBusy] = useState(false);
+  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+
+  async function handlePaid() {
+    setBusy(true);
+    try {
+      await ManualPaymentService.createRequest(email || null);
+      const whatsappUrl = ManualPaymentService.buildConfirmationUrl(settings);
+      const opened = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        window.location.href = whatsappUrl;
+      }
+      await onPaymentSubmitted();
+    } catch (error) {
+      alert(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img src={appLogoPath} alt="PKSK Academy" className="h-14 w-14 rounded-2xl object-contain" />
+            <div>
+              <p className="text-xs font-black uppercase text-ocean-700">Bayaran Manual</p>
+              <h2 className="text-2xl font-black text-slate-950">PKSK Academy Premium</h2>
+            </div>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-ocean-100 bg-ocean-50 p-5 text-center">
+          <p className="text-sm font-black uppercase text-ocean-700">Harga Premium</p>
+          <p className="mt-1 text-5xl font-black text-slate-950">{priceLabel}</p>
+          <p className="mt-2 text-sm font-bold text-slate-600">Bayaran sekali sahaja. Tiada caj bulanan.</p>
+        </div>
+
+        <p className="mt-5 text-center text-sm font-semibold leading-6 text-slate-600">
+          Sila scan QR DuitNow di bawah untuk membuat pembayaran.
+        </p>
+
+        <div className="mx-auto mt-4 max-w-xs overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3">
+          <img src={settings.payment_qr_image_url} alt="QR DuitNow PKSK Academy Premium" className="w-full rounded-2xl object-contain" />
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm">
+          <SummaryRow label="Nama Penerima" value={settings.payment_account_name} />
+          <SummaryRow label="Bank" value={settings.payment_bank_name} />
+          <SummaryRow label="No Akaun" value={settings.payment_account_number} />
+        </div>
+
+        <div className="mt-4">
+          <Label text="E-mel langganan">
+            <input className="field" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Contoh: nama@email.com" />
+          </Label>
+          <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+            E-mel ini disimpan untuk rujukan admin. Mesej WhatsApp akan dibuka dahulu supaya pengguna boleh semak sebelum hantar.
+          </p>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <button type="button" className="primary-button flex-1" onClick={handlePaid} disabled={busy}>
+            <MessageCircle size={18} aria-hidden="true" />
+            {busy ? "Menyediakan WhatsApp..." : "Saya Dah Bayar"}
+          </button>
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>
+            Tutup
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2370,20 +2614,19 @@ function CheckoutPage({
           <Crown size={26} aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-3xl font-black">Pembayaran dalam proses pembangunan.</h1>
+          <h1 className="text-3xl font-black">Bayaran dibuat di halaman Premium.</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            Untuk fasa ini, akses Premium masih boleh diberikan melalui Admin Panel. Payment gateway akan disambungkan kemudian melalui server webhook.
+            MVP sekarang menggunakan QR DuitNow dan pengesahan WhatsApp. Buka halaman Premium untuk scan QR dan hantar pengesahan kepada Admin.
           </p>
         </div>
         <div className="rounded-2xl bg-slate-50 p-5 text-left">
           <h2 className="text-lg font-black">Flow masa depan</h2>
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            User register atau login, teruskan checkout, payment provider sahkan bayaran, server webhook update Supabase
-            `subscription_status`, `subscription_started_at` dan `subscription_ends_at`, kemudian user masuk ke `/app`.
+            PaymentService boleh dinaik taraf kepada ToyyibPay, Billplz atau Stripe melalui webhook server tanpa mengubah pengalaman utama pengguna.
           </p>
         </div>
-        <button type="button" className="secondary-button mx-auto" onClick={() => onNavigate("/premium")}>
-          Kembali ke Premium
+        <button type="button" className="primary-button mx-auto" onClick={() => onNavigate("/premium")}>
+          Buka Premium
         </button>
       </div>
     </section>
@@ -2405,6 +2648,7 @@ function AdminNav() {
     { to: "/admin", label: "Admin Dashboard" },
     { to: "/admin/users", label: "Users" },
     { to: "/admin/subscriptions", label: "Subscriptions" },
+    { to: "/admin/payment-requests", label: "Payment Requests" },
     { to: "/admin/questions", label: "Question Bank" },
     { to: "/admin/questions/import-history", label: "Import History" },
     { to: "/admin/settings", label: "System Settings" },
@@ -2453,6 +2697,7 @@ function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: App
       </section>
       <section className="grid gap-5 md:grid-cols-3">
         <ModeCard title="Manage Users" text="Cari pengguna, buka akses premium dan block akaun." icon={Users} onClick={() => onNavigate("/admin/users")} />
+        <ModeCard title="Payment Requests" text="Semak bayaran QR DuitNow dan approve Premium." icon={MessageCircle} onClick={() => onNavigate("/admin/payment-requests")} />
         <ModeCard title="Question Bank" text="Semak soalan aktif dan status bank soalan." icon={BookOpen} onClick={() => onNavigate("/admin/questions")} />
         <ModeCard title="System Settings" text="Semak had preview percuma dan pelan subscription." icon={ShieldCheck} onClick={() => onNavigate("/admin/settings")} />
       </section>
@@ -2622,6 +2867,130 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
           </div>
         </section>
       ) : null}
+    </AdminShell>
+  );
+}
+
+function AdminPaymentRequestsPage({
+  onMessage,
+  onPaymentUpdated,
+}: {
+  onMessage: (message: string | null) => void;
+  onPaymentUpdated: () => Promise<void> | void;
+}) {
+  const [requests, setRequests] = useState<AdminPaymentRequestRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+
+  const loadRequests = useCallback(async () => {
+    try {
+      const nextRequests = await fetchAdminPaymentRequests(search, statusFilter);
+      setRequests(nextRequests);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [onMessage, search, statusFilter]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  async function runAction(requestId: string, action: () => Promise<void>, successMessage: string) {
+    setBusyAction(requestId);
+    onMessage(null);
+    try {
+      await action();
+      await loadRequests();
+      await onPaymentUpdated();
+      onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  const totalCount = requests[0]?.total_count ?? requests.length;
+
+  return (
+    <AdminShell title="Payment Requests" text="Semak bayaran QR DuitNow + WhatsApp dan aktifkan Premium selepas sah.">
+      <section className="rounded-2xl bg-white p-5 shadow-soft">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
+          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama atau e-mel" />
+          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="expired">Expired</option>
+            <option value="all">All</option>
+          </select>
+          <button type="button" className="secondary-button" onClick={loadRequests}>
+            Search
+          </button>
+        </div>
+        <p className="mt-4 border-t border-slate-100 pt-4 text-sm font-bold text-slate-500">{totalCount} rekod bayaran ditemui</p>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Nama</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Tarikh</th>
+                <th className="px-4 py-3">Jumlah</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {requests.map((request) => (
+                <tr key={request.id}>
+                  <td className="px-4 py-3 font-black text-slate-900">{request.display_name ?? "Belum dipadankan"}</td>
+                  <td className="px-4 py-3 text-slate-600">{request.email ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(request.created_at)}</td>
+                  <td className="px-4 py-3 font-black text-slate-900">RM{Number(request.amount).toFixed(0)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-lg px-3 py-2 text-xs font-black ${paymentStatusTone(request.status)}`}>{paymentStatusLabel(request.status)}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {request.status === "pending" ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600"
+                          disabled={busyAction === request.id}
+                          onClick={() => runAction(request.id, () => approvePaymentRequest(request.id), "Bayaran diluluskan. Premium lifetime telah diaktifkan.")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600"
+                          disabled={busyAction === request.id}
+                          onClick={() => {
+                            const notes = window.prompt("Catatan reject (optional)") ?? "";
+                            runAction(request.id, () => rejectPaymentRequest(request.id, notes), "Bayaran ditanda rejected.");
+                          }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-slate-500">
+                        {request.reviewed_at ? `Disemak ${formatShortDate(request.reviewed_at)}` : "Selesai"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {requests.length === 0 ? <div className="p-8 text-center text-sm font-bold text-slate-500">Tiada rekod bayaran untuk filter ini.</div> : null}
+      </section>
     </AdminShell>
   );
 }
@@ -4345,6 +4714,26 @@ function draftStatusTone(status: DraftReviewStatus): string {
   return tones[status];
 }
 
+function paymentStatusLabel(status: PaymentRequest["status"]): string {
+  const labels: Record<PaymentRequest["status"], string> = {
+    pending: "Pending",
+    approved: "Approved",
+    rejected: "Rejected",
+    expired: "Expired",
+  };
+  return labels[status];
+}
+
+function paymentStatusTone(status: PaymentRequest["status"]): string {
+  const tones: Record<PaymentRequest["status"], string> = {
+    pending: "bg-sun-50 text-amber-700",
+    approved: "bg-leaf-50 text-leaf-600",
+    rejected: "bg-coral-50 text-coral-600",
+    expired: "bg-slate-100 text-slate-500",
+  };
+  return tones[status];
+}
+
 function confidenceLevel(value: number | null): "High" | "Medium" | "Low" {
   if (value !== null && value >= 0.85) {
     return "High";
@@ -4378,7 +4767,7 @@ function importStepActive(currentStatus: QuestionImportStatus, step: string): bo
 
 function AdminSubscriptionsPage() {
   return (
-    <AdminShell title="Subscriptions" text="Pelan disediakan untuk workflow manual premium. Payment gateway belum ditambah.">
+    <AdminShell title="Subscriptions" text="Pelan premium untuk akses pengguna. MVP bayaran manual menggunakan plan lifetime.">
       <section className="grid gap-5 md:grid-cols-4">
         {(["monthly", "6_months", "yearly", "lifetime"] as SubscriptionPlan[]).map((plan) => (
           <article key={plan} className="rounded-2xl bg-white p-5 shadow-soft">
@@ -4398,6 +4787,9 @@ function AdminSettingsPage({ settings }: { settings: AppSettings }) {
         <SummaryPanel title="Preview Bahagian A" value={`${settings.free_preview_section_a_limit} soalan`} />
         <SummaryPanel title="Preview Bahagian B" value={`${settings.free_preview_section_b_limit} soalan`} />
         <SummaryPanel title="Preview Bahagian C" value={settings.free_preview_section_c_enabled ? "Aktif" : "Tidak aktif"} />
+        <SummaryPanel title="Harga Premium" value={formatCurrency(settings.payment_price, settings.payment_currency)} />
+        <SummaryPanel title="Akaun Bayaran" value={`${settings.payment_bank_name} / ${settings.payment_account_name}`} />
+        <SummaryPanel title="WhatsApp Admin" value={settings.payment_whatsapp_number} />
       </section>
     </AdminShell>
   );
@@ -4940,6 +5332,13 @@ function questionStatusClass(status: "unanswered" | "answered" | "skipped", acti
     return `${base}bg-coral-100 text-coral-600 ring-2 ring-coral-500`;
   }
   return `${base}bg-slate-100 text-slate-500 hover:bg-ocean-50 hover:text-ocean-700`;
+}
+
+function formatCurrency(amount: number, currency: string): string {
+  if (currency.toUpperCase() === "MYR") {
+    return `RM${Number(amount).toFixed(0)}`;
+  }
+  return `${currency.toUpperCase()} ${Number(amount).toFixed(0)}`;
 }
 
 function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {

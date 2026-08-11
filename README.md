@@ -26,7 +26,7 @@ Public marketing website:
 - `/premium` premium sales page
 - `/login` login
 - `/register` register
-- `/checkout` placeholder payment gateway masa depan
+- `/checkout` compatibility page yang membawa pengguna kembali ke Premium
 
 Premium application:
 
@@ -47,21 +47,24 @@ Compatibility redirect sementara:
 - `/achievements` -> `/app/lencana`
 - `/guide` -> `/app/panduan`
 
-## Payment Gateway Future Flow
+## Payment MVP
 
-Payment belum dibina dalam fasa ini. Route `/checkout` hanya placeholder.
+Payment MVP menggunakan QR DuitNow + WhatsApp.
 
-Flow masa depan:
+Flow semasa:
 
-1. User register atau login
-2. User masuk checkout
-3. Payment provider sahkan bayaran
-4. Server webhook update Supabase
-5. Supabase set `subscription_status = 'premium'`
-6. Supabase set `subscription_started_at` dan `subscription_ends_at`
-7. User redirect ke `/app`
+1. User buka `/premium`
+2. Klik `Dapatkan Premium RM49`
+3. Dialog bayaran memaparkan QR Maybank Pesona Store
+4. User scan QR dan buat bayaran
+5. User klik `Saya Dah Bayar`
+6. Sistem cipta rekod `payment_requests` dengan status `pending`
+7. WhatsApp admin dibuka untuk pengesahan manual
+8. Admin buka `Admin -> Payment Requests`
+9. Admin tekan `Approve`
+10. Supabase aktifkan Premium lifetime untuk akaun tersebut
 
-Premium activation mesti melalui server webhook. Jangan percaya parameter frontend seperti `?paid=true`.
+Architecture payment diletakkan dalam `PaymentService`. MVP sekarang menggunakan `ManualPaymentService`; ToyyibPay, Billplz atau Stripe boleh ditambah kemudian melalui service/webhook baru tanpa mengubah flow utama pengguna.
 
 ## Commercial Access Model
 

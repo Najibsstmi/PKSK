@@ -316,6 +316,53 @@ a {
     transform: translateY(-1px);
   }
 
+  .topbar-premium-button {
+    position: relative;
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(20, 184, 166, 0.5);
+    background: linear-gradient(135deg, #0f66d0 0%, #0891b2 48%, #14b8a6 100%);
+    padding: 0 18px;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 950;
+    white-space: nowrap;
+    box-shadow:
+      0 15px 30px rgba(8, 145, 178, 0.24),
+      0 6px 14px rgba(15, 102, 208, 0.16);
+    transition:
+      box-shadow 180ms ease,
+      filter 180ms ease,
+      transform 180ms ease;
+  }
+
+  .topbar-premium-button:hover {
+    filter: saturate(1.08);
+    box-shadow:
+      0 20px 38px rgba(8, 145, 178, 0.3),
+      0 10px 20px rgba(15, 102, 208, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .topbar-premium-badge {
+    position: absolute;
+    right: 12px;
+    top: -10px;
+    border-radius: 999px;
+    background: #fbbf24;
+    padding: 3px 8px;
+    color: #78350f;
+    font-size: 9px;
+    font-weight: 950;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: 0 8px 16px rgba(251, 191, 36, 0.28);
+  }
+
   .hero-premium-cta {
     position: relative;
     display: inline-flex;

@@ -149,6 +149,20 @@ export type AppSettingRow = {
   updated_at: string;
 };
 
+export type PaymentRequestRow = {
+  id: string;
+  user_id: string | null;
+  email: string | null;
+  amount: number;
+  status: "pending" | "approved" | "rejected" | "expired";
+  provider: string;
+  notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -235,6 +249,12 @@ export type Database = {
         Row: QuestionAssetRow;
         Insert: Partial<QuestionAssetRow>;
         Update: Partial<QuestionAssetRow>;
+        Relationships: [];
+      };
+      payment_requests: {
+        Row: PaymentRequestRow;
+        Insert: Partial<PaymentRequestRow>;
+        Update: Partial<PaymentRequestRow>;
         Relationships: [];
       };
     };
@@ -330,6 +350,33 @@ export type Database = {
       admin_revoke_premium: {
         Args: {
           target_user_id: string;
+        };
+        Returns: Json;
+      };
+      create_manual_payment_request: {
+        Args: {
+          p_email?: string | null;
+        };
+        Returns: Json;
+      };
+      get_my_pending_payment_request: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_list_payment_requests: {
+        Args: {
+          search_text?: string | null;
+          status_filter?: string | null;
+          page_number?: number;
+          page_size?: number;
+        };
+        Returns: Json;
+      };
+      admin_update_payment_request: {
+        Args: {
+          p_request_id: string;
+          p_status: string;
+          p_notes?: string | null;
         };
         Returns: Json;
       };
