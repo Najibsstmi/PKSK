@@ -17,6 +17,7 @@ type AuthUser = {
 type CheckoutCustomerPayload = {
   displayName?: string;
   email?: string;
+  phone?: string;
   password?: string;
 };
 
@@ -37,6 +38,7 @@ type CheckoutUser = {
   id: string;
   email: string;
   displayName: string;
+  phone: string;
 };
 
 serve(async (request) => {
@@ -60,7 +62,7 @@ serve(async (request) => {
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
     const authenticatedUser = authHeader ? await getAuthenticatedUser(supabaseUrl, anonKey, authHeader) : null;
     const checkoutUser = authenticatedUser
-      ? await resolveAuthenticatedCheckoutUser(serviceClient, authenticatedUser)
+      ? await resolveAuthenticatedCheckoutUser(serviceClient, authenticatedUser, requestPayload.customer)
       : await resolveGuestCheckoutUser(serviceClient, requestPayload.customer);
 
     const externalReference = `PKSK-${checkoutUser.id}-${Date.now()}`;
@@ -99,7 +101,7 @@ serve(async (request) => {
       billExternalReferenceNo: externalReference,
       billTo: checkoutUser.displayName,
       billEmail: checkoutUser.email,
-      billPhone: "",
+      billPhone: checkoutUser.phone,
       billPaymentChannel: "0",
       billContentEmail: "Terima kasih kerana melanggan PKSK Academy Premium.",
     });
@@ -190,10 +192,14 @@ async function getAuthenticatedUser(supabaseUrl: string, anonKey: string, authHe
   return user as AuthUser;
 }
 
-async function resolveAuthenticatedCheckoutUser(serviceClient: ReturnType<typeof createClient>, user: AuthUser): Promise<CheckoutUser> {
+async function resolveAuthenticatedCheckoutUser(serviceClient: ReturnType<typeof createClient>, user: AuthUser, customer?: CheckoutCustomerPayload): Promise<CheckoutUser> {
   const email = cleanEmail(user.email ?? "");
+  const phone = cleanPhone(customer?.phone ?? "");
   if (!email) {
     throw new Error("EMAIL_REQUIRED");
+  }
+  if (!phone) {
+    throw new Error("PHONE_REQUIRED");
   }
 
   const profile = await ensureProfileExists(serviceClient, user.id, getMetadataDisplayName(user) || email);
@@ -203,16 +209,21 @@ async function resolveAuthenticatedCheckoutUser(serviceClient: ReturnType<typeof
     id: user.id,
     email,
     displayName: profile.display_name || profile.full_name || getMetadataDisplayName(user) || email,
+    phone,
   };
 }
 
 async function resolveGuestCheckoutUser(serviceClient: ReturnType<typeof createClient>, customer?: CheckoutCustomerPayload): Promise<CheckoutUser> {
   const displayName = (customer?.displayName ?? "").trim();
   const email = cleanEmail(customer?.email ?? "");
+  const phone = cleanPhone(customer?.phone ?? "");
   const password = (customer?.password ?? "").trim();
 
   if (!displayName || !email || !password) {
     throw new Error("CUSTOMER_INFO_REQUIRED");
+  }
+  if (!phone) {
+    throw new Error("PHONE_REQUIRED");
   }
   if (!EMAIL_PATTERN.test(email)) {
     throw new Error("INVALID_EMAIL");
@@ -233,6 +244,7 @@ async function resolveGuestCheckoutUser(serviceClient: ReturnType<typeof createC
     id: user.id,
     email,
     displayName: profile.display_name || profile.full_name || displayName,
+    phone,
   };
 }
 
@@ -314,8 +326,29 @@ function cleanEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function cleanPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 9) {
+    return "";
+  }
+  if (digits.startsWith("60")) {
+    return digits;
+  }
+  if (digits.startsWith("0")) {
+    return `6${digits}`;
+  }
+  return digits;
+}
+
 function statusForErrorMessage(message: string): number {
-  if (message === "CUSTOMER_INFO_REQUIRED" || message === "INVALID_EMAIL" || message === "PASSWORD_TOO_SHORT" || message === "CHECKOUT_SIGNUP_REQUIRED" || message === "EMAIL_REQUIRED") {
+  if (
+    message === "CUSTOMER_INFO_REQUIRED" ||
+    message === "INVALID_EMAIL" ||
+    message === "PASSWORD_TOO_SHORT" ||
+    message === "CHECKOUT_SIGNUP_REQUIRED" ||
+    message === "EMAIL_REQUIRED" ||
+    message === "PHONE_REQUIRED"
+  ) {
     return 400;
   }
   if (message === "ACCOUNT_BLOCKED") {

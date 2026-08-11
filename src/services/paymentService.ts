@@ -281,6 +281,9 @@ function mapPaymentMessage(message: string): string {
   if (message.includes("CUSTOMER_INFO_REQUIRED")) {
     return "Sila lengkapkan nama, e-mel dan kata laluan sebelum meneruskan bayaran.";
   }
+  if (message.includes("PHONE_REQUIRED")) {
+    return "Sila isi nombor telefon yang sah sebelum meneruskan bayaran.";
+  }
   if (message.includes("INVALID_EMAIL")) {
     return "Format e-mel tidak sah.";
   }

@@ -2704,12 +2704,14 @@ function PaymentMethodDialog({
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
   const [customerName, setCustomerName] = useState(initialCustomerName);
   const [customerEmail, setCustomerEmail] = useState(userEmail);
+  const [customerPhone, setCustomerPhone] = useState("");
   const [customerPassword, setCustomerPassword] = useState("");
   const [customerError, setCustomerError] = useState<string | null>(null);
 
   function handleToyyibPayClick() {
     const displayName = customerName.trim();
     const email = customerEmail.trim().toLowerCase();
+    const phone = normalizeMalaysiaPhone(customerPhone);
     const password = customerPassword.trim();
 
     if (!displayName) {
@@ -2718,6 +2720,10 @@ function PaymentMethodDialog({
     }
     if (!email || !email.includes("@")) {
       setCustomerError("Sila isi e-mel yang sah.");
+      return;
+    }
+    if (!phone) {
+      setCustomerError("Sila isi nombor telefon yang sah.");
       return;
     }
     if (!isLoggedIn && password.length < 6) {
@@ -2729,6 +2735,7 @@ function PaymentMethodDialog({
     void onToyyibPay({
       displayName,
       email,
+      phone,
       password: isLoggedIn ? "authenticated-checkout" : password,
     });
   }
@@ -2789,6 +2796,19 @@ function PaymentMethodDialog({
                 disabled={toyyibPayBusy || Boolean(isLoggedIn && userEmail)}
               />
             </Label>
+            <div className="sm:col-span-2">
+              <Label text="No. telefon">
+                <input
+                  className="field bg-white"
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(event) => setCustomerPhone(event.target.value)}
+                  placeholder="Contoh: 0197259548"
+                  autoComplete="tel"
+                  disabled={toyyibPayBusy}
+                />
+              </Label>
+            </div>
             {!isLoggedIn ? (
               <div className="sm:col-span-2">
                 <Label text="Kata laluan akaun">
@@ -5893,6 +5913,20 @@ function formatQuestionCount(value: number | undefined): string {
     return "...";
   }
   return value.toLocaleString("ms-MY");
+}
+
+function normalizeMalaysiaPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 9) {
+    return "";
+  }
+  if (digits.startsWith("60")) {
+    return digits;
+  }
+  if (digits.startsWith("0")) {
+    return `6${digits}`;
+  }
+  return digits;
 }
 
 function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {

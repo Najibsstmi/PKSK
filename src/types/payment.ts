@@ -60,5 +60,6 @@ export type ToyyibPayBillResult = {
 export type ToyyibPayCustomerInput = {
   displayName: string;
   email: string;
+  phone: string;
   password: string;
 };
