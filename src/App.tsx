@@ -2151,15 +2151,15 @@ function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
             <Clock3 size={24} aria-hidden="true" />
           </span>
           <div>
-            <h2 className="text-xl font-black text-slate-950">{isToyyibPay ? "Pembayaran sedang disahkan." : "Wang anda sedang disemak."}</h2>
+            <h2 className="text-xl font-black text-slate-950">{isToyyibPay ? "Pembayaran sedang diproses" : "Wang anda sedang disemak."}</h2>
             <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
               {isToyyibPay
-                ? `Rekod ToyyibPay ${formatCurrency(payment.amount, payment.currency)} sedang menunggu callback pengesahan.`
+                ? `Kami sedang menunggu pengesahan pembayaran ToyyibPay ${formatCurrency(payment.amount, payment.currency)}. Akses Premium akan dibuka secara automatik selepas bayaran berjaya disahkan.`
                 : `Rekod bayaran ${formatCurrency(payment.amount, payment.currency)} sudah diterima. Akaun Premium akan aktif selepas Admin sahkan bayaran.`}
             </p>
           </div>
         </div>
-        <span className="w-fit rounded-xl bg-white px-4 py-2 text-sm font-black text-amber-700">Pending</span>
+        <span className="w-fit rounded-xl bg-white px-4 py-2 text-sm font-black text-amber-700">{isToyyibPay ? "Dalam proses" : "Pending"}</span>
       </div>
     </section>
   );
