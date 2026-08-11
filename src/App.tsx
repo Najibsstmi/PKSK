@@ -8,6 +8,7 @@
   Clock3,
   Crown,
   CheckCircle2,
+  CreditCard,
   Download,
   Eye,
   FileSpreadsheet,
@@ -24,6 +25,8 @@
   Menu,
   PenLine,
   Plus,
+  QrCode,
+  RefreshCw,
   Rocket,
   Save,
   ShieldCheck,
@@ -66,7 +69,7 @@ import {
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
 import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
-import { approvePaymentRequest, fetchAdminPaymentRequests, fetchMyPendingPaymentRequest, ManualPaymentService, rejectPaymentRequest } from "./services/paymentService";
+import { approvePaymentRequest, fetchAdminPaymentRequests, fetchMyLatestPaymentRequest, fetchMyPendingPaymentRequest, ManualPaymentService, rejectPaymentRequest, ToyyibPayService } from "./services/paymentService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
 import {
   createPdfQuestionImport,
@@ -104,6 +107,7 @@ type AppRoute =
   | "/login"
   | "/register"
   | "/checkout"
+  | "/payment-result"
   | "/app"
   | "/app/simulasi"
   | "/app/quiz"
@@ -139,7 +143,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
-const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout"]);
+const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
   "/app/simulasi",
@@ -158,6 +162,7 @@ const validRoutes = new Set<AppRoute>(
     "/login",
     "/register",
     "/checkout",
+    "/payment-result",
     "/app/quiz",
     "/app/essay",
     "/app/profile",
@@ -192,7 +197,7 @@ const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 15,
   free_preview_section_b_limit: 20,
   free_preview_section_c_enabled: false,
-  payment_provider: "manual_whatsapp",
+  payment_provider: "manual_qr_plus_toyyibpay",
   payment_price: 49,
   payment_currency: "MYR",
   payment_plan_code: "lifetime",
@@ -438,6 +443,8 @@ function App() {
     }
     setMessage("Terima kasih. Sila tunggu pengesahan daripada Admin. Akaun Premium akan diaktifkan selepas pembayaran disahkan.");
   }
+
+  const refreshCurrentUserData = useCallback(() => (session?.user.id ? refreshData(session.user.id) : Promise.resolve()), [refreshData, session?.user.id]);
 
   async function handleInstallApp() {
     if (isInstalledApp) {
@@ -945,6 +952,17 @@ function App() {
     }
     if (currentRoute === "/checkout") {
       return <CheckoutPage isLoggedIn={isLoggedIn} access={access} onAuth={openAuth} onNavigate={navigate} />;
+    }
+    if (currentRoute === "/payment-result") {
+      return (
+        <PaymentResultPage
+          isLoggedIn={isLoggedIn}
+          access={access}
+          onAuth={openAuth}
+          onNavigate={navigate}
+          onRefreshStatus={refreshCurrentUserData}
+        />
+      );
     }
     if (adminRoutes.includes(currentRoute)) {
       if (!isLoggedIn) {
@@ -2081,6 +2099,7 @@ function InlinePaywall({ access, onShowPaywall }: { access: ReturnType<typeof us
 }
 
 function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
+  const isToyyibPay = payment.payment_method === "toyyibpay";
   return (
     <section className="rounded-2xl border border-sun-200 bg-sun-50 p-5 shadow-soft">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -2089,9 +2108,11 @@ function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
             <Clock3 size={24} aria-hidden="true" />
           </span>
           <div>
-            <h2 className="text-xl font-black text-slate-950">Wang anda sedang disemak.</h2>
+            <h2 className="text-xl font-black text-slate-950">{isToyyibPay ? "Pembayaran sedang disahkan." : "Wang anda sedang disemak."}</h2>
             <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
-              Rekod bayaran RM{Number(payment.amount).toFixed(0)} sudah diterima. Akaun Premium akan aktif selepas Admin sahkan bayaran.
+              {isToyyibPay
+                ? `Rekod ToyyibPay ${formatCurrency(payment.amount, payment.currency)} sedang menunggu callback pengesahan.`
+                : `Rekod bayaran ${formatCurrency(payment.amount, payment.currency)} sudah diterima. Akaun Premium akan aktif selepas Admin sahkan bayaran.`}
             </p>
           </div>
         </div>
@@ -2417,7 +2438,10 @@ function PaywallPage({
   onNavigate: (route: AppRoute) => void;
   onPaymentSubmitted: () => Promise<void>;
 }) {
-  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentMethodOpen, setPaymentMethodOpen] = useState(false);
+  const [manualPaymentOpen, setManualPaymentOpen] = useState(false);
+  const [toyyibPayBusy, setToyyibPayBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
   const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
   const handlePrimary = () => {
@@ -2425,7 +2449,24 @@ function PaywallPage({
       onNavigate("/app");
       return;
     }
-    setPaymentOpen(true);
+    if (!isLoggedIn) {
+      onAuth("register");
+      return;
+    }
+    setPaymentError(null);
+    setPaymentMethodOpen(true);
+  };
+  const handleToyyibPay = async () => {
+    setToyyibPayBusy(true);
+    setPaymentError(null);
+    try {
+      const bill = await ToyyibPayService.createBill();
+      window.location.href = bill.paymentUrl;
+    } catch (error) {
+      setPaymentError(toMessage(error));
+    } finally {
+      setToyyibPayBusy(false);
+    }
   };
   const accessNotice = access.isBlocked
     ? "Akaun ini sedang disemak oleh pentadbir."
@@ -2542,8 +2583,8 @@ function PaywallPage({
         <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview percuma boleh digunakan tanpa e-mel dan kata laluan." />
-          <FaqItem title="Bagaimana bayaran dibuat?" text="Buat bayaran manual melalui QR DuitNow, kemudian WhatsApp Admin untuk pengesahan." />
-          <FaqItem title="Bagaimana Premium diaktifkan?" text="Admin akan semak rekod bayaran dan aktifkan Premium selepas pembayaran disahkan." />
+          <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih ToyyibPay untuk bayaran automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
+          <FaqItem title="Bagaimana Premium diaktifkan?" text="ToyyibPay mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
         </div>
         <div className="mt-6">
           <button type="button" className="primary-button" onClick={handlePrimary}>
@@ -2551,18 +2592,104 @@ function PaywallPage({
           </button>
         </div>
       </section>
-      {paymentOpen ? (
+      {paymentMethodOpen ? (
+        <PaymentMethodDialog
+          settings={settings}
+          error={paymentError}
+          toyyibPayBusy={toyyibPayBusy}
+          onClose={() => setPaymentMethodOpen(false)}
+          onToyyibPay={handleToyyibPay}
+          onManualQr={() => {
+            setPaymentMethodOpen(false);
+            setManualPaymentOpen(true);
+          }}
+        />
+      ) : null}
+      {manualPaymentOpen ? (
         <ManualPaymentDialog
           settings={settings}
           userEmail={userEmail}
-          onClose={() => setPaymentOpen(false)}
+          onClose={() => setManualPaymentOpen(false)}
           onPaymentSubmitted={async () => {
             await onPaymentSubmitted();
-            setPaymentOpen(false);
+            setManualPaymentOpen(false);
           }}
         />
       ) : null}
     </div>
+  );
+}
+
+function PaymentMethodDialog({
+  settings,
+  error,
+  toyyibPayBusy,
+  onClose,
+  onToyyibPay,
+  onManualQr,
+}: {
+  settings: AppSettings;
+  error: string | null;
+  toyyibPayBusy: boolean;
+  onClose: () => void;
+  onToyyibPay: () => Promise<void>;
+  onManualQr: () => void;
+}) {
+  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+
+  return (
+    <section className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+              <CreditCard size={23} aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase text-ocean-700">Premium {priceLabel}</p>
+              <h2 className="text-2xl font-black text-slate-950">Pilih Kaedah Pembayaran</h2>
+            </div>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {error ? <p className="mt-5 rounded-2xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-700">{error}</p> : null}
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <article className="relative overflow-hidden rounded-3xl border border-ocean-200 bg-gradient-to-br from-ocean-50 via-white to-teal-50 p-5 shadow-[0_18px_46px_rgba(8,145,178,0.18)]">
+            <span className="absolute right-4 top-4 rounded-full bg-sun-400 px-3 py-1 text-[11px] font-black uppercase text-amber-900">Disyorkan</span>
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
+              <CreditCard size={24} aria-hidden="true" />
+            </div>
+            <h3 className="mt-5 text-xl font-black text-slate-950">ToyyibPay</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+              Bayar melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
+            </p>
+            <button type="button" className="primary-button mt-5 w-full" onClick={onToyyibPay} disabled={toyyibPayBusy}>
+              <CreditCard size={18} aria-hidden="true" />
+              {toyyibPayBusy ? "Menyediakan bil..." : "Bayar dengan ToyyibPay"}
+            </button>
+          </article>
+
+          <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-50 text-slate-700">
+              <QrCode size={24} aria-hidden="true" />
+            </div>
+            <p className="mt-5 text-xs font-black uppercase text-slate-500">Bayaran Manual</p>
+            <h3 className="mt-1 text-xl font-black text-slate-950">QR DuitNow</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+              Bayar melalui QR dan hantar pengesahan melalui WhatsApp. Admin akan semak sebelum Premium diaktifkan.
+            </p>
+            <button type="button" className="secondary-button mt-5 w-full" onClick={onManualQr} disabled={toyyibPayBusy}>
+              <QrCode size={18} aria-hidden="true" />
+              Bayar melalui QR
+            </button>
+          </article>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2702,17 +2829,127 @@ function CheckoutPage({
         <div>
           <h1 className="text-3xl font-black">Bayaran dibuat di halaman Premium.</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            MVP sekarang menggunakan QR DuitNow dan pengesahan WhatsApp. Buka halaman Premium untuk scan QR dan hantar pengesahan kepada Admin.
+            Buka halaman Premium untuk pilih ToyyibPay atau QR DuitNow manual.
           </p>
         </div>
         <div className="rounded-2xl bg-slate-50 p-5 text-left">
-          <h2 className="text-lg font-black">Flow masa depan</h2>
+          <h2 className="text-lg font-black">Flow ringkas</h2>
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            PaymentService boleh dinaik taraf kepada ToyyibPay, Billplz atau Stripe melalui webhook server tanpa mengubah pengalaman utama pengguna.
+            ToyyibPay akan mengaktifkan Premium secara automatik selepas bayaran sah. QR DuitNow masih tersedia untuk bayaran manual melalui WhatsApp.
           </p>
         </div>
         <button type="button" className="primary-button mx-auto" onClick={() => onNavigate("/premium")}>
           Buka Premium
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PaymentResultPage({
+  isLoggedIn,
+  access,
+  onAuth,
+  onNavigate,
+  onRefreshStatus,
+}: {
+  isLoggedIn: boolean;
+  access: ReturnType<typeof useAccess>;
+  onAuth: (mode: AuthMode) => void;
+  onNavigate: (route: AppRoute) => void;
+  onRefreshStatus: () => Promise<void>;
+}) {
+  const [payment, setPayment] = useState<PaymentRequest | null>(null);
+  const [loading, setLoading] = useState(isLoggedIn);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshPayment = useCallback(async () => {
+    if (!isLoggedIn) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await onRefreshStatus();
+      const latestPayment = await fetchMyLatestPaymentRequest().catch(() => null);
+      setPayment(latestPayment);
+    } catch (refreshError) {
+      setError(toMessage(refreshError));
+    } finally {
+      setLoading(false);
+    }
+  }, [isLoggedIn, onRefreshStatus]);
+
+  useEffect(() => {
+    refreshPayment();
+  }, [refreshPayment]);
+
+  if (!isLoggedIn) {
+    return (
+      <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <UserRound size={26} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-3xl font-black text-slate-950">Log masuk untuk semak bayaran</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+          Selepas bayaran, sistem perlu padankan akaun anda dengan rekod ToyyibPay.
+        </p>
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+          <button type="button" className="primary-button" onClick={() => onAuth("login")}>
+            Log Masuk
+          </button>
+          <button type="button" className="secondary-button" onClick={() => onAuth("register")}>
+            Daftar Akaun
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (access.canUsePremiumFeature()) {
+    return (
+      <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-leaf-50 text-leaf-600">
+          <CheckCircle2 size={28} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-3xl font-black text-slate-950">Pembayaran berjaya.</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">Premium telah diaktifkan untuk akaun ini.</p>
+        <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/app")}>
+          Buka PKSK Academy
+        </button>
+      </section>
+    );
+  }
+
+  const failedStatus = payment?.status === "failed" || payment?.status === "cancelled" || payment?.status === "rejected";
+  const title = failedStatus ? "Pembayaran tidak berjaya." : "Pembayaran sedang disahkan.";
+  const text = failedStatus
+    ? "Premium belum diaktifkan. Anda boleh cuba semula atau gunakan QR DuitNow manual."
+    : "Jika bayaran sudah dibuat, tunggu sebentar sementara ToyyibPay menghantar pengesahan kepada sistem.";
+
+  return (
+    <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+      <div className={`mx-auto grid h-14 w-14 place-items-center rounded-2xl ${failedStatus ? "bg-coral-50 text-coral-600" : "bg-sun-100 text-amber-700"}`}>
+        {failedStatus ? <X size={26} aria-hidden="true" /> : <Clock3 size={26} aria-hidden="true" />}
+      </div>
+      <h1 className="mt-5 text-3xl font-black text-slate-950">{loading ? "Menyemak bayaran..." : title}</h1>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">{error ?? text}</p>
+      {payment ? (
+        <div className="mx-auto mt-5 grid max-w-md gap-2 rounded-2xl bg-slate-50 p-4 text-left text-sm">
+          <SummaryRow label="Kaedah" value={paymentMethodLabel(payment.payment_method)} />
+          <SummaryRow label="Status" value={paymentStatusLabel(payment.status)} />
+          <SummaryRow label="Rujukan" value={payment.provider_reference ?? payment.provider_bill_code ?? "-"} />
+        </div>
+      ) : null}
+      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+        <button type="button" className="primary-button" onClick={refreshPayment} disabled={loading}>
+          <RefreshCw size={17} aria-hidden="true" />
+          {loading ? "Menyemak..." : "Refresh Status"}
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/premium")}>
+          Kembali ke Premium
         </button>
       </div>
     </section>
@@ -3046,13 +3283,16 @@ function AdminPaymentRequestsPage({
   const totalCount = requests[0]?.total_count ?? requests.length;
 
   return (
-    <AdminShell title="Payment Requests" text="Semak bayaran QR DuitNow + WhatsApp dan aktifkan Premium selepas sah.">
+    <AdminShell title="Payment Requests" text="Semak bayaran ToyyibPay automatik dan QR DuitNow manual dalam satu tempat.">
       <section className="rounded-2xl bg-white p-5 shadow-soft">
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
           <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama atau e-mel" />
           <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
             <option value="approved">Approved</option>
+            <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
             <option value="rejected">Rejected</option>
             <option value="expired">Expired</option>
             <option value="all">All</option>
@@ -3071,8 +3311,11 @@ function AdminPaymentRequestsPage({
               <tr>
                 <th className="px-4 py-3">Nama</th>
                 <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Method</th>
                 <th className="px-4 py-3">Tarikh</th>
                 <th className="px-4 py-3">Jumlah</th>
+                <th className="px-4 py-3">Reference</th>
+                <th className="px-4 py-3">Paid At</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
@@ -3082,13 +3325,16 @@ function AdminPaymentRequestsPage({
                 <tr key={request.id}>
                   <td className="px-4 py-3 font-black text-slate-900">{request.display_name ?? "Belum dipadankan"}</td>
                   <td className="px-4 py-3 text-slate-600">{request.email ?? "-"}</td>
+                  <td className="px-4 py-3 font-black text-slate-700">{paymentMethodLabel(request.payment_method)}</td>
                   <td className="px-4 py-3 text-slate-600">{formatShortDate(request.created_at)}</td>
-                  <td className="px-4 py-3 font-black text-slate-900">RM{Number(request.amount).toFixed(0)}</td>
+                  <td className="px-4 py-3 font-black text-slate-900">{formatCurrency(Number(request.amount), request.currency)}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-slate-600">{request.provider_reference ?? request.provider_bill_code ?? request.external_reference ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(request.paid_at)}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-lg px-3 py-2 text-xs font-black ${paymentStatusTone(request.status)}`}>{paymentStatusLabel(request.status)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    {request.status === "pending" ? (
+                    {request.status === "pending" && request.payment_method !== "toyyibpay" ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -3112,7 +3358,7 @@ function AdminPaymentRequestsPage({
                       </div>
                     ) : (
                       <span className="text-xs font-bold text-slate-500">
-                        {request.reviewed_at ? `Disemak ${formatShortDate(request.reviewed_at)}` : "Selesai"}
+                        {request.payment_method === "toyyibpay" && request.status === "paid" ? "Auto ToyyibPay" : request.reviewed_at ? `Disemak ${formatShortDate(request.reviewed_at)}` : "Selesai"}
                       </span>
                     )}
                   </td>
@@ -4850,6 +5096,9 @@ function paymentStatusLabel(status: PaymentRequest["status"]): string {
   const labels: Record<PaymentRequest["status"], string> = {
     pending: "Pending",
     approved: "Approved",
+    paid: "Paid",
+    failed: "Failed",
+    cancelled: "Cancelled",
     rejected: "Rejected",
     expired: "Expired",
   };
@@ -4860,10 +5109,23 @@ function paymentStatusTone(status: PaymentRequest["status"]): string {
   const tones: Record<PaymentRequest["status"], string> = {
     pending: "bg-sun-50 text-amber-700",
     approved: "bg-leaf-50 text-leaf-600",
+    paid: "bg-leaf-50 text-leaf-600",
+    failed: "bg-coral-50 text-coral-600",
+    cancelled: "bg-slate-100 text-slate-500",
     rejected: "bg-coral-50 text-coral-600",
     expired: "bg-slate-100 text-slate-500",
   };
   return tones[status];
+}
+
+function paymentMethodLabel(method: string): string {
+  if (method === "toyyibpay") {
+    return "ToyyibPay";
+  }
+  if (method === "manual_qr" || method === "manual_whatsapp") {
+    return "QR Manual";
+  }
+  return method || "QR Manual";
 }
 
 function confidenceLevel(value: number | null): "High" | "Medium" | "Low" {

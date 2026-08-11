@@ -1,5 +1,5 @@
 import { requireSupabase } from "../lib/supabase";
-import type { AdminPaymentRequestRow, CreatePaymentRequestResult, ManualPaymentConfig, PaymentRequest, PaymentRequestStatus } from "../types/payment";
+import type { AdminPaymentRequestRow, CreatePaymentRequestResult, ManualPaymentConfig, PaymentRequest, PaymentRequestStatus, ToyyibPayBillResult } from "../types/payment";
 
 type PaymentProvider = {
   createRequest: (email: string | null) => Promise<CreatePaymentRequestResult>;
@@ -39,9 +39,45 @@ export const ManualPaymentService: PaymentProvider = {
   },
 };
 
+export const ToyyibPayService = {
+  async createBill(): Promise<ToyyibPayBillResult> {
+    const client = requireSupabase();
+    const { data, error } = await client.functions.invoke("create-toyyibpay-bill", {
+      body: {},
+    });
+
+    if (error) {
+      throw new Error(mapPaymentMessage(error.message));
+    }
+
+    const payload = data as Partial<ToyyibPayBillResult> | null;
+    if (!payload?.paymentUrl) {
+      throw new Error("Pautan ToyyibPay belum dapat disediakan. Sila cuba semula.");
+    }
+
+    return {
+      paymentId: String(payload.paymentId ?? ""),
+      billCode: String(payload.billCode ?? ""),
+      paymentUrl: String(payload.paymentUrl),
+      callbackUrl: String(payload.callbackUrl ?? ""),
+    };
+  },
+};
+
 export async function fetchMyPendingPaymentRequest(): Promise<PaymentRequest | null> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("get_my_pending_payment_request");
+
+  if (error) {
+    throw new Error(mapPaymentMessage(error.message));
+  }
+
+  return data ? normalizePaymentRequest(data as Partial<PaymentRequest>) : null;
+}
+
+export async function fetchMyLatestPaymentRequest(): Promise<PaymentRequest | null> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("get_my_latest_payment_request");
 
   if (error) {
     throw new Error(mapPaymentMessage(error.message));
@@ -93,7 +129,10 @@ function normalizePaymentCreateResult(payload: Partial<CreatePaymentRequestResul
     user_id: payload.user_id ? String(payload.user_id) : null,
     email: payload.email ? String(payload.email) : null,
     amount: Number(payload.amount ?? 49),
+    currency: String(payload.currency ?? "MYR"),
     status: normalizePaymentStatus(payload.status),
+    provider: String(payload.provider ?? "manual_qr"),
+    payment_method: String(payload.payment_method ?? payload.provider ?? "manual_qr"),
   };
 }
 
@@ -103,8 +142,14 @@ function normalizePaymentRequest(payload: Partial<PaymentRequest>): PaymentReque
     user_id: payload.user_id ? String(payload.user_id) : null,
     email: payload.email ? String(payload.email) : null,
     amount: Number(payload.amount ?? 49),
+    currency: String(payload.currency ?? "MYR"),
     status: normalizePaymentStatus(payload.status),
-    provider: String(payload.provider ?? "manual_whatsapp"),
+    provider: String(payload.provider ?? "manual_qr"),
+    payment_method: String(payload.payment_method ?? payload.provider ?? "manual_qr"),
+    provider_bill_code: payload.provider_bill_code ? String(payload.provider_bill_code) : null,
+    provider_reference: payload.provider_reference ? String(payload.provider_reference) : null,
+    external_reference: payload.external_reference ? String(payload.external_reference) : null,
+    paid_at: payload.paid_at ? String(payload.paid_at) : null,
     notes: payload.notes ? String(payload.notes) : null,
     created_at: String(payload.created_at ?? new Date().toISOString()),
     updated_at: String(payload.updated_at ?? payload.created_at ?? new Date().toISOString()),
@@ -122,7 +167,7 @@ function normalizeAdminPaymentRequest(payload: Partial<AdminPaymentRequestRow>):
 }
 
 function normalizePaymentStatus(status: unknown): PaymentRequestStatus {
-  return status === "approved" || status === "rejected" || status === "expired" ? status : "pending";
+  return status === "approved" || status === "rejected" || status === "expired" || status === "paid" || status === "failed" || status === "cancelled" ? status : "pending";
 }
 
 function normalizeWhatsAppNumber(phoneNumber: string): string {
@@ -145,6 +190,18 @@ function mapPaymentMessage(message: string): string {
   }
   if (message.includes("INVALID_PAYMENT_STATUS")) {
     return "Status bayaran tidak sah.";
+  }
+  if (message.includes("TOYYIBPAY_BILL_FAILED")) {
+    return "Bil ToyyibPay belum dapat disediakan. Sila cuba semula atau gunakan QR DuitNow.";
+  }
+  if (message.includes("PREMIUM_ALREADY_ACTIVE")) {
+    return "Akaun Premium sudah aktif.";
+  }
+  if (message.includes("LOGIN_REQUIRED")) {
+    return "Sila log masuk dahulu untuk meneruskan bayaran.";
+  }
+  if (message.includes("ACCOUNT_BLOCKED")) {
+    return "Akaun ini sedang disemak oleh pentadbir.";
   }
   if (message.includes("USER_NOT_FOUND")) {
     return "Akaun pengguna untuk e-mel ini belum ditemui. Minta pengguna daftar akaun dahulu.";

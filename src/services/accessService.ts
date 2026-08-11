@@ -5,7 +5,7 @@ const defaultSettings: AppSettings = {
   free_preview_section_a_limit: 15,
   free_preview_section_b_limit: 20,
   free_preview_section_c_enabled: false,
-  payment_provider: "manual_whatsapp",
+  payment_provider: "manual_qr_plus_toyyibpay",
   payment_price: 49,
   payment_currency: "MYR",
   payment_plan_code: "lifetime",

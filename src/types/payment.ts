@@ -1,14 +1,21 @@
 import type { AppSettings } from "./access";
 
-export type PaymentRequestStatus = "pending" | "approved" | "rejected" | "expired";
+export type PaymentRequestStatus = "pending" | "approved" | "rejected" | "expired" | "paid" | "failed" | "cancelled";
+export type PaymentMethod = "manual_qr" | "toyyibpay" | string;
 
 export type PaymentRequest = {
   id: string;
   user_id: string | null;
   email: string | null;
   amount: number;
+  currency: string;
   status: PaymentRequestStatus;
   provider: string;
+  payment_method: PaymentMethod;
+  provider_bill_code: string | null;
+  provider_reference: string | null;
+  external_reference: string | null;
+  paid_at: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -37,5 +44,15 @@ export type CreatePaymentRequestResult = {
   user_id: string | null;
   email: string | null;
   amount: number;
+  currency: string;
   status: PaymentRequestStatus;
+  provider: string;
+  payment_method: PaymentMethod;
+};
+
+export type ToyyibPayBillResult = {
+  paymentId: string;
+  billCode: string;
+  paymentUrl: string;
+  callbackUrl: string;
 };

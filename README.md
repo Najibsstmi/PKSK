@@ -24,6 +24,7 @@ Public marketing website:
 - `/` landing page PKSK Academy
 - `/preview` free preview
 - `/premium` premium sales page
+- `/payment-result` status selepas pengguna kembali daripada ToyyibPay
 - `/login` login
 - `/register` register
 - `/checkout` compatibility page yang membawa pengguna kembali ke Premium
@@ -47,24 +48,26 @@ Compatibility redirect sementara:
 - `/achievements` -> `/app/lencana`
 - `/guide` -> `/app/panduan`
 
-## Payment MVP
+## Payment Premium
 
-Payment MVP menggunakan QR DuitNow + WhatsApp.
+Payment Premium menyokong dua kaedah:
+
+- ToyyibPay untuk bayaran online banking dan aktivasi Premium automatik
+- QR DuitNow + WhatsApp untuk bayaran manual yang masih disahkan oleh Admin
 
 Flow semasa:
 
 1. User buka `/premium`
 2. Klik `Dapatkan Premium RM49`
-3. Dialog bayaran memaparkan QR Maybank Pesona Store
-4. User scan QR dan buat bayaran
-5. User klik `Saya Dah Bayar`
-6. Sistem cipta rekod `payment_requests` dengan status `pending`
-7. WhatsApp admin dibuka untuk pengesahan manual
-8. Admin buka `Admin -> Payment Requests`
-9. Admin tekan `Approve`
-10. Supabase aktifkan Premium lifetime untuk akaun tersebut
+3. Jika belum login, user daftar atau log masuk dahulu
+4. User pilih kaedah bayaran:
+   - ToyyibPay: sistem cipta bil dan redirect ke ToyyibPay
+   - QR DuitNow: sistem kekalkan flow QR + WhatsApp manual
+5. Untuk ToyyibPay, callback server-to-server akan update `payment_requests` kepada `paid`
+6. Supabase aktifkan `profiles.subscription_status = 'premium'` dengan plan `lifetime`
+7. User kembali ke `/payment-result` untuk semak status
 
-Architecture payment diletakkan dalam `PaymentService`. MVP sekarang menggunakan `ManualPaymentService`; ToyyibPay, Billplz atau Stripe boleh ditambah kemudian melalui service/webhook baru tanpa mengubah flow utama pengguna.
+Architecture payment diletakkan dalam `PaymentService`. `ToyyibPayService` memanggil Edge Function server-side, manakala `ManualPaymentService` mengekalkan flow QR DuitNow sedia ada.
 
 ## Commercial Access Model
 
@@ -144,6 +147,12 @@ Jalankan SQL ini dalam Supabase SQL Editor mengikut turutan:
 3. `supabase/migrations/20260808_add_commercial_access.sql`
 4. `supabase/migrations/20260809_enable_bahagian_c_essay.sql`
 5. `supabase/migrations/20260809_add_pdf_question_import.sql`
+6. `supabase/migrations/20260809_stabilize_question_bank_admin.sql`
+7. `supabase/migrations/20260809_official_pksk_flow.sql`
+8. `supabase/migrations/20260811_free_preview_and_question_assets.sql`
+9. `supabase/migrations/20260811_manual_payment_requests.sql`
+10. `supabase/migrations/20260811_public_question_counts.sql`
+11. `supabase/migrations/20260811_toyyibpay_payments.sql`
 
 Migration komersial menambah:
 
@@ -166,6 +175,19 @@ Migration import PDF menambah:
 - storage bucket `question-imports`
 - storage bucket `question-assets`
 - RPC admin untuk upload record, review draft, batch approve dan publish approved questions
+
+Migration ToyyibPay menambah:
+
+- column `payment_method`
+- column `currency`
+- column `provider_bill_code`
+- column `provider_reference`
+- column `external_reference`
+- column `paid_at`
+- column `provider_response`
+- status payment `paid`, `failed` dan `cancelled`
+- RPC `get_my_latest_payment_request`
+- admin payment list dengan method ToyyibPay / QR Manual
 
 ## Bahagian C Penulisan
 
@@ -289,6 +311,58 @@ npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
 Jika PDF processor belum deploy, UI akan memaparkan mesej bahawa pemproses PDF belum aktif.
+
+## ToyyibPay Edge Functions
+
+Edge Functions:
+
+```text
+supabase/functions/create-toyyibpay-bill
+supabase/functions/toyyibpay-callback
+```
+
+Set Supabase secrets server-side:
+
+```bash
+npx supabase secrets set TOYYIBPAY_SECRET_KEY=YOUR_SECRET_KEY
+npx supabase secrets set TOYYIBPAY_CATEGORY_CODE=wgskyp3z
+npx supabase secrets set TOYYIBPAY_BASE_URL=https://toyyibpay.com
+```
+
+Jangan letakkan `TOYYIBPAY_SECRET_KEY` dalam `.env.local`, Vercel frontend, React atau GitHub.
+
+Deploy functions:
+
+```bash
+npx supabase functions deploy create-toyyibpay-bill
+npx supabase functions deploy toyyibpay-callback
+```
+
+Callback URL untuk ToyyibPay:
+
+```text
+https://lwsmerjraxmtwhuioseo.supabase.co/functions/v1/toyyibpay-callback
+```
+
+Dalam ToyyibPay, pastikan category code menggunakan:
+
+```text
+wgskyp3z
+```
+
+Return URL:
+
+```text
+https://pksk.cikgustem.com/payment-result
+```
+
+Callback URL:
+
+```text
+https://lwsmerjraxmtwhuioseo.supabase.co/functions/v1/toyyibpay-callback
+```
+
+ToyyibPay callback ialah sumber utama untuk aktifkan Premium. Route `/payment-result` hanya menyemak status daripada Supabase dan tidak mengaktifkan Premium berdasarkan query parameter browser.
 
 ## Jika Muncul Mesej Sistem Akses Premium
 

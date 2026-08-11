@@ -154,8 +154,15 @@ export type PaymentRequestRow = {
   user_id: string | null;
   email: string | null;
   amount: number;
-  status: "pending" | "approved" | "rejected" | "expired";
+  currency: string;
+  status: "pending" | "approved" | "rejected" | "expired" | "paid" | "failed" | "cancelled";
   provider: string;
+  payment_method: string;
+  provider_bill_code: string | null;
+  provider_reference: string | null;
+  external_reference: string | null;
+  paid_at: string | null;
+  provider_response: Json;
   notes: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
@@ -364,6 +371,10 @@ export type Database = {
         Returns: Json;
       };
       get_my_pending_payment_request: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      get_my_latest_payment_request: {
         Args: Record<string, never>;
         Returns: Json;
       };
