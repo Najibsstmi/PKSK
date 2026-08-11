@@ -92,6 +92,22 @@ async function prepareCheckoutAccount(customer: ToyyibPayCustomerInput): Promise
 
   const email = customer.email.trim().toLowerCase();
   const displayName = customer.displayName.trim();
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password: customer.password,
+  });
+
+  if (!signInError) {
+    return;
+  }
+
+  if (isEmailConfirmationMessage(signInError.message) || isRateLimitMessage(signInError.message)) {
+    return;
+  }
+  if (!isInvalidLoginMessage(signInError.message)) {
+    throw new Error(signInError.message);
+  }
+
   const { error } = await client.auth.signUp({
     email,
     password: customer.password,
@@ -104,7 +120,7 @@ async function prepareCheckoutAccount(customer: ToyyibPayCustomerInput): Promise
     },
   });
 
-  if (error && !isExistingAccountMessage(error.message)) {
+  if (error && !isExistingAccountMessage(error.message) && !isRateLimitMessage(error.message)) {
     throw new Error(error.message);
   }
 }
@@ -113,9 +129,9 @@ export async function fetchMyPendingPaymentRequest(): Promise<PaymentRequest | n
   const client = requireSupabase();
   const { data, error } = await client.rpc("get_my_pending_payment_request");
 
-  if (error) {
-    throw new Error(mapPaymentMessage(error.message));
-  }
+    if (error) {
+      throw new Error(mapPaymentMessage(await getFunctionErrorMessage(error)));
+    }
 
   return data ? normalizePaymentRequest(data as Partial<PaymentRequest>) : null;
 }
@@ -270,4 +286,42 @@ function mapPaymentMessage(message: string): string {
 function isExistingAccountMessage(message: string): boolean {
   const lowerMessage = message.toLowerCase();
   return lowerMessage.includes("already registered") || lowerMessage.includes("already exists") || lowerMessage.includes("user already");
+}
+
+function isInvalidLoginMessage(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  return lowerMessage.includes("invalid login credentials") || lowerMessage.includes("invalid credentials");
+}
+
+function isEmailConfirmationMessage(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  return lowerMessage.includes("email not confirmed") || lowerMessage.includes("confirm your email");
+}
+
+function isRateLimitMessage(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  return lowerMessage.includes("security purposes") || lowerMessage.includes("rate limit") || lowerMessage.includes("too many requests");
+}
+
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  const context = (error as { context?: unknown }).context;
+  if (context instanceof Response) {
+    const payload = await context
+      .clone()
+      .json()
+      .catch(() => null);
+    if (payload && typeof payload === "object" && "error" in payload) {
+      return String((payload as { error: unknown }).error);
+    }
+
+    const text = await context
+      .clone()
+      .text()
+      .catch(() => "");
+    if (text) {
+      return text;
+    }
+  }
+
+  return error instanceof Error ? error.message : "Bil ToyyibPay belum dapat disediakan. Sila cuba semula.";
 }

@@ -141,7 +141,7 @@ serve(async (request) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ToyyibPay bill could not be created.";
-    return json(request, { error: message }, 500);
+    return json(request, { error: message }, statusForErrorMessage(message));
   }
 });
 
@@ -297,6 +297,19 @@ function getMetadataDisplayName(user: AuthUser): string {
 
 function cleanEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function statusForErrorMessage(message: string): number {
+  if (message === "CUSTOMER_INFO_REQUIRED" || message === "INVALID_EMAIL" || message === "PASSWORD_TOO_SHORT" || message === "CHECKOUT_SIGNUP_REQUIRED" || message === "EMAIL_REQUIRED") {
+    return 400;
+  }
+  if (message === "ACCOUNT_BLOCKED") {
+    return 403;
+  }
+  if (message === "PREMIUM_ALREADY_ACTIVE") {
+    return 409;
+  }
+  return 500;
 }
 
 function normalizeBaseUrl(value: string): string {
