@@ -63,7 +63,7 @@ export const ToyyibPayService = {
     });
 
     if (error) {
-      throw new Error(mapPaymentMessage(error.message));
+      throw new Error(mapPaymentMessage(await getFunctionErrorMessage(error)));
     }
 
     const payload = data as Partial<ToyyibPayBillResult> | null;
@@ -129,9 +129,9 @@ export async function fetchMyPendingPaymentRequest(): Promise<PaymentRequest | n
   const client = requireSupabase();
   const { data, error } = await client.rpc("get_my_pending_payment_request");
 
-    if (error) {
-      throw new Error(mapPaymentMessage(await getFunctionErrorMessage(error)));
-    }
+  if (error) {
+    throw new Error(mapPaymentMessage(error.message));
+  }
 
   return data ? normalizePaymentRequest(data as Partial<PaymentRequest>) : null;
 }
