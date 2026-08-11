@@ -87,6 +87,13 @@ export type AdminQuestionDetail = AdminQuestionRow & {
   assets: DraftAsset[];
 };
 
+export type QuestionBankCounts = {
+  section_a: number;
+  section_b: number;
+  section_c: number;
+  total: number;
+};
+
 export type SubscriptionHistory = {
   id: string;
   user_id: string;

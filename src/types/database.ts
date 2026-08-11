@@ -307,6 +307,10 @@ export type Database = {
         Args: Record<string, never>;
         Returns: Json;
       };
+      get_public_question_counts: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
       get_guest_preview_questions: {
         Args: {
           p_section: "A" | "B";

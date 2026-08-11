@@ -86,7 +86,8 @@ import {
   skipAnswer,
   submitAnswer,
 } from "./services/questionService";
-import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, SubscriptionPlan } from "./types/access";
+import { fetchQuestionBankCounts } from "./services/questionStatsService";
+import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, QuestionBankCounts, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
@@ -248,6 +249,7 @@ function App() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
+  const [questionBankCounts, setQuestionBankCounts] = useState<QuestionBankCounts | null>(null);
   const [attempts, setAttempts] = useState<QuizAttemptRow[]>([]);
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
   const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
@@ -276,6 +278,7 @@ function App() {
     }
 
     fetchAppSettings().then(setAppSettings).catch(() => setAppSettings(defaultAppSettings));
+    fetchQuestionBankCounts().then(setQuestionBankCounts).catch(() => setQuestionBankCounts(null));
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -901,6 +904,7 @@ function App() {
       return (
         <LandingPage
           settings={appSettings}
+          questionBankCounts={questionBankCounts}
           onStartGuestPreview={handleStartGuestPreview}
           onShowPaywall={openPaywall}
         />
@@ -1018,6 +1022,7 @@ function App() {
           profileReady={profileReady}
           performance={performance}
           pendingPayment={pendingPayment}
+          questionBankCounts={questionBankCounts}
           activePayload={activePayload}
           activeEssayPayload={activeEssayPayload}
           onNavigate={navigate}
@@ -1657,10 +1662,12 @@ function AuthPage({
 
 function LandingPage({
   settings,
+  questionBankCounts,
   onStartGuestPreview,
   onShowPaywall,
 }: {
   settings: AppSettings;
+  questionBankCounts: QuestionBankCounts | null;
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
@@ -1713,8 +1720,9 @@ function LandingPage({
           </div>
         </div>
 
-        <div className="landing-hero-visual" aria-label="Paparan prestasi dan XP PKSK Academy">
+        <div className="landing-hero-visual relative" aria-label="Paparan prestasi dan XP PKSK Academy">
           <img src="/assets/pksk-academy-hero-dashboard.png" alt="Murid PKSK Academy dengan paparan prestasi, XP dan graf kemajuan" className="landing-hero-image" />
+          <QuestionBankHeroCard counts={questionBankCounts} />
         </div>
       </section>
 
@@ -1751,6 +1759,63 @@ function LandingPage({
       </section>
 
       <FreePreviewSection onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
+    </div>
+  );
+}
+
+function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null }) {
+  return (
+    <div className="relative z-10 -mt-12 w-[min(92%,520px)] self-start rounded-2xl border border-ocean-100 bg-white/94 p-4 shadow-[0_18px_42px_rgba(15,23,42,0.16)] backdrop-blur lg:absolute lg:bottom-7 lg:right-8 lg:mt-0 lg:w-[390px]">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+            <BookOpen size={22} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase text-ocean-700">Bank Soalan Aktif</p>
+            <p className="truncate text-sm font-bold text-slate-600">Dikembangkan secara berterusan</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-3xl font-black leading-none text-slate-950">{formatQuestionCount(counts?.total)}</p>
+          <p className="text-xs font-black text-slate-500">jumlah</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <QuestionCountPill label="Bahagian A" value={counts?.section_a} />
+        <QuestionCountPill label="Bahagian B" value={counts?.section_b} />
+        <QuestionCountPill label="Bahagian C" value={counts?.section_c} />
+      </div>
+    </div>
+  );
+}
+
+function QuestionBankDashboardCard({ counts }: { counts: QuestionBankCounts | null }) {
+  return (
+    <article className="rounded-2xl bg-white p-5 shadow-soft">
+      <div className="flex items-center gap-4">
+        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <BookOpen size={23} aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-slate-500">Bank Soalan</p>
+          <p className="text-2xl font-black text-slate-950">{formatQuestionCount(counts?.total)}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <QuestionCountPill label="A" value={counts?.section_a} compact />
+        <QuestionCountPill label="B" value={counts?.section_b} compact />
+        <QuestionCountPill label="C" value={counts?.section_c} compact />
+      </div>
+    </article>
+  );
+}
+
+function QuestionCountPill({ label, value, compact = false }: { label: string; value: number | undefined; compact?: boolean }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center ring-1 ring-slate-100">
+      <p className={`${compact ? "text-[11px]" : "text-[10px]"} font-black uppercase text-slate-500`}>{label}</p>
+      <p className={`${compact ? "text-base" : "text-lg"} font-black leading-tight text-slate-950`}>{formatQuestionCount(value)}</p>
     </div>
   );
 }
@@ -1796,6 +1861,7 @@ function Dashboard({
   profileReady,
   performance,
   pendingPayment,
+  questionBankCounts,
   activePayload,
   activeEssayPayload,
   onNavigate,
@@ -1813,6 +1879,7 @@ function Dashboard({
   profileReady: boolean;
   performance: ReturnType<typeof calculatePerformance>;
   pendingPayment: PaymentRequest | null;
+  questionBankCounts: QuestionBankCounts | null;
   activePayload: AttemptPayload | null;
   activeEssayPayload: EssayAttemptPayload | null;
   onNavigate: (route: AppRoute) => void;
@@ -1906,11 +1973,12 @@ function Dashboard({
 
       {isLoggedIn && access.isPremium ? (
         <>
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <StatCard icon={Rocket} label="Jumlah Cubaan" value={`${performance.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
             <StatCard icon={Star} label="Skor Terbaik" value={`${performance.bestScore}%`} tone="bg-sun-50 text-amber-700" />
             <StatCard icon={Zap} label="Jumlah Mata" value={`${performance.totalXp}`} tone="bg-coral-50 text-coral-600" />
             <StatCard icon={Trophy} label="Lencana" value={`${performance.badgeCount}`} tone="bg-leaf-50 text-leaf-600" />
+            <QuestionBankDashboardCard counts={questionBankCounts} />
           </section>
 
           <section className="grid gap-5 lg:grid-cols-3">
@@ -5385,6 +5453,13 @@ function formatCurrency(amount: number, currency: string): string {
     return `RM${Number(amount).toFixed(0)}`;
   }
   return `${currency.toUpperCase()} ${Number(amount).toFixed(0)}`;
+}
+
+function formatQuestionCount(value: number | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "...";
+  }
+  return value.toLocaleString("ms-MY");
 }
 
 function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {
