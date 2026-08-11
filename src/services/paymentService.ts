@@ -54,7 +54,16 @@ export const ToyyibPayService = {
       await prepareCheckoutAccount(customer);
     }
 
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined;
+    if (!customer && !headers) {
+      throw new Error("Sesi log masuk belum bersedia. Sila log masuk semula atau isi maklumat pelanggan.");
+    }
+
     const { data, error } = await client.functions.invoke("create-toyyibpay-bill", {
+      headers,
       body: customer
         ? {
             customer,
