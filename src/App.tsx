@@ -270,6 +270,7 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isInstalledApp, setIsInstalledApp] = useState(false);
+  const [autoOpenPayment, setAutoOpenPayment] = useState(false);
 
   const isLoggedIn = Boolean(session?.user);
   const access = useAccess(session, profile, accessStatus);
@@ -419,12 +420,12 @@ function App() {
     refreshData(session.user.id);
   }, [refreshData, session?.user.id]);
 
-  function navigate(to: AppRoute) {
+  const navigate = useCallback((to: AppRoute) => {
     window.history.pushState({}, "", to);
     setCurrentRoute(to);
     setIsMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
+  }, []);
 
   function openAuth(mode: AuthMode) {
     setIsPasswordRecovery(false);
@@ -432,9 +433,14 @@ function App() {
     navigate(mode === "login" ? "/login" : "/register");
   }
 
-  function openPaywall() {
+  const openPaywall = useCallback(() => {
+    setAutoOpenPayment(true);
     navigate("/premium");
-  }
+  }, [navigate]);
+
+  const handlePaymentDialogOpened = useCallback(() => {
+    setAutoOpenPayment(false);
+  }, []);
 
   async function handlePaymentSubmitted() {
     if (session?.user.id) {
@@ -943,9 +949,12 @@ function App() {
           access={access}
           settings={appSettings}
           userEmail={session?.user.email ?? ""}
+          profileName={profile?.display_name ?? profile?.full_name ?? ""}
           pendingPayment={pendingPayment}
+          autoOpenPayment={autoOpenPayment}
           onAuth={openAuth}
           onNavigate={navigate}
+          onAutoOpenPaymentHandled={handlePaymentDialogOpened}
           onPaymentSubmitted={handlePaymentSubmitted}
         />
       );
@@ -1025,9 +1034,12 @@ function App() {
           access={access}
           settings={appSettings}
           userEmail={session?.user.email ?? ""}
+          profileName={profile?.display_name ?? profile?.full_name ?? ""}
           pendingPayment={pendingPayment}
+          autoOpenPayment={autoOpenPayment}
           onAuth={openAuth}
           onNavigate={navigate}
+          onAutoOpenPaymentHandled={handlePaymentDialogOpened}
           onPaymentSubmitted={handlePaymentSubmitted}
         />
       );
@@ -1109,6 +1121,7 @@ function App() {
         isMenuOpen={isMenuOpen}
         profile={profile}
         onNavigate={navigate}
+        onPremiumCheckout={openPaywall}
         onMenu={() => setIsMenuOpen((current) => !current)}
         onSignOut={handleSignOut}
       />
@@ -1136,6 +1149,7 @@ function TopBar({
   isMenuOpen,
   profile,
   onNavigate,
+  onPremiumCheckout,
   onMenu,
   onSignOut,
 }: {
@@ -1145,10 +1159,12 @@ function TopBar({
   isMenuOpen: boolean;
   profile: ProfileRow | null;
   onNavigate: (route: AppRoute) => void;
+  onPremiumCheckout: () => void;
   onMenu: () => void;
   onSignOut: () => void;
 }) {
   const isPublicShell = publicRoutes.has(currentRoute);
+  const isPremiumPage = currentRoute === "/premium";
   const marketingLinks: Array<{ to: AppRoute; label: string; tone?: "primary" | "secondary" }> = isLoggedIn
     ? access.canUsePremiumFeature()
       ? [{ to: "/app", label: "Buka PKSK Academy", tone: "primary" }]
@@ -1157,6 +1173,10 @@ function TopBar({
         { to: "/preview", label: "Cuba Percuma" },
         { to: "/premium", label: "Dapatkan Premium", tone: "primary" },
       ];
+  const visibleMarketingLinks = isPremiumPage ? [] : marketingLinks;
+  const visibleMobileMarketingLinks =
+    isPremiumPage || currentRoute === "/" ? marketingLinks.filter((item) => item.to !== "/premium") : visibleMarketingLinks;
+  const showMobileLogin = isPublicShell && !isLoggedIn && currentRoute !== "/login";
   const renderMarketingButton = (item: { to: AppRoute; label: string; tone?: "primary" | "secondary" }, compact = false) => {
     const isPremiumCta = item.to === "/premium" || item.tone === "primary";
 
@@ -1164,7 +1184,7 @@ function TopBar({
       <button
         key={item.to}
         type="button"
-        onClick={() => onNavigate(item.to)}
+        onClick={() => (item.to === "/premium" ? onPremiumCheckout() : onNavigate(item.to))}
         className={
           isPremiumCta
             ? `topbar-premium-button ${compact ? "min-h-12 w-full" : "h-11"}`
@@ -1199,7 +1219,7 @@ function TopBar({
           {isPublicShell
             ? currentRoute === "/"
               ? null
-              : marketingLinks.map((item) => renderMarketingButton(item))
+              : visibleMarketingLinks.map((item) => renderMarketingButton(item))
             : navItems.map((item) => {
                 if (item.authOnly && !isLoggedIn) {
                   return null;
@@ -1236,11 +1256,13 @@ function TopBar({
                 Buka PKSK Academy
               </button>
             ) : isLoggedIn ? (
-              <button type="button" onClick={() => onNavigate("/premium")} className="topbar-premium-button h-11">
-                <span className="topbar-premium-badge">Paling Popular</span>
-                <Crown size={17} aria-hidden="true" />
-                Dapatkan Premium
-              </button>
+              isPremiumPage ? null : (
+                <button type="button" onClick={onPremiumCheckout} className="topbar-premium-button h-11">
+                  <span className="topbar-premium-badge">Paling Popular</span>
+                  <Crown size={17} aria-hidden="true" />
+                  Dapatkan Premium
+                </button>
+              )
             ) : (
               <button type="button" onClick={() => onNavigate("/login")} className="topbar-login-button">
                 <UserRound size={17} aria-hidden="true" />
@@ -1283,7 +1305,7 @@ function TopBar({
         <nav className="border-t border-slate-100 bg-white px-4 py-3 lg:hidden" aria-label="Navigasi mudah alih">
           <div className="mx-auto grid max-w-7xl gap-2">
             {isPublicShell
-              ? marketingLinks.map((item) => renderMarketingButton(item, true))
+              ? visibleMobileMarketingLinks.map((item) => renderMarketingButton(item, true))
               : navItems.map((item) => {
                   if (item.authOnly && !isLoggedIn) {
                     return null;
@@ -1308,6 +1330,12 @@ function TopBar({
                     </button>
                   );
                 })}
+            {showMobileLogin ? (
+              <button type="button" onClick={() => onNavigate("/login")} className="topbar-login-button h-12 w-full rounded-xl">
+                <UserRound size={17} aria-hidden="true" />
+                Log Masuk
+              </button>
+            ) : null}
             {isLoggedIn ? (
               <button type="button" onClick={onSignOut} className="flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold text-slate-600">
                 <LogOut size={17} aria-hidden="true" />
@@ -2424,18 +2452,24 @@ function PaywallPage({
   access,
   settings,
   userEmail,
+  profileName,
   pendingPayment,
+  autoOpenPayment,
   onAuth,
   onNavigate,
+  onAutoOpenPaymentHandled,
   onPaymentSubmitted,
 }: {
   isLoggedIn: boolean;
   access: ReturnType<typeof useAccess>;
   settings: AppSettings;
   userEmail: string;
+  profileName: string;
   pendingPayment: PaymentRequest | null;
+  autoOpenPayment: boolean;
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
+  onAutoOpenPaymentHandled: () => void;
   onPaymentSubmitted: () => Promise<void>;
 }) {
   const [paymentMethodOpen, setPaymentMethodOpen] = useState(false);
@@ -2443,9 +2477,26 @@ function PaywallPage({
   const [toyyibPayBusy, setToyyibPayBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
-  const primaryLabel = access.canUsePremiumFeature() ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
+  const canUsePremium = access.canUsePremiumFeature();
+  const primaryLabel = canUsePremium ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
+
+  useEffect(() => {
+    if (!autoOpenPayment) {
+      return;
+    }
+
+    onAutoOpenPaymentHandled();
+    if (canUsePremium) {
+      onNavigate("/app");
+      return;
+    }
+
+    setPaymentError(null);
+    setPaymentMethodOpen(true);
+  }, [autoOpenPayment, canUsePremium, onAutoOpenPaymentHandled, onNavigate]);
+
   const handlePrimary = () => {
-    if (access.canUsePremiumFeature()) {
+    if (canUsePremium) {
       onNavigate("/app");
       return;
     }
@@ -2531,7 +2582,7 @@ function PaywallPage({
                 <Crown size={18} aria-hidden="true" />
                 {primaryLabel}
               </button>
-              {!access.canUsePremiumFeature() && !isLoggedIn ? (
+              {!canUsePremium && !isLoggedIn ? (
                 <button type="button" className="secondary-button w-full sm:w-auto" onClick={() => onAuth("login")}>
                   <UserRound size={17} aria-hidden="true" />
                   Sudah ada akaun? Log Masuk
@@ -2542,7 +2593,7 @@ function PaywallPage({
         </div>
       </section>
 
-      {pendingPayment && !access.canUsePremiumFeature() ? <PaymentPendingBanner payment={pendingPayment} /> : null}
+      {pendingPayment && !canUsePremium ? <PaymentPendingBanner payment={pendingPayment} /> : null}
 
       <section className="grid gap-5 lg:grid-cols-[0.6fr_1.4fr]">
         <article className="rounded-2xl bg-white p-6 shadow-soft">
@@ -2582,17 +2633,13 @@ function PaywallPage({
           <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih ToyyibPay untuk bayaran automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
           <FaqItem title="Bagaimana Premium diaktifkan?" text="ToyyibPay mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
         </div>
-        <div className="mt-6">
-          <button type="button" className="primary-button" onClick={handlePrimary}>
-            {primaryLabel}
-          </button>
-        </div>
       </section>
       {paymentMethodOpen ? (
         <PaymentMethodDialog
           settings={settings}
           isLoggedIn={isLoggedIn}
           userEmail={userEmail}
+          initialCustomerName={profileName}
           error={paymentError}
           toyyibPayBusy={toyyibPayBusy}
           onClose={() => setPaymentMethodOpen(false)}
@@ -2622,6 +2669,7 @@ function PaymentMethodDialog({
   settings,
   isLoggedIn,
   userEmail,
+  initialCustomerName,
   error,
   toyyibPayBusy,
   onClose,
@@ -2631,6 +2679,7 @@ function PaymentMethodDialog({
   settings: AppSettings;
   isLoggedIn: boolean;
   userEmail: string;
+  initialCustomerName: string;
   error: string | null;
   toyyibPayBusy: boolean;
   onClose: () => void;
@@ -2638,13 +2687,14 @@ function PaymentMethodDialog({
   onManualQr: () => void;
 }) {
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
-  const [customerName, setCustomerName] = useState("");
+  const [customerName, setCustomerName] = useState(initialCustomerName);
   const [customerEmail, setCustomerEmail] = useState(userEmail);
   const [customerPassword, setCustomerPassword] = useState("");
   const [customerError, setCustomerError] = useState<string | null>(null);
 
   function handleToyyibPayClick() {
     if (isLoggedIn) {
+      setCustomerError(null);
       void onToyyibPay();
       return;
     }
@@ -2690,39 +2740,43 @@ function PaymentMethodDialog({
 
         {error || customerError ? <p className="mt-5 rounded-2xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-700">{customerError ?? error}</p> : null}
 
-        {!isLoggedIn ? (
-          <div className="mt-5 rounded-3xl border border-ocean-100 bg-ocean-50/70 p-5">
-            <div className="flex items-start gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
-                <UserRound size={22} aria-hidden="true" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-950">Maklumat pelanggan</h3>
-                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
-                  Akaun Premium akan disediakan menggunakan maklumat ini selepas bayaran ToyyibPay berjaya.
-                </p>
-              </div>
+        <div className="mt-5 rounded-3xl border border-ocean-100 bg-ocean-50/70 p-5">
+          <div className="flex items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
+              <UserRound size={22} aria-hidden="true" />
             </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Label text="Nama pelanggan">
-                <input
-                  className="field bg-white"
-                  value={customerName}
-                  onChange={(event) => setCustomerName(event.target.value)}
-                  placeholder="Contoh: Najib"
-                  autoComplete="name"
-                />
-              </Label>
-              <Label text="E-mel">
-                <input
-                  className="field bg-white"
-                  type="email"
-                  value={customerEmail}
-                  onChange={(event) => setCustomerEmail(event.target.value)}
-                  placeholder="nama@email.com"
-                  autoComplete="email"
-                />
-              </Label>
+            <div>
+              <h3 className="text-lg font-black text-slate-950">Maklumat pelanggan</h3>
+              <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                {isLoggedIn
+                  ? "Bayaran akan dipautkan kepada akaun ini selepas ToyyibPay berjaya."
+                  : "Isi maklumat ini sekali sahaja. Akaun Premium akan disediakan selepas bayaran ToyyibPay berjaya."}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Label text="Nama pelanggan">
+              <input
+                className="field bg-white"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                placeholder="Contoh: Najib"
+                autoComplete="name"
+                disabled={toyyibPayBusy}
+              />
+            </Label>
+            <Label text="E-mel">
+              <input
+                className="field bg-white"
+                type="email"
+                value={customerEmail}
+                onChange={(event) => setCustomerEmail(event.target.value)}
+                placeholder="nama@email.com"
+                autoComplete="email"
+                disabled={toyyibPayBusy || Boolean(isLoggedIn && userEmail)}
+              />
+            </Label>
+            {!isLoggedIn ? (
               <div className="sm:col-span-2">
                 <Label text="Kata laluan akaun">
                   <input
@@ -2732,15 +2786,16 @@ function PaymentMethodDialog({
                     onChange={(event) => setCustomerPassword(event.target.value)}
                     placeholder="Minimum 6 aksara"
                     autoComplete="new-password"
+                    disabled={toyyibPayBusy}
                   />
                 </Label>
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
                   Jika e-mel ini sudah pernah didaftarkan, bayaran akan dipautkan kepada akaun tersebut dan kata laluan sedia ada tidak ditukar.
                 </p>
               </div>
-            </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <article className="relative overflow-hidden rounded-3xl border border-ocean-200 bg-gradient-to-br from-ocean-50 via-white to-teal-50 p-5 shadow-[0_18px_46px_rgba(8,145,178,0.18)]">
