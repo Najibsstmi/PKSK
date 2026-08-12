@@ -1946,7 +1946,7 @@ function LandingPage({
 
 function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null }) {
   return (
-    <div className="relative z-10 -mt-12 w-[min(92%,520px)] self-start rounded-2xl border border-ocean-100 bg-white/94 p-4 shadow-[0_18px_42px_rgba(15,23,42,0.16)] backdrop-blur lg:absolute lg:bottom-7 lg:right-8 lg:mt-0 lg:w-[390px]">
+    <div className="relative z-10 -mt-10 w-full max-w-[520px] self-center rounded-2xl border border-ocean-100 bg-white/94 p-4 shadow-[0_18px_42px_rgba(15,23,42,0.16)] backdrop-blur lg:absolute lg:bottom-7 lg:right-8 lg:mt-0 lg:w-[390px] lg:max-w-none">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
