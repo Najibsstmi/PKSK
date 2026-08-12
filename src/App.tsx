@@ -14,6 +14,7 @@
   FileSpreadsheet,
   FileUp,
   Footprints,
+  Gift,
   GraduationCap,
   HeartHandshake,
   History,
@@ -116,6 +117,7 @@ type AppRoute =
   | "/app/pencapaian"
   | "/app/sejarah"
   | "/app/lencana"
+  | "/app/bonus"
   | "/app/panduan"
   | "/admin"
   | "/admin/users"
@@ -136,12 +138,13 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?
   { to: "/app/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
   { to: "/app/pencapaian", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
+  { to: "/app/bonus", label: "Bonus", icon: Gift, authOnly: true, premiumOnly: true },
   { to: "/app/sejarah", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
   { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true, premiumOnly: true },
   { to: "/admin", label: "Admin Panel", icon: Users, authOnly: true, adminOnly: true },
 ];
 
-const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
+const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result"]);
 const premiumRoutes = new Set<AppRoute>([
@@ -153,6 +156,7 @@ const premiumRoutes = new Set<AppRoute>([
   "/app/pencapaian",
   "/app/sejarah",
   "/app/lencana",
+  "/app/bonus",
   "/app/panduan",
 ]);
 const validRoutes = new Set<AppRoute>(
@@ -185,6 +189,7 @@ const legacyRouteMap: Record<string, AppRoute> = {
   "/performance": "/app/pencapaian",
   "/history": "/app/sejarah",
   "/achievements": "/app/lencana",
+  "/bonus": "/app/bonus",
   "/guide": "/app/panduan",
 };
 
@@ -193,6 +198,98 @@ const appLogoPath = "/assets/pksk-academy-logo.png";
 const appLogoMarkPath = "/assets/pksk-academy-mark.png";
 const rememberedEmailKey = "pksk-remembered-email";
 const spaRedirectStorageKey = "pksk-spa-redirect";
+type BonusMaterial = {
+  title: string;
+  subject: string;
+  level: string;
+  description: string;
+  filePath: string;
+  coverPath: string;
+  accent: string;
+};
+const bonusMaterials: BonusMaterial[] = [
+  {
+    title: "Tatabahasa Mengikut Tema",
+    subject: "Bahasa Melayu",
+    level: "Tahun 4-6",
+    description: "Nota tatabahasa berasaskan tema untuk ulang kaji cepat dan terancang.",
+    filePath: "/bonus/tatabahasa-mengikut-tema.pdf",
+    coverPath: "/assets/bonus-covers/tatabahasa-mengikut-tema.png",
+    accent: "from-ocean-600 to-teal-500",
+  },
+  {
+    title: "Latihan Tatabahasa Tahun 4-6",
+    subject: "Bahasa Melayu",
+    level: "Tahun 4-6",
+    description: "Latihan tambahan untuk kukuhkan asas tatabahasa secara berperingkat.",
+    filePath: "/bonus/latihan-tatabahasa-tahun-4-6.pdf",
+    coverPath: "/assets/bonus-covers/latihan-tatabahasa-tahun-4-6.png",
+    accent: "from-sky-600 to-ocean-500",
+  },
+  {
+    title: "Matematik Tahun 4",
+    subject: "Matematik",
+    level: "Tahun 4",
+    description: "Set latihan Matematik asas untuk bina keyakinan sebelum topik lebih mencabar.",
+    filePath: "/bonus/matematik-tahun-4.pdf",
+    coverPath: "/assets/bonus-covers/matematik-tahun-4.png",
+    accent: "from-blue-600 to-ocean-500",
+  },
+  {
+    title: "Matematik Tahun 5",
+    subject: "Matematik",
+    level: "Tahun 5",
+    description: "Latihan pengukuhan Matematik bagi kemahiran numerasi dan penyelesaian masalah.",
+    filePath: "/bonus/matematik-tahun-5.pdf",
+    coverPath: "/assets/bonus-covers/matematik-tahun-5.png",
+    accent: "from-indigo-600 to-sky-500",
+  },
+  {
+    title: "Matematik Tahun 6",
+    subject: "Matematik",
+    level: "Tahun 6",
+    description: "Bahan latih tubi Matematik Tahun 6 untuk persediaan yang lebih mantap.",
+    filePath: "/bonus/matematik-tahun-6.pdf",
+    coverPath: "/assets/bonus-covers/matematik-tahun-6.png",
+    accent: "from-ocean-700 to-blue-500",
+  },
+  {
+    title: "TN90 Sains Tahun 4",
+    subject: "Sains",
+    level: "Tahun 4",
+    description: "Latihan Sains bergambar untuk kukuhkan pemahaman konsep asas.",
+    filePath: "/bonus/tn90-sains-tahun-4.pdf",
+    coverPath: "/assets/bonus-covers/tn90-sains-tahun-4.png",
+    accent: "from-emerald-600 to-teal-500",
+  },
+  {
+    title: "TN90 Sains Tahun 5",
+    subject: "Sains",
+    level: "Tahun 5",
+    description: "Set latihan Sains untuk topik dan kemahiran proses sains peringkat pertengahan.",
+    filePath: "/bonus/tn90-sains-tahun-5.pdf",
+    coverPath: "/assets/bonus-covers/tn90-sains-tahun-5.png",
+    accent: "from-green-600 to-ocean-500",
+  },
+  {
+    title: "TN90 Sains Tahun 6",
+    subject: "Sains",
+    level: "Tahun 6",
+    description: "Latihan Sains Tahun 6 untuk persediaan akhir dan pengukuhan konsep.",
+    filePath: "/bonus/tn90-sains-tahun-6.pdf",
+    coverPath: "/assets/bonus-covers/tn90-sains-tahun-6.png",
+    accent: "from-teal-700 to-emerald-500",
+  },
+  {
+    title: "TN91 English Tahun 6",
+    subject: "English",
+    level: "Tahun 6",
+    description: "Bahan English tambahan untuk vocabulary, reading dan kemahiran bahasa.",
+    filePath: "/bonus/tn91-english-tahun-6.pdf",
+    coverPath: "/assets/bonus-covers/tn91-english-tahun-6.png",
+    accent: "from-blue-700 to-cyan-500",
+  },
+];
 const defaultAppSettings: AppSettings = {
   free_preview_section_a_limit: 15,
   free_preview_section_b_limit: 20,
@@ -1109,6 +1206,9 @@ function App() {
     if (currentRoute === "/app/lencana") {
       return <AchievementsPage badges={badges} isLoggedIn={isLoggedIn} onNavigate={navigate} />;
     }
+    if (currentRoute === "/app/bonus") {
+      return <BonusPage onNavigate={navigate} />;
+    }
     return <GuidePage />;
   })();
 
@@ -1230,15 +1330,20 @@ function TopBar({
                 if (item.adminOnly && !access.isAdmin) {
                   return null;
                 }
+                const isBonusNav = item.to === "/app/bonus";
                 return (
                   <button
                     key={item.to}
                     type="button"
                     onClick={() => onNavigate(item.to)}
                     className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
-                      currentRoute === item.to
-                        ? "bg-ocean-50 text-ocean-700"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      isBonusNav
+                        ? currentRoute === item.to
+                          ? "bg-gradient-to-r from-amber-100 to-ocean-50 text-amber-800 shadow-sm ring-1 ring-amber-200"
+                          : "bg-gradient-to-r from-amber-50 to-white text-amber-700 ring-1 ring-amber-100 hover:-translate-y-0.5 hover:shadow-md"
+                        : currentRoute === item.to
+                          ? "bg-ocean-50 text-ocean-700"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                     }`}
                   >
                     <item.icon size={17} aria-hidden="true" />
@@ -1331,13 +1436,20 @@ function TopBar({
                   if (item.adminOnly && !access.isAdmin) {
                     return null;
                   }
+                  const isBonusNav = item.to === "/app/bonus";
                   return (
                     <button
                       key={item.to}
                       type="button"
                       onClick={() => onNavigate(item.to)}
                       className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold ${
-                        currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-600"
+                        isBonusNav
+                          ? currentRoute === item.to
+                            ? "bg-gradient-to-r from-amber-100 to-ocean-50 text-amber-800"
+                            : "bg-amber-50 text-amber-800"
+                          : currentRoute === item.to
+                            ? "bg-ocean-50 text-ocean-700"
+                            : "text-slate-600"
                       }`}
                     >
                       <item.icon size={17} aria-hidden="true" />
@@ -1380,6 +1492,7 @@ function BottomNav({
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
         {bottomNavItems.map((item) => {
           const disabled = (item.authOnly && !isLoggedIn) || (item.premiumOnly && !access.canUsePremiumFeature()) || (item.adminOnly && !access.isAdmin);
+          const isBonusNav = item.to === "/app/bonus";
           return (
             <button
               key={item.to}
@@ -1387,7 +1500,13 @@ function BottomNav({
               disabled={disabled}
               onClick={() => onNavigate(item.to)}
               className={`grid min-h-[56px] place-items-center rounded-xl px-1 text-[11px] font-bold ${
-                currentRoute === item.to ? "bg-ocean-50 text-ocean-700" : "text-slate-500"
+                isBonusNav
+                  ? currentRoute === item.to
+                    ? "bg-amber-100 text-amber-800"
+                    : "text-amber-700"
+                  : currentRoute === item.to
+                    ? "bg-ocean-50 text-ocean-700"
+                    : "text-slate-500"
               } ${disabled ? "opacity-40" : ""}`}
             >
               <item.icon size={19} aria-hidden="true" />
@@ -2050,6 +2169,7 @@ function Dashboard({
             <ModeCard title="Studio Penulisan" text="Bahagian C dengan editor, timer dan autosave." icon={PenLine} onClick={onStartEssay} />
             <ModeCard title="Pencapaian" text="Semak analisis prestasi dan perkembangan simulasi." icon={Award} onClick={() => onNavigate("/app/pencapaian")} />
             <ModeCard title="Lencana" text="Lihat lencana yang sudah dibuka dan sasaran seterusnya." icon={Trophy} onClick={() => onNavigate("/app/lencana")} />
+            <ModeCard title="Bonus Premium" text="Muat turun bahan tambahan eksklusif untuk ahli Premium." icon={Gift} onClick={() => onNavigate("/app/bonus")} />
           </section>
         </>
       ) : null}
@@ -6191,6 +6311,105 @@ function AchievementsPage({
             </article>
           );
         })}
+      </section>
+    </div>
+  );
+}
+
+function BonusPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
+  const subjectList = Array.from(new Set(bonusMaterials.map((material) => material.subject))).join(", ");
+
+  return (
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-soft sm:p-8">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-950 via-slate-950 to-teal-900" aria-hidden="true" />
+        <div className="absolute left-0 top-0 h-48 w-48 rounded-full bg-amber-300/20 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-8 top-0 h-52 w-52 rounded-full bg-teal-300/20 blur-3xl" aria-hidden="true" />
+        <div className="absolute -right-12 bottom-0 hidden h-56 w-56 rounded-full bg-amber-300/20 blur-3xl md:block" aria-hidden="true" />
+        <div className="relative grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-black text-amber-100 ring-1 ring-white/15">
+              <Crown size={17} aria-hidden="true" />
+              Bonus Eksklusif Premium
+            </div>
+            <h1 className="mt-5 max-w-3xl text-3xl font-black leading-tight sm:text-5xl">Bahan tambahan khas untuk ahli Premium.</h1>
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-slate-200 sm:text-base">
+              Klik mana-mana kad untuk muat turun PDF secara percuma. Semua bahan ini disusun sebagai hadiah tambahan supaya latihan murid lebih lengkap.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <span className="rounded-2xl bg-white/12 px-4 py-3 text-sm font-black ring-1 ring-white/15">
+                {bonusMaterials.length} bahan bonus
+              </span>
+              <span className="rounded-2xl bg-white/12 px-4 py-3 text-sm font-black ring-1 ring-white/15">{subjectList}</span>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["BM", "Tatabahasa"],
+                ["MT", "Matematik"],
+                ["SN", "Sains"],
+                ["EN", "English"],
+              ].map(([code, label]) => (
+                <div key={code} className="rounded-2xl bg-white p-4 text-slate-950 shadow-soft">
+                  <p className="text-2xl font-black text-ocean-700">{code}</p>
+                  <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {bonusMaterials.map((material) => (
+          <a
+            key={material.filePath}
+            href={material.filePath}
+            download
+            className="group overflow-hidden rounded-2xl bg-white shadow-soft transition hover:-translate-y-1 hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] focus:outline-none focus:ring-4 focus:ring-ocean-200"
+            aria-label={`Muat turun ${material.title}`}
+          >
+            <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
+              <img src={material.coverPath} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.035]" loading="lazy" />
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/76 to-transparent" aria-hidden="true" />
+              <span className="absolute left-4 top-4 rounded-full bg-white/92 px-3 py-1 text-xs font-black uppercase text-slate-800 shadow-sm">
+                {material.subject}
+              </span>
+              <span className="absolute bottom-4 left-4 rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase text-amber-950 shadow-sm">
+                Bonus Premium
+              </span>
+            </div>
+            <div className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase text-ocean-700">{material.level}</p>
+                  <h2 className="mt-1 text-xl font-black leading-tight text-slate-950">{material.title}</h2>
+                </div>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${material.accent} text-white shadow-lg`}>
+                  <Download size={21} aria-hidden="true" />
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{material.description}</p>
+              <span className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-ocean-100 bg-ocean-50 px-4 text-sm font-black text-ocean-800 transition group-hover:border-ocean-300 group-hover:bg-ocean-100">
+                Muat Turun Percuma
+                <Download size={17} aria-hidden="true" />
+              </span>
+            </div>
+          </a>
+        ))}
+      </section>
+
+      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-soft">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-black text-slate-950">Bahan akan ditambah dari semasa ke semasa.</h2>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">Semua fail di halaman ini ialah bonus untuk pengguna Premium PKSK Academy.</p>
+          </div>
+          <button type="button" className="secondary-button bg-white" onClick={() => onNavigate("/app")}>
+            Kembali Dashboard
+          </button>
+        </div>
       </section>
     </div>
   );

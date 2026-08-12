@@ -1,6 +1,7 @@
 node_modules
 dist
 tmp/
+/bonus/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
