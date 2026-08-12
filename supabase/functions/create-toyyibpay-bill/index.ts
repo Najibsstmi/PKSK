@@ -88,6 +88,8 @@ serve(async (request) => {
       throw new Error(insertError?.message ?? "Payment record could not be created.");
     }
 
+    const returnUrl = `${RETURN_URL}?payment_id=${encodeURIComponent(payment.id)}&order_id=${encodeURIComponent(externalReference)}`;
+
     const billPayload = new URLSearchParams({
       userSecretKey: secretKey,
       categoryCode,
@@ -96,7 +98,7 @@ serve(async (request) => {
       billPriceSetting: "1",
       billPayorInfo: "1",
       billAmount: String(PREMIUM_AMOUNT_CENTS),
-      billReturnUrl: RETURN_URL,
+      billReturnUrl: returnUrl,
       billCallbackUrl: callbackUrl,
       billExternalReferenceNo: externalReference,
       billTo: checkoutUser.displayName,
@@ -155,6 +157,7 @@ serve(async (request) => {
       billCode,
       paymentUrl: `${baseUrl}/${billCode}`,
       callbackUrl,
+      returnUrl,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ToyyibPay bill could not be created.";

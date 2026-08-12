@@ -7,6 +7,8 @@ import type {
   PaymentRequestStatus,
   ToyyibPayBillResult,
   ToyyibPayCustomerInput,
+  ToyyibPayVerifyResult,
+  ToyyibPayVerifyTarget,
 } from "../types/payment";
 
 type PaymentProvider = {
@@ -85,6 +87,32 @@ export const ToyyibPayService = {
       billCode: String(payload.billCode ?? ""),
       paymentUrl: String(payload.paymentUrl),
       callbackUrl: String(payload.callbackUrl ?? ""),
+    };
+  },
+
+  async verifyPayment(target: ToyyibPayVerifyTarget = {}): Promise<ToyyibPayVerifyResult> {
+    const client = requireSupabase();
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined;
+
+    const { data, error } = await client.functions.invoke("verify-toyyibpay-payment", {
+      headers,
+      body: target,
+    });
+
+    if (error) {
+      throw new Error(mapPaymentMessage(await getFunctionErrorMessage(error)));
+    }
+
+    const payload = data as Partial<ToyyibPayVerifyResult> | null;
+    return {
+      ok: Boolean(payload?.ok),
+      status: normalizePaymentStatus(payload?.status),
+      paymentId: String(payload?.paymentId ?? target.paymentId ?? ""),
+      providerReference: payload?.providerReference ? String(payload.providerReference) : null,
+      premiumActivated: Boolean(payload?.premiumActivated),
     };
   },
 };
@@ -262,6 +290,21 @@ function mapPaymentMessage(message: string): string {
   }
   if (message.includes("INVALID_PAYMENT_STATUS")) {
     return "Status bayaran tidak sah.";
+  }
+  if (message.includes("TOYYIBPAY_TRANSACTION_LOOKUP_FAILED")) {
+    return "Status ToyyibPay belum dapat disemak. Sila cuba refresh sebentar lagi.";
+  }
+  if (message.includes("TOYYIBPAY_BILL_CODE_REQUIRED")) {
+    return "Kod bil ToyyibPay belum ditemui. Sila buka semula halaman Premium dan cuba sekali lagi.";
+  }
+  if (message.includes("INVALID_PAYMENT_AMOUNT")) {
+    return "Jumlah bayaran ToyyibPay tidak sepadan dengan harga Premium.";
+  }
+  if (message.includes("PAYMENT_ACCESS_DENIED")) {
+    return "Anda tidak mempunyai akses untuk menyemak rekod bayaran ini.";
+  }
+  if (message.includes("INVALID_PAYMENT_METHOD")) {
+    return "Rekod ini bukan bayaran ToyyibPay.";
   }
   if (message.includes("TOYYIBPAY_BILL_FAILED")) {
     if (toyyibPayDetails) {

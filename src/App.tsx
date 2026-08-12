@@ -1,4 +1,4 @@
-﻿import {
+import {
   Award,
   BookOpen,
   Brain,
@@ -3157,17 +3157,48 @@ function PaymentResultPage({
   const [error, setError] = useState<string | null>(null);
 
   const refreshPayment = useCallback(async () => {
-    if (!isLoggedIn) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
     try {
-      await onRefreshStatus();
-      const latestPayment = await fetchMyLatestPaymentRequest().catch(() => null);
-      setPayment(latestPayment);
+      let verificationMessage: string | null = null;
+      const returnTarget = getToyyibPayReturnTarget();
+      if (isLoggedIn || hasToyyibPayReturnTarget(returnTarget)) {
+        try {
+          const verification = await ToyyibPayService.verifyPayment(returnTarget);
+          if (!isLoggedIn && verification.paymentId) {
+            setPayment({
+              id: verification.paymentId,
+              user_id: null,
+              email: null,
+              amount: 49,
+              currency: "MYR",
+              status: verification.status,
+              provider: "toyyibpay",
+              payment_method: "toyyibpay",
+              provider_bill_code: returnTarget.billCode ?? null,
+              provider_reference: verification.providerReference,
+              external_reference: returnTarget.externalReference ?? null,
+              paid_at: verification.status === "paid" ? new Date().toISOString() : null,
+              notes: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } catch (verificationError) {
+          verificationMessage = toMessage(verificationError);
+        }
+      }
+
+      if (isLoggedIn) {
+        await onRefreshStatus();
+        const latestPayment = await fetchMyLatestPaymentRequest().catch(() => null);
+        setPayment(latestPayment);
+        if (verificationMessage && latestPayment?.status !== "paid" && latestPayment?.status !== "approved") {
+          setError(verificationMessage);
+        }
+      } else if (verificationMessage) {
+        setError(verificationMessage);
+      }
     } catch (refreshError) {
       setError(toMessage(refreshError));
     } finally {
@@ -3179,7 +3210,24 @@ function PaymentResultPage({
     refreshPayment();
   }, [refreshPayment]);
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn && payment?.status === "paid") {
+    return (
+      <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-leaf-50 text-leaf-600">
+          <CheckCircle2 size={28} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-3xl font-black text-slate-950">Pembayaran berjaya.</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+          Premium telah diaktifkan. Log masuk menggunakan e-mel dan kata laluan yang diisi semasa pembayaran untuk buka PKSK Academy.
+        </p>
+        <button type="button" className="primary-button mx-auto mt-6" onClick={() => onAuth("login")}>
+          Log Masuk
+        </button>
+      </section>
+    );
+  }
+
+  if (!isLoggedIn && !loading) {
     return (
       <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
@@ -3189,6 +3237,7 @@ function PaymentResultPage({
         <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
           Gunakan e-mel dan kata laluan yang diisi semasa pembayaran. Jika Supabase meminta pengesahan e-mel, sahkan dahulu melalui inbox.
         </p>
+        {error ? <p className="mx-auto mt-4 max-w-xl rounded-2xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-700">{error}</p> : null}
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <button type="button" className="primary-button" onClick={() => onAuth("login")}>
             Log Masuk
@@ -3217,17 +3266,17 @@ function PaymentResultPage({
   }
 
   const failedStatus = payment?.status === "failed" || payment?.status === "cancelled" || payment?.status === "rejected";
-  const title = failedStatus ? "Pembayaran tidak berjaya." : "Pembayaran sedang disahkan.";
+  const title = failedStatus ? "Pembayaran tidak berjaya." : loading ? "Menyemak bayaran..." : "Pembayaran sedang disahkan.";
   const text = failedStatus
     ? "Premium belum diaktifkan. Anda boleh cuba semula atau gunakan QR DuitNow manual."
-    : "Jika bayaran sudah dibuat, tunggu sebentar sementara ToyyibPay menghantar pengesahan kepada sistem.";
+    : "Sistem sedang menyemak bayaran ToyyibPay. Jika bayaran berjaya, Premium akan dibuka secara automatik selepas pengesahan diterima.";
 
   return (
     <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
       <div className={`mx-auto grid h-14 w-14 place-items-center rounded-2xl ${failedStatus ? "bg-coral-50 text-coral-600" : "bg-sun-100 text-amber-700"}`}>
         {failedStatus ? <X size={26} aria-hidden="true" /> : <Clock3 size={26} aria-hidden="true" />}
       </div>
-      <h1 className="mt-5 text-3xl font-black text-slate-950">{loading ? "Menyemak bayaran..." : title}</h1>
+      <h1 className="mt-5 text-3xl font-black text-slate-950">{title}</h1>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">{error ?? text}</p>
       {payment ? (
         <div className="mx-auto mt-5 grid max-w-md gap-2 rounded-2xl bg-slate-50 p-4 text-left text-sm">
@@ -3533,6 +3582,19 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
   );
 }
 
+function getToyyibPayReturnTarget() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    paymentId: params.get("paymentId") ?? params.get("payment_id") ?? params.get("id") ?? undefined,
+    billCode: params.get("billCode") ?? params.get("billcode") ?? params.get("BillCode") ?? undefined,
+    externalReference: params.get("order_id") ?? params.get("orderId") ?? params.get("external_reference") ?? undefined,
+  };
+}
+
+function hasToyyibPayReturnTarget(target: ReturnType<typeof getToyyibPayReturnTarget>): boolean {
+  return Boolean(target.paymentId || target.billCode || target.externalReference);
+}
+
 function AdminPaymentRequestsPage({
   onMessage,
   onPaymentUpdated,
@@ -3566,6 +3628,32 @@ function AdminPaymentRequestsPage({
       await loadRequests();
       await onPaymentUpdated();
       onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function verifyToyyibPayPayment(request: AdminPaymentRequestRow) {
+    setBusyAction(request.id);
+    onMessage(null);
+    try {
+      const result = await ToyyibPayService.verifyPayment({
+        paymentId: request.id,
+        billCode: request.provider_bill_code ?? undefined,
+        externalReference: request.external_reference ?? undefined,
+      });
+      await loadRequests();
+      await onPaymentUpdated();
+
+      if (result.status === "paid" || result.premiumActivated) {
+        onMessage("Bayaran ToyyibPay berjaya disahkan. Akaun Premium telah diaktifkan secara automatik.");
+      } else if (result.status === "failed" || result.status === "cancelled") {
+        onMessage("ToyyibPay mengesahkan bayaran ini tidak berjaya. Status rekod telah dikemas kini.");
+      } else {
+        onMessage("ToyyibPay belum mengesahkan bayaran ini. Biarkan sebagai Pending atau semak semula sebentar lagi.");
+      }
     } catch (error) {
       onMessage(toMessage(error));
     } finally {
@@ -3627,7 +3715,16 @@ function AdminPaymentRequestsPage({
                     <span className={`rounded-lg px-3 py-2 text-xs font-black ${paymentStatusTone(request.status)}`}>{paymentStatusLabel(request.status)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    {request.status === "pending" && request.payment_method !== "toyyibpay" ? (
+                    {request.status === "pending" && request.payment_method === "toyyibpay" ? (
+                      <button
+                        type="button"
+                        className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700 hover:bg-ocean-100"
+                        disabled={busyAction === request.id}
+                        onClick={() => verifyToyyibPayPayment(request)}
+                      >
+                        {busyAction === request.id ? "Menyemak..." : "Semak ToyyibPay"}
+                      </button>
+                    ) : request.status === "pending" ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"

@@ -57,6 +57,20 @@ export type ToyyibPayBillResult = {
   callbackUrl: string;
 };
 
+export type ToyyibPayVerifyTarget = {
+  paymentId?: string;
+  billCode?: string;
+  externalReference?: string;
+};
+
+export type ToyyibPayVerifyResult = {
+  ok: boolean;
+  status: PaymentRequestStatus;
+  paymentId: string;
+  providerReference: string | null;
+  premiumActivated: boolean;
+};
+
 export type ToyyibPayCustomerInput = {
   displayName: string;
   email: string;
