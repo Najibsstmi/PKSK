@@ -2210,31 +2210,70 @@ function FreePreviewSection({
       </article>
       <article className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-6 shadow-[0_24px_54px_rgba(180,83,9,0.14)]">
         <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-amber-200/40 blur-2xl" aria-hidden="true" />
-        <div className="absolute bottom-5 right-6 hidden text-amber-200/70 md:block" aria-hidden="true">
-          <Trophy size={82} />
-        </div>
-        <div className="relative">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-amber-100 text-amber-700 shadow-sm">
-            <Crown size={25} aria-hidden="true" />
-          </span>
-          <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
-          <h2 className="mt-2 text-2xl font-black text-slate-950">PKSK Academy Premium</h2>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">
-            Persediaan lebih lengkap, lebih tersusun dan boleh dipantau.
-          </p>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
-            {premiumBenefits.map((benefit) => (
-              <div key={benefit} className="inline-flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-black text-slate-800 ring-1 ring-amber-100">
-                <CheckCircle2 size={16} className="shrink-0 text-amber-600" aria-hidden="true" />
-                <span>{benefit}</span>
-              </div>
-            ))}
+        <div className="absolute -bottom-10 right-20 h-24 w-24 rounded-full bg-violet-200/30 blur-2xl" aria-hidden="true" />
+        <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.82fr)] xl:items-stretch">
+          <div className="flex min-w-0 flex-col">
+            <span className="grid h-14 w-14 place-items-center rounded-2xl bg-amber-100 text-amber-700 shadow-sm">
+              <Crown size={25} aria-hidden="true" />
+            </span>
+            <p className="mt-5 text-sm font-black uppercase text-amber-700">Akses Premium</p>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">PKSK Academy Premium</h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">
+              Persediaan lebih lengkap, lebih tersusun dan boleh dipantau.
+            </p>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              {premiumBenefits.map((benefit) => (
+                <div key={benefit} className="inline-flex min-w-0 items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-black text-slate-800 ring-1 ring-amber-100">
+                  <CheckCircle2 size={16} className="shrink-0 text-amber-600" aria-hidden="true" />
+                  <span className="min-w-0">{benefit}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <button type="button" className="primary-button mt-5 w-full bg-amber-500 shadow-[0_16px_32px_rgba(245,158,11,0.24)] hover:bg-amber-600" onClick={onShowPaywall}>
-            <Crown size={17} aria-hidden="true" />
-            Lihat Premium
-          </button>
+
+          <div className="relative overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-violet-50 via-amber-50 to-white p-5 shadow-[0_18px_38px_rgba(124,58,237,0.10)]">
+            <div className="absolute -right-7 -top-7 h-24 w-24 rounded-full bg-amber-200/50 blur-2xl" aria-hidden="true" />
+            <Sparkles className="absolute right-4 top-4 text-amber-400" size={18} aria-hidden="true" />
+            <Star className="absolute bottom-16 left-4 text-amber-300" size={15} aria-hidden="true" />
+            <div className="relative flex items-start gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white shadow-[0_12px_24px_rgba(124,58,237,0.18)]">
+                <Gift size={22} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-wide text-violet-700">Bonus</p>
+                <h3 className="text-xl font-black text-slate-950">Bahan Pembelajaran</h3>
+              </div>
+            </div>
+            <p className="relative mt-4 text-sm leading-6 text-slate-700">
+              Koleksi bahan pembelajaran khas untuk membantu calon membuat persediaan PKSK dengan lebih yakin.
+            </p>
+            <div className="relative mt-5 grid gap-2 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+              <div className="rounded-2xl border border-violet-100 bg-white/85 p-3 text-center shadow-sm">
+                <BookOpen className="mx-auto text-violet-700" size={23} aria-hidden="true" />
+                <span className="mt-2 block text-xs font-black text-slate-700">Modul</span>
+              </div>
+              <div className="rounded-2xl border border-amber-100 bg-white/85 p-3 text-center shadow-sm">
+                <ClipboardList className="mx-auto text-amber-600" size={23} aria-hidden="true" />
+                <span className="mt-2 block text-xs font-black text-slate-700">Nota</span>
+              </div>
+              <div className="rounded-2xl border border-ocean-100 bg-white/85 p-3 text-center shadow-sm">
+                <FileSpreadsheet className="mx-auto text-ocean-700" size={23} aria-hidden="true" />
+                <span className="mt-2 block text-xs font-black text-slate-700">Latihan</span>
+              </div>
+            </div>
+            <div className="relative mt-5 flex justify-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white px-4 py-2 text-xs font-black uppercase text-violet-700 shadow-sm">
+                <Sparkles size={13} aria-hidden="true" />
+                Khas Premium
+                <Sparkles size={13} aria-hidden="true" />
+              </span>
+            </div>
+          </div>
         </div>
+        <button type="button" className="primary-button relative mt-5 w-full bg-amber-500 shadow-[0_16px_32px_rgba(245,158,11,0.24)] hover:bg-amber-600" onClick={onShowPaywall}>
+          <Crown size={17} aria-hidden="true" />
+          Lihat Premium
+        </button>
       </article>
     </section>
   );
