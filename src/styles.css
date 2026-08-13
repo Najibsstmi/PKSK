@@ -313,7 +313,7 @@ a {
   @keyframes social-proof-toast-in {
     from {
       opacity: 0;
-      transform: translate3d(-12px, 16px, 0) scale(0.98);
+      transform: translate3d(0, -14px, 0) scale(0.98);
     }
 
     to {

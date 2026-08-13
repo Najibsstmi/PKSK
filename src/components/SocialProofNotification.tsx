@@ -29,29 +29,29 @@ export function SocialProofNotification({ item, onDismiss, onOpenPremium }: Soci
   }
 
   return (
-    <aside className="fixed bottom-[9.5rem] left-3 right-[5.5rem] z-40 sm:bottom-6 sm:left-6 sm:right-auto sm:w-[360px]" aria-live="polite">
+    <aside className="fixed left-1/2 top-[5.35rem] z-50 w-[min(calc(100vw-1.5rem),480px)] -translate-x-1/2 sm:top-[5.9rem]" aria-live="polite">
       <div
         role="button"
         tabIndex={0}
         onClick={onOpenPremium}
         onKeyDown={handleKeyDown}
         aria-label={`${message}. ${subtext}. Buka halaman Premium.`}
-        className="social-proof-toast group relative flex cursor-pointer items-start gap-3 rounded-2xl border border-white/80 bg-white/95 p-4 text-left shadow-soft outline-none backdrop-blur transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-4 focus-visible:ring-ocean-200"
+        className="social-proof-toast group relative flex cursor-pointer items-start gap-3 rounded-2xl border border-red-200/60 bg-gradient-to-br from-red-700 via-rose-600 to-orange-500 p-4 text-left text-white shadow-[0_22px_60px_rgba(185,28,28,0.38)] outline-none backdrop-blur transition hover:-translate-y-0.5 hover:shadow-[0_26px_70px_rgba(185,28,28,0.46)] focus-visible:ring-4 focus-visible:ring-red-200"
       >
-        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${isRealSubscriber ? "bg-ocean-50 text-ocean-700" : "bg-sun-100 text-amber-700"}`}>
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/18 text-white ring-1 ring-white/30">
           <Icon size={21} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1 pr-8">
-          <div className="mb-1 inline-flex items-center gap-1 rounded-lg bg-ocean-50 px-2 py-1 text-[11px] font-black text-ocean-700">
+          <div className="mb-1 inline-flex items-center gap-1 rounded-lg bg-white/16 px-2 py-1 text-[11px] font-black text-white ring-1 ring-white/20">
             <Crown size={13} aria-hidden="true" />
-            Premium
+            Ramai dah subscribe
           </div>
-          <p className="text-sm font-black leading-5 text-slate-950">{message}</p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{subtext}</p>
+          <p className="text-sm font-black leading-5 text-white sm:text-[15px]">{message}</p>
+          <p className="mt-1 text-xs font-bold text-red-50">{subtext}</p>
         </div>
         <button
           type="button"
-          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-300"
+          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-lg text-white/80 transition hover:bg-white/18 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
           aria-label="Tutup notifikasi social proof"
           onClick={(event) => {
             event.stopPropagation();

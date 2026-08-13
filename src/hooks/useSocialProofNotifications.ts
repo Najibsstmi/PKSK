@@ -3,12 +3,13 @@ import { legacySocialProofNames } from "../data/legacySocialProofNames";
 import { fetchRecentPremiumSubscribers } from "../services/socialProofService";
 import type { RecentPremiumSubscriber, SocialProofItem } from "../types/socialProof";
 
-const SHOWN_ITEM_KEYS_KEY = "pksk-shown-social-proof-item-keys";
-const SHOWN_NAMES_KEY = "pksk-shown-social-proof-names";
-const SHOWN_COUNT_KEY = "pksk-shown-social-proof-count";
-const DISMISSED_COUNT_KEY = "pksk-dismissed-social-proof-count";
-const MAX_NOTIFICATIONS_PER_SESSION = 4;
-const MAX_DISMISSES_PER_SESSION = 2;
+const STORAGE_VERSION = "v2";
+const SHOWN_ITEM_KEYS_KEY = `pksk-shown-social-proof-item-keys-${STORAGE_VERSION}`;
+const SHOWN_NAMES_KEY = `pksk-shown-social-proof-names-${STORAGE_VERSION}`;
+const SHOWN_COUNT_KEY = `pksk-shown-social-proof-count-${STORAGE_VERSION}`;
+const DISMISSED_COUNT_KEY = `pksk-dismissed-social-proof-count-${STORAGE_VERSION}`;
+const MAX_NOTIFICATIONS_PER_SESSION = 12;
+const MAX_DISMISSES_PER_SESSION = 4;
 
 const legacySocialProofItems: SocialProofItem[] = legacySocialProofNames.map((displayName) => ({
   type: "legacy",
@@ -147,7 +148,7 @@ export function useSocialProofNotifications(enabled: boolean) {
       return;
     }
 
-    const delay = isFirst ? randomMs(8000, 12000) : randomMs(20000, 30000);
+    const delay = isFirst ? randomMs(5000, 10000) : 5000;
     showTimerRef.current = window.setTimeout(() => {
       showTimerRef.current = null;
 
@@ -175,7 +176,7 @@ export function useSocialProofNotifications(enabled: boolean) {
         hideTimerRef.current = null;
         setCurrentItem(null);
         scheduleNextRef.current(false);
-      }, randomMs(5000, 6000));
+      }, randomMs(4000, 5000));
     }, delay);
   };
 
