@@ -1,4 +1,4 @@
-import { AI_DISCLAIMER, callOpenAI, extractOutputText, handleApiError, normalizeGrading, parseJsonOutput, publicError, readJsonBody, sendJson } from "./_essay-ai.js";
+import { AI_DISCLAIMER, callOpenAI, extractOutputText, handleApiError, normalizeGrading, parseJsonOutput, publicError, rawGradingJsonSchema, readJsonBody, sendJson } from "./_essay-ai.js";
 
 const systemPrompt = `Anda ialah pemeriksa latihan Artikulasi Penulisan PKSK untuk murid sekolah Malaysia.
 Nilai jawapan berdasarkan rubrik yang diberikan sahaja.
@@ -37,6 +37,14 @@ export default async function handler(req, res) {
       instructions: systemPrompt,
       input: buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }),
       max_output_tokens: 3500,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "pksk_essay_grading",
+          strict: true,
+          schema: rawGradingJsonSchema,
+        },
+      },
     });
 
     const output = extractOutputText(data);

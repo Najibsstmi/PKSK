@@ -75,6 +75,12 @@ export async function callOpenAI(payload) {
       if (response.status === 401) {
         throw publicError(503, "OpenAI API key tidak sah. Sila semak environment variable OPENAI_API_KEY.");
       }
+      if (response.status === 400) {
+        throw publicError(502, "Konfigurasi semakan AI belum serasi. Sila semak model OpenAI dan format output JSON.");
+      }
+      if (response.status === 403 || response.status === 404) {
+        throw publicError(503, "Model AI untuk semakan belum tersedia pada akaun OpenAI ini. Sila semak OPENAI_MODEL atau OPENAI_GRADING_MODEL.");
+      }
       throw publicError(502, "AI belum dapat memproses jawapan ini. Sila cuba semula atau gunakan kaedah lain.");
     }
 
@@ -132,7 +138,11 @@ export function parseJsonOutput(text) {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
     if (start >= 0 && end > start) {
-      return JSON.parse(cleaned.slice(start, end + 1));
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        throw publicError(502, "AI memberi format jawapan yang tidak lengkap. Sila cuba semula.");
+      }
     }
     throw publicError(502, "AI memberi format jawapan yang tidak lengkap. Sila cuba semula.");
   }
@@ -381,6 +391,84 @@ export const gradingJsonSchema = {
       },
     },
     disclaimer: { type: "string" },
+  },
+  $defs: {
+    ihcpItem: {
+      type: "object",
+      additionalProperties: false,
+      required: ["status", "feedback"],
+      properties: {
+        status: { type: "string", enum: ["good", "partial", "missing"] },
+        feedback: { type: "string" },
+      },
+    },
+  },
+};
+
+export const rawGradingJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["scores", "strengths", "improvements", "nextAction", "paragraphAnalysis", "languageIssues"],
+  properties: {
+    scores: {
+      type: "object",
+      additionalProperties: false,
+      required: RUBRIC_KEYS,
+      properties: Object.fromEntries(
+        RUBRIC_KEYS.map((key) => [
+          key,
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["score", "feedback"],
+            properties: {
+              score: { type: "number" },
+              feedback: { type: "string" },
+            },
+          },
+        ]),
+      ),
+    },
+    strengths: { type: "array", items: { type: "string" } },
+    improvements: { type: "array", items: { type: "string" } },
+    nextAction: { type: "string" },
+    paragraphAnalysis: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["paragraph", "type", "feedback", "ihcp"],
+        properties: {
+          paragraph: { type: "number" },
+          type: { type: "string" },
+          feedback: { type: "string" },
+          ihcp: {
+            type: "object",
+            additionalProperties: false,
+            required: ["I", "H", "C", "P"],
+            properties: {
+              I: { $ref: "#/$defs/ihcpItem" },
+              H: { $ref: "#/$defs/ihcpItem" },
+              C: { $ref: "#/$defs/ihcpItem" },
+              P: { $ref: "#/$defs/ihcpItem" },
+            },
+          },
+        },
+      },
+    },
+    languageIssues: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["original", "suggestion", "type"],
+        properties: {
+          original: { type: "string" },
+          suggestion: { type: "string" },
+          type: { type: "string", enum: ["ejaan", "tatabahasa", "tanda_baca", "struktur_ayat", "gaya", "lain"] },
+        },
+      },
+    },
   },
   $defs: {
     ihcpItem: {
