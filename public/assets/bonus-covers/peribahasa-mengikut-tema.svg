@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1586 992" role="img" aria-labelledby="title desc">
+  <title id="title">Peribahasa Mengikut Tema</title>
+  <desc id="desc">Cover bonus premium PKSK Academy untuk bahan Peribahasa Mengikut Tema.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e0f7ff"/>
+      <stop offset="0.46" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fef3c7"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#083b63"/>
+      <stop offset="1" stop-color="#075985"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1586" height="992" rx="58" fill="url(#bg)"/>
+  <circle cx="1330" cy="170" r="190" fill="#bae6fd" opacity="0.42"/>
+  <circle cx="180" cy="760" r="260" fill="#ccfbf1" opacity="0.46"/>
+  <path d="M112 694c174-70 316-53 440 18 159 90 293 84 424 18 140-71 270-91 416-44v306H112z" fill="#dff8ff" opacity="0.72"/>
+
+  <g filter="url(#soft)">
+    <rect x="104" y="95" width="1378" height="190" rx="42" fill="#ffffff" opacity="0.86"/>
+    <rect x="123" y="114" width="1340" height="152" rx="34" fill="url(#panel)"/>
+    <rect x="123" y="114" width="1340" height="152" rx="34" fill="none" stroke="#facc15" stroke-width="5" opacity="0.86"/>
+    <text x="793" y="193" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" letter-spacing="2" fill="#fef3c7">BAHASA MELAYU</text>
+    <text x="793" y="258" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="78" font-weight="900" fill="#ffffff">PERIBAHASA</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="202" y="346" width="1182" height="356" rx="48" fill="#ffffff" opacity="0.96"/>
+    <text x="793" y="455" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="88" font-weight="900" fill="#0f172a">MENGIKUT TEMA</text>
+    <text x="793" y="520" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" fill="#0f766e">Bonus Premium PKSK Academy</text>
+    <rect x="458" y="573" width="670" height="78" rx="39" fill="url(#teal)"/>
+    <text x="793" y="626" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="#ffffff">SUSUN PERIBAHASA IKUT TEMA</text>
+  </g>
+
+  <g transform="translate(210 735)" filter="url(#soft)">
+    <rect width="250" height="126" rx="28" fill="#ffffff"/>
+    <circle cx="64" cy="63" r="40" fill="#dcfce7"/>
+    <text x="64" y="77" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#16a34a">✓</text>
+    <text x="122" y="55" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900" fill="#0f172a">Nilai</text>
+    <text x="122" y="88" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#475569">Murni</text>
+  </g>
+
+  <g transform="translate(508 735)" filter="url(#soft)">
+    <rect width="250" height="126" rx="28" fill="#ffffff"/>
+    <circle cx="64" cy="63" r="40" fill="#fef3c7"/>
+    <text x="64" y="77" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#d97706">★</text>
+    <text x="122" y="55" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900" fill="#0f172a">Motivasi</text>
+    <text x="122" y="88" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#475569">Diri</text>
+  </g>
+
+  <g transform="translate(806 735)" filter="url(#soft)">
+    <rect width="250" height="126" rx="28" fill="#ffffff"/>
+    <circle cx="64" cy="63" r="40" fill="#e0f2fe"/>
+    <text x="64" y="77" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#0284c7">A</text>
+    <text x="122" y="55" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900" fill="#0f172a">Karangan</text>
+    <text x="122" y="88" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#475569">Lebih cantik</text>
+  </g>
+
+  <g transform="translate(1104 735)" filter="url(#soft)">
+    <rect width="250" height="126" rx="28" fill="#ffffff"/>
+    <circle cx="64" cy="63" r="40" fill="#fee2e2"/>
+    <text x="64" y="77" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#e11d48">✦</text>
+    <text x="122" y="55" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900" fill="#0f172a">Tema</text>
+    <text x="122" y="88" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#475569">Terpilih</text>
+  </g>
+
+  <g opacity="0.9">
+    <circle cx="138" cy="156" r="15" fill="#facc15"/>
+    <circle cx="1454" cy="648" r="13" fill="#14b8a6"/>
+    <path d="M1312 356l21 42 46 7-33 32 8 45-42-22-41 22 8-45-33-32 46-7z" fill="#facc15" opacity="0.9"/>
+    <path d="M250 334l16 32 35 5-25 25 6 34-32-17-31 17 6-34-25-25 35-5z" fill="#38bdf8" opacity="0.8"/>
+  </g>
+</svg>

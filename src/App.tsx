@@ -213,12 +213,12 @@ type BonusMaterial = {
 };
 const bonusMaterials: BonusMaterial[] = [
   {
-    title: "Tatabahasa Mengikut Tema",
+    title: "Peribahasa Mengikut Tema",
     subject: "Bahasa Melayu",
     level: "Tahun 4-6",
-    description: "Nota tatabahasa berasaskan tema untuk ulang kaji cepat dan terancang.",
-    filePath: "/bonus/tatabahasa-mengikut-tema.pdf",
-    coverPath: "/assets/bonus-covers/tatabahasa-mengikut-tema.png",
+    description: "Koleksi peribahasa mengikut tema untuk bantu murid menulis dengan lebih menarik.",
+    filePath: "/bonus/peribahasa-mengikut-tema.pdf",
+    coverPath: "/assets/bonus-covers/peribahasa-mengikut-tema.svg",
     accent: "from-ocean-600 to-teal-500",
   },
   {
