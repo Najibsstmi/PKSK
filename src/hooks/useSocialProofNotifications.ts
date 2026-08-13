@@ -3,13 +3,13 @@ import { legacySocialProofNames } from "../data/legacySocialProofNames";
 import { fetchRecentPremiumSubscribers } from "../services/socialProofService";
 import type { RecentPremiumSubscriber, SocialProofItem } from "../types/socialProof";
 
-const STORAGE_VERSION = "v2";
+const STORAGE_VERSION = "v3";
 const SHOWN_ITEM_KEYS_KEY = `pksk-shown-social-proof-item-keys-${STORAGE_VERSION}`;
 const SHOWN_NAMES_KEY = `pksk-shown-social-proof-names-${STORAGE_VERSION}`;
 const SHOWN_COUNT_KEY = `pksk-shown-social-proof-count-${STORAGE_VERSION}`;
 const DISMISSED_COUNT_KEY = `pksk-dismissed-social-proof-count-${STORAGE_VERSION}`;
-const MAX_NOTIFICATIONS_PER_SESSION = 12;
-const MAX_DISMISSES_PER_SESSION = 4;
+const MAX_NOTIFICATIONS_PER_SESSION = 20;
+const MAX_DISMISSES_PER_SESSION = 6;
 
 const legacySocialProofItems: SocialProofItem[] = legacySocialProofNames.map((displayName) => ({
   type: "legacy",
@@ -122,6 +122,7 @@ export function useSocialProofNotifications(enabled: boolean) {
     if (!enabled) {
       stoppedRef.current = true;
       clearTimers();
+      currentRef.current = null;
       setCurrentItem(null);
       return;
     }
@@ -170,10 +171,12 @@ export function useSocialProofNotifications(enabled: boolean) {
       writeStringSet(SHOWN_ITEM_KEYS_KEY, shownItemKeysRef.current);
       writeStringSet(SHOWN_NAMES_KEY, shownNamesRef.current);
       writeSessionCount(SHOWN_COUNT_KEY, shownCountRef.current);
+      currentRef.current = nextItem;
       setCurrentItem(nextItem);
 
       hideTimerRef.current = window.setTimeout(() => {
         hideTimerRef.current = null;
+        currentRef.current = null;
         setCurrentItem(null);
         scheduleNextRef.current(false);
       }, randomMs(4000, 5000));
@@ -216,6 +219,7 @@ export function useSocialProofNotifications(enabled: boolean) {
     }
 
     clearTimers();
+    currentRef.current = null;
     setCurrentItem(null);
     dismissedCountRef.current += 1;
     writeSessionCount(DISMISSED_COUNT_KEY, dismissedCountRef.current);
