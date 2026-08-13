@@ -13,6 +13,7 @@ export const RUBRIC_MAX = {
 export const RUBRIC_KEYS = Object.keys(RUBRIC_MAX);
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 
 export function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -96,6 +97,94 @@ export async function callOpenAI(payload) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function callOpenAIChatCompletion(payload) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw publicError(503, "Semakan AI belum dikonfigurasi. Sila tambah OPENAI_API_KEY dalam environment variable Vercel.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const openAiMessage = data?.error?.message || responseText;
+      console.error("OpenAI Chat Completions error", response.status, openAiMessage);
+      if (response.status === 429) {
+        throw publicError(429, "AI sedang sibuk. Sila cuba semula sebentar lagi.");
+      }
+      if (response.status === 401) {
+        throw publicError(503, "OpenAI API key tidak sah. Sila semak environment variable OPENAI_API_KEY.");
+      }
+      if (response.status === 400) {
+        throw publicError(502, "Konfigurasi semakan AI belum serasi. Sila semak model OpenAI dan format output JSON.");
+      }
+      if (response.status === 403 || response.status === 404) {
+        throw publicError(503, "Model AI untuk semakan belum tersedia pada akaun OpenAI ini. Sila semak OPENAI_MODEL atau OPENAI_GRADING_MODEL.");
+      }
+      throw publicError(502, "AI belum dapat memproses jawapan ini. Sila cuba semula atau gunakan kaedah lain.");
+    }
+
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw publicError(504, "Semakan AI mengambil masa terlalu lama. Sila cuba semula dengan teks yang lebih jelas atau lebih pendek.");
+    }
+    if (error instanceof TypeError) {
+      throw publicError(502, "Sambungan ke OpenAI belum berjaya. Sila cuba semula sebentar lagi atau maklumkan pentadbir.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function extractChatCompletionText(data) {
+  const choice = data?.choices?.[0];
+  const message = choice?.message;
+  if (!message) {
+    throw publicError(502, "AI tidak memulangkan keputusan semakan. Sila cuba semula.");
+  }
+
+  if (choice?.finish_reason === "length") {
+    throw publicError(502, "AI berhenti sebelum semakan lengkap. Sila cuba semula dengan teks yang lebih jelas atau lebih pendek.");
+  }
+
+  if (message.refusal) {
+    throw publicError(422, "AI tidak dapat menyemak jawapan ini. Sila semak transkripsi dan pastikan ia ialah karangan murid.");
+  }
+
+  if (typeof message.content === "string") {
+    return message.content.trim();
+  }
+
+  if (Array.isArray(message.content)) {
+    const parts = [];
+    collectText(message.content, parts);
+    return parts.join("\n").trim();
+  }
+
+  throw publicError(502, "AI tidak memulangkan keputusan semakan. Sila cuba semula.");
 }
 
 export function extractOutputText(data) {

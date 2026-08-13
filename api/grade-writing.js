@@ -1,4 +1,15 @@
-import { AI_DISCLAIMER, callOpenAI, extractOutputText, handleApiError, normalizeGrading, parseJsonOutput, publicError, rawGradingJsonSchema, readJsonBody, sendJson } from "./_essay-ai.js";
+import {
+  AI_DISCLAIMER,
+  callOpenAIChatCompletion,
+  extractChatCompletionText,
+  handleApiError,
+  normalizeGrading,
+  parseJsonOutput,
+  publicError,
+  rawGradingJsonSchema,
+  readJsonBody,
+  sendJson,
+} from "./_essay-ai.js";
 
 const systemPrompt = `Anda ialah pemeriksa latihan Artikulasi Penulisan PKSK untuk murid sekolah Malaysia.
 Nilai jawapan berdasarkan rubrik yang diberikan sahaja.
@@ -32,14 +43,17 @@ export default async function handler(req, res) {
       throw publicError(400, "Tulis atau sahkan jawapan dahulu sebelum semakan AI.");
     }
 
-    const data = await callOpenAI({
-      model: process.env.OPENAI_GRADING_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      instructions: systemPrompt,
-      input: buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }),
-      max_output_tokens: 6000,
-      text: {
-        format: {
-          type: "json_schema",
+    const data = await callOpenAIChatCompletion({
+      model: process.env.OPENAI_GRADING_MODEL || "gpt-4o-mini",
+      temperature: 0.2,
+      max_tokens: 3000,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
           name: "pksk_essay_grading",
           strict: true,
           schema: rawGradingJsonSchema,
@@ -47,7 +61,7 @@ export default async function handler(req, res) {
       },
     });
 
-    const output = extractOutputText(data);
+    const output = extractChatCompletionText(data);
     const raw = parseJsonOutput(output);
     const result = normalizeGrading(raw, { minimumWords, studentAnswer });
     sendJson(res, 200, result);
