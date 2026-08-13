@@ -197,6 +197,9 @@ const legacyRouteMap: Record<string, AppRoute> = {
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
 const appLogoPath = "/assets/pksk-academy-logo.png";
 const appLogoMarkPath = "/assets/pksk-academy-mark.png";
+const ieffaSupportAvatarPath = "/assets/ieffa-support-avatar.png";
+const WHATSAPP_SUPPORT_NUMBER = "60197259548";
+const WHATSAPP_SUPPORT_MESSAGE = "Hi, saya perlukan bantuan berkaitan PKSK Academy.";
 const rememberedEmailKey = "pksk-remembered-email";
 const spaRedirectStorageKey = "pksk-spa-redirect";
 type BonusMaterial = {
@@ -1241,6 +1244,7 @@ function App() {
         onInstall={handleInstallApp}
         onCloseHelp={() => setShowInstallHelp(false)}
       />
+      <WhatsAppSupportButton />
     </div>
   );
 }
@@ -1598,6 +1602,33 @@ function InstallAppButton({
         </div>
       ) : null}
     </>
+  );
+}
+
+function WhatsAppSupportButton() {
+  const whatsappUrl = `https://wa.me/${WHATSAPP_SUPPORT_NUMBER}?text=${encodeURIComponent(WHATSAPP_SUPPORT_MESSAGE)}`;
+
+  return (
+    <a
+      href={whatsappUrl}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Hubungi bantuan PKSK Academy melalui WhatsApp"
+      className="group fixed bottom-40 right-4 z-40 flex items-center gap-3 rounded-full bg-white/95 p-2 pr-4 text-slate-950 shadow-2xl ring-1 ring-emerald-100 backdrop-blur transition hover:-translate-y-1 hover:shadow-[0_24px_55px_rgba(16,185,129,0.28)] focus:outline-none focus:ring-4 focus:ring-emerald-200 lg:bottom-24 lg:right-6"
+    >
+      <span className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-emerald-400 to-ocean-600 p-1 shadow-lg transition group-hover:scale-105">
+        <img src={ieffaSupportAvatarPath} alt="" className="h-full w-full rounded-full object-cover" aria-hidden="true" />
+        <span className="absolute bottom-0 right-0 grid h-5 w-5 place-items-center rounded-full border-2 border-white bg-emerald-500 text-white">
+          <MessageCircle size={12} aria-hidden="true" />
+        </span>
+      </span>
+      <span className="hidden text-left sm:block">
+        <span className="block text-[11px] font-black uppercase tracking-wide text-emerald-700">Perlukan bantuan?</span>
+        <span className="block text-sm font-black leading-tight">Tanya Ieffa</span>
+        <span className="block text-xs font-semibold text-slate-500">WhatsApp support</span>
+      </span>
+      <span className="sr-only">Tanya Ieffa di WhatsApp</span>
+    </a>
   );
 }
 

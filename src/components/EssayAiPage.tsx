@@ -44,18 +44,18 @@ const RUBRIC_KEYS = Object.keys(RUBRIC_LABELS) as EssayRubricKey[];
 
 const METHOD_META: Record<EssayAnswerMethod, { title: string; text: string; icon: LucideIcon }> = {
   typed: {
-    title: "Taip Jawapan",
-    text: "Tulis terus dalam editor moden dengan autosave.",
+    title: "Taip",
+    text: "Editor + autosave",
     icon: PenLine,
   },
   scan: {
-    title: "Imbas Jawapan",
-    text: "Ambil gambar kertas jawapan menggunakan kamera telefon.",
+    title: "Imbas",
+    text: "Kamera telefon",
     icon: ScanLine,
   },
   upload: {
-    title: "Upload Gambar / PDF",
-    text: "Muat naik JPG, PNG, WEBP atau PDF dan semak transkripsi dahulu.",
+    title: "Muat Naik",
+    text: "Gambar / PDF",
     icon: UploadCloud,
   },
 };
@@ -390,7 +390,7 @@ export function EssayAiPage({ payload, result, busy, onAutosave, onSubmit, onNav
 
 function AnswerMethodSelector({ method, onChange }: { method: EssayAnswerMethod; onChange: (method: EssayAnswerMethod) => void }) {
   return (
-    <div className="mt-5 grid gap-3 md:grid-cols-3">
+    <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
       {(Object.keys(METHOD_META) as EssayAnswerMethod[]).map((key) => {
         const meta = METHOD_META[key];
         const Icon = meta.icon;
@@ -399,14 +399,14 @@ function AnswerMethodSelector({ method, onChange }: { method: EssayAnswerMethod;
           <button
             key={key}
             type="button"
-            className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${active ? "border-ocean-300 bg-ocean-50 text-ocean-900" : "border-slate-200 bg-white text-slate-700"}`}
+            className={`min-h-[118px] rounded-2xl border px-2 py-3 text-center transition hover:-translate-y-0.5 hover:shadow-soft sm:min-h-[132px] sm:p-4 ${active ? "border-ocean-300 bg-ocean-50 text-ocean-900 shadow-soft" : "border-slate-200 bg-white text-slate-700"}`}
             onClick={() => onChange(key)}
           >
-            <span className={`grid h-11 w-11 place-items-center rounded-2xl ${active ? "bg-ocean-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-              <Icon size={22} aria-hidden="true" />
+            <span className={`mx-auto grid h-10 w-10 place-items-center rounded-2xl sm:h-12 sm:w-12 ${active ? "bg-ocean-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+              <Icon size={20} aria-hidden="true" />
             </span>
-            <span className="mt-3 block text-base font-black">{meta.title}</span>
-            <span className="mt-1 block text-sm font-semibold leading-6">{meta.text}</span>
+            <span className="mt-2 block text-sm font-black leading-tight sm:text-base">{meta.title}</span>
+            <span className="mt-1 block text-[11px] font-bold leading-4 text-slate-500 sm:text-xs">{meta.text}</span>
           </button>
         );
       })}
