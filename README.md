@@ -192,26 +192,47 @@ Migration ToyyibPay menambah:
 
 ## Bahagian C Penulisan
 
-Bahagian C sudah aktif untuk murid. Kad Bahagian C tidak dikunci.
+Bahagian C aktif untuk murid premium dan menggunakan tajuk rawak daripada bank soalan.
 
 Flow murid:
 
 1. Pilih `Bahagian C`
-2. Sistem pilih tajuk karangan secara rawak daripada database
-3. Murid menulis dalam editor moden
-4. Sistem kira jumlah perkataan
-5. Timer berjalan semasa menulis
-6. Jawapan autosave
-7. Murid tekan `Hantar Karangan`
-8. Jawapan disimpan dalam Supabase
-9. Sistem paparkan mesej bahawa karangan berjaya dihantar
+2. Sistem pilih satu tajuk karangan secara rawak daripada database
+3. Murid pilih cara menjawab:
+   - `Taip Jawapan`
+   - `Imbas Jawapan`
+   - `Upload Gambar / PDF`
+4. Untuk gambar/PDF, sistem transkripsi dahulu dan murid menyemak teks sebelum pemarkahan
+5. Murid sahkan jawapan untuk semakan AI
+6. Jawapan disimpan dalam Supabase selepas submit
+7. Sistem paparkan result dashboard dengan markah anggaran, pecahan rubrik, peta I-H-C-P, kekuatan dan cadangan penambahbaikan
 
-AI marking belum dibina dalam Fasa ini. Selepas murid hantar, aplikasi akan memaklumkan:
+Label keputusan AI:
 
 ```text
-Karangan berjaya dihantar.
-AI marking akan ditambah pada versi akan datang.
+Markah Anggaran AI – Untuk Tujuan Latihan
 ```
+
+Penilaian ini bukan markah rasmi PKSK/KPM. AI bertindak sebagai pemeriksa latihan, bukan penulis karangan penuh bagi pihak murid.
+
+Endpoint server-side Vercel:
+
+```text
+/api/transcribe-writing
+/api/grade-writing
+```
+
+`/api/transcribe-writing` digunakan untuk gambar/PDF sahaja. Teks asal murid dikekalkan dan kesalahan tidak dibetulkan sebelum murid mengesahkan transkripsi.
+
+`/api/grade-writing` digunakan untuk menilai jawapan yang ditaip atau transkripsi yang telah disahkan murid.
+
+Environment variable diperlukan:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Masukkan `OPENAI_API_KEY` di Vercel Project Settings > Environment Variables untuk Production. Untuk local development, tambah nilai sama dalam `.env.local` tetapi jangan commit fail tersebut.
 
 Data Bahagian C disimpan dalam:
 
@@ -220,8 +241,7 @@ Data Bahagian C disimpan dalam:
 - `attempt_questions` untuk tajuk yang dipilih
 - `essay_responses` untuk jawapan karangan murid
 
-Migration Bahagian C juga menambah RPC untuk mula cubaan, autosave dan hantar karangan.
-
+Migration Bahagian C sedia ada sudah mencukupi untuk flow ini. Tiada migration baharu diperlukan untuk AI marking MVP kerana gambar/PDF diproses sementara dan tidak disimpan kekal.
 ## Admin Question Import
 
 Workflow admin:

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Award,
   BookOpen,
   Brain,
@@ -50,6 +50,7 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { pkskSections, states } from "./data/pksk";
 import { useAccess } from "./hooks/useAccess";
 import premiumHeroImage from "./assets/pksk-premium-hero.png";
+import { EssayAiPage } from "./components/EssayAiPage";
 import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
 import {
   blockUser,
@@ -805,9 +806,9 @@ function App() {
     return saved;
   }
 
-  async function handleEssaySubmit(responseText: string) {
+  async function handleEssaySubmit(responseText: string): Promise<EssaySubmitResult | null> {
     if (!activeEssayPayload || !session?.user) {
-      return;
+      return null;
     }
 
     setBusy(true);
@@ -819,8 +820,10 @@ function App() {
       window.localStorage.removeItem("pksk-active-essay");
       setMessage(`${submitted.message} ${submitted.ai_note}`);
       await refreshData(session.user.id);
+      return submitted;
     } catch (error) {
       setMessage(toMessage(error));
+      return null;
     } finally {
       setBusy(false);
     }
@@ -1183,7 +1186,7 @@ function App() {
     }
     if (currentRoute === "/app/essay") {
       return (
-        <EssayPage
+        <EssayAiPage
           payload={activeEssayPayload}
           result={essayResult}
           busy={busy}
@@ -5683,178 +5686,6 @@ function ModePage({
   );
 }
 
-function EssayPage({
-  payload,
-  result,
-  busy,
-  onAutosave,
-  onSubmit,
-  onNavigate,
-  onStartEssay,
-}: {
-  payload: EssayAttemptPayload | null;
-  result: EssaySubmitResult | null;
-  busy: boolean;
-  onAutosave: (responseText: string) => Promise<{ word_count: number; autosaved_at: string } | null>;
-  onSubmit: (responseText: string) => void;
-  onNavigate: (route: AppRoute) => void;
-  onStartEssay: () => void;
-}) {
-  const [responseText, setResponseText] = useState(payload?.response.response_text ?? "");
-  const [lastSavedText, setLastSavedText] = useState(payload?.response.response_text ?? "");
-  const [saveStatus, setSaveStatus] = useState(payload?.response.autosaved_at ? `Disimpan ${formatTimeOnly(payload.response.autosaved_at)}` : "Belum disimpan");
-  const [remainingSeconds, setRemainingSeconds] = useState(() => essayRemainingSeconds(payload));
-  const wordCount = useMemo(() => countWords(responseText), [responseText]);
-  const minWords = payload?.question.essay_min_words ?? 100;
-
-  useEffect(() => {
-    setResponseText(payload?.response.response_text ?? "");
-    setLastSavedText(payload?.response.response_text ?? "");
-    setSaveStatus(payload?.response.autosaved_at ? `Disimpan ${formatTimeOnly(payload.response.autosaved_at)}` : "Belum disimpan");
-    setRemainingSeconds(essayRemainingSeconds(payload));
-  }, [payload]);
-
-  useEffect(() => {
-    if (!payload || result) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setRemainingSeconds(essayRemainingSeconds(payload));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [payload, result]);
-
-  useEffect(() => {
-    if (!payload || result || responseText === lastSavedText) {
-      return;
-    }
-
-    setSaveStatus("Menyimpan...");
-    const timeout = window.setTimeout(async () => {
-      try {
-        const saved = await onAutosave(responseText);
-        if (saved) {
-          setLastSavedText(responseText);
-          setSaveStatus(`Disimpan ${formatTimeOnly(saved.autosaved_at)}`);
-        }
-      } catch {
-        setSaveStatus("Autosave gagal. Cuba submit semula.");
-      }
-    }, 1200);
-
-    return () => window.clearTimeout(timeout);
-  }, [lastSavedText, onAutosave, payload, responseText, result]);
-
-  if (result) {
-    return <EssayResultPanel result={result} onNavigate={onNavigate} onStartEssay={onStartEssay} />;
-  }
-
-  if (!payload) {
-    return (
-      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
-          <PenLine size={26} aria-hidden="true" />
-        </div>
-        <h1 className="mt-5 text-2xl font-black">Bahagian C belum dimulakan</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Klik mula untuk dapatkan tajuk karangan rawak daripada bank soalan.</p>
-        <button type="button" className="primary-button mx-auto mt-6" onClick={onStartEssay}>
-          Mula Bahagian C
-        </button>
-      </section>
-    );
-  }
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[0.68fr_0.32fr]">
-      <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase text-ocean-700">Bahagian C / {payload.question.topic ?? "Artikulasi Penulisan"}</p>
-            <h1 className="mt-2 text-2xl font-black leading-snug text-slate-950">{payload.question.question_text}</h1>
-          </div>
-          <span className="w-fit rounded-xl bg-sun-50 px-4 py-2 text-sm font-black text-amber-700">AI marking akan datang</span>
-        </div>
-
-        {payload.question.question_image_url ? <QuestionImage src={payload.question.question_image_url} /> : null}
-
-        <div className="mt-5">
-          <label className="grid gap-3">
-            <span className="text-sm font-black text-slate-700">Karangan anda</span>
-            <textarea
-              className="field min-h-[420px] text-base leading-8"
-              value={responseText}
-              onChange={(event) => setResponseText(event.target.value)}
-              placeholder="Tulis karangan di sini. Jawapan akan disimpan automatik semasa anda menaip."
-            />
-          </label>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-slate-500">{saveStatus}</p>
-            {wordCount < minWords ? <p className="mt-1 text-sm font-black text-coral-600">Minimum {minWords} patah perkataan sebelum submit.</p> : null}
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <button type="button" className="secondary-button" onClick={() => onNavigate("/app/simulasi")}>
-              Kembali
-            </button>
-            <button type="button" className="primary-button" disabled={busy || wordCount < minWords} onClick={() => onSubmit(responseText)}>
-              {busy ? "Menghantar..." : "Submit Karangan"}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <aside className="space-y-4">
-        <section className="rounded-2xl bg-white p-6 shadow-soft">
-          <h2 className="text-lg font-black">Status Penulisan</h2>
-          <div className="mt-5 grid gap-3">
-            <SummaryRow label="Masa" value={formatTimer(remainingSeconds)} />
-            <SummaryRow label="Patah perkataan" value={`${wordCount}`} />
-            <SummaryRow label="Sasaran" value={`${minWords}+ perkataan`} />
-            <SummaryRow label="Autosave" value={saveStatus.replace("Disimpan ", "")} />
-          </div>
-          <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.min(100, Math.round((wordCount / Math.max(1, minWords)) * 100))}%` }} />
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-ocean-100 bg-ocean-50 p-6">
-          <h2 className="text-lg font-black text-ocean-900">Tip Ringkas</h2>
-          <div className="mt-4 grid gap-3 text-sm font-semibold leading-6 text-slate-700">
-            <p>Mulakan dengan pendahuluan yang jelas.</p>
-            <p>Isi karangan boleh disusun dalam 2 hingga 3 perenggan.</p>
-            <p>Akhiri dengan penutup yang merumuskan idea utama.</p>
-          </div>
-        </section>
-      </aside>
-    </div>
-  );
-}
-
-function EssayResultPanel({ result, onNavigate, onStartEssay }: { result: EssaySubmitResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {
-  return (
-    <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
-      <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-leaf-50 text-leaf-600">
-        <Save size={30} aria-hidden="true" />
-      </div>
-      <h1 className="mt-5 text-3xl font-black">Karangan berjaya dihantar.</h1>
-      <p className="mt-3 text-lg font-black text-ocean-700">AI marking akan ditambah pada versi akan datang.</p>
-      <p className="mt-3 text-sm font-semibold text-slate-500">{result.word_count ?? 0} patah perkataan disimpan.</p>
-      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <button type="button" className="primary-button" onClick={onStartEssay}>
-          Cuba Tajuk Lain
-        </button>
-        <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
-          Sejarah Cubaan
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function QuizPage({
   payload,
   result,
@@ -6826,17 +6657,6 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function formatTimeOnly(value: string): string {
-  return new Intl.DateTimeFormat("ms-MY", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function countWords(value: string): number {
-  const words = value.trim().split(/\s+/).filter(Boolean);
-  return words.length;
-}
 
 function formatTimer(totalSeconds: number): string {
   const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
@@ -6867,16 +6687,6 @@ function objectiveRemainingSecondsFromStart(startedAtValue: string): number {
   return Math.max(0, limitSeconds - elapsedSeconds);
 }
 
-function essayRemainingSeconds(payload: EssayAttemptPayload | null): number {
-  if (!payload) {
-    return 0;
-  }
-  const limitMinutes = payload.question.essay_time_limit ?? 45;
-  const limitSeconds = limitMinutes * 60;
-  const startedAt = new Date(payload.attempt.started_at).getTime();
-  const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-  return Math.max(0, limitSeconds - elapsedSeconds);
-}
 
 function toMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);

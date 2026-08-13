@@ -43,3 +43,92 @@ export type EssaySubmitResult = {
   ai_note: string;
   already_submitted?: boolean;
 };
+
+export type EssayAnswerMethod = "typed" | "scan" | "upload";
+
+export type EssayFilePreview = {
+  id: string;
+  file: File;
+  name: string;
+  type: string;
+  size: number;
+  previewUrl: string | null;
+};
+
+export type EssayFilePayload = {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+};
+
+export type EssayTranscriptionResult = {
+  transcription: string;
+  pages: number;
+  warnings?: string[];
+  disclaimer: string;
+};
+
+export type EssayRubricKey = "taskFulfilment" | "ideasAndKBAT" | "ihcp" | "organisation" | "language" | "vocabulary" | "clarity";
+
+export type EssayRubricScore = {
+  score: number;
+  maxScore: number;
+  feedback: string;
+};
+
+export type EssayIHCPStatus = "good" | "partial" | "missing";
+
+export type EssayIHCPItem = {
+  status: EssayIHCPStatus;
+  feedback: string;
+};
+
+export type EssayParagraphAnalysis = {
+  paragraph: number;
+  type: string;
+  feedback: string;
+  ihcp?: {
+    I: EssayIHCPItem;
+    H: EssayIHCPItem;
+    C: EssayIHCPItem;
+    P: EssayIHCPItem;
+  };
+};
+
+export type EssayLanguageIssue = {
+  original: string;
+  suggestion: string;
+  type: "ejaan" | "tatabahasa" | "tanda_baca" | "struktur_ayat" | "gaya" | "lain";
+};
+
+export type EssayLengthPenalty = {
+  applied: boolean;
+  reason: string;
+  scoreCap: number | null;
+};
+
+export type EssayGradingScores = Record<EssayRubricKey, EssayRubricScore>;
+
+export type EssayGradingResult = {
+  totalScore: number;
+  pkskEstimatedScore: number;
+  level: "Cemerlang" | "Sangat Baik" | "Baik" | "Memuaskan" | "Perlu Dipertingkatkan" | "Perlu Banyak Latihan";
+  wordCount: number;
+  scores: EssayGradingScores;
+  strengths: string[];
+  improvements: string[];
+  nextAction: string;
+  paragraphAnalysis: EssayParagraphAnalysis[];
+  languageIssues: EssayLanguageIssue[];
+  lengthPenalty: EssayLengthPenalty;
+  disclaimer: "Markah Anggaran AI - Untuk Tujuan Latihan" | "Markah Anggaran AI – Untuk Tujuan Latihan";
+};
+
+export type EssayGradingRequest = {
+  level: string;
+  question: string;
+  instruction?: string;
+  minimumWords: number;
+  studentAnswer: string;
+};
