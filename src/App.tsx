@@ -49,8 +49,11 @@ import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { pkskSections, states } from "./data/pksk";
 import { useAccess } from "./hooks/useAccess";
+import { useSocialProofNotifications } from "./hooks/useSocialProofNotifications";
 import premiumHeroImage from "./assets/pksk-premium-hero.png";
 import { EssayAiPage } from "./components/EssayAiPage";
+import { SocialProofNotification } from "./components/SocialProofNotification";
+import { SocialProofUserCard } from "./components/SocialProofUserCard";
 import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
 import {
   blockUser,
@@ -378,6 +381,9 @@ function App() {
   const profileReady = Boolean(profile?.display_name && profile?.school && profile?.state && profile?.class_name);
   const earnedBadgeCount = badges.filter((badge) => badge.earned).length;
   const performance = useMemo(() => calculatePerformance(profile, attempts, earnedBadgeCount), [attempts, earnedBadgeCount, profile]);
+  const canShowSocialProofNotification =
+    isSupabaseConfigured && !loading && currentRoute === "/" && (!isLoggedIn || (Boolean(accessStatus) && !access.isPremium && !access.isBlocked));
+  const { currentItem, dismissCurrentItem } = useSocialProofNotifications(canShowSocialProofNotification);
 
   useEffect(() => {
     if (!supabase) {
@@ -1245,6 +1251,9 @@ function App() {
         onCloseHelp={() => setShowInstallHelp(false)}
       />
       <WhatsAppSupportButton />
+      {canShowSocialProofNotification ? (
+        <SocialProofNotification item={currentItem} onDismiss={dismissCurrentItem} onOpenPremium={openPaywall} />
+      ) : null}
     </div>
   );
 }
@@ -1940,6 +1949,8 @@ function LandingPage({
           <QuestionBankHeroCard counts={questionBankCounts} />
         </div>
       </section>
+
+      <SocialProofUserCard />
 
       <section className="landing-feature-strip" aria-label="Ciri utama PKSK Academy">
         {featureHighlights.map((item) => (
