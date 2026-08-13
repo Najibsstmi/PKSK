@@ -101,6 +101,10 @@ Pastikan setiap feedback ringkas, padat dan lengkap:
 - nextAction: 1 ayat sahaja
 - paragraphAnalysis: maksimum 4 item
 - languageIssues: maksimum 5 item
+- languageIssues hanya untuk ayat yang benar-benar perlu dibaiki.
+- Jangan masukkan languageIssues jika cadangan sama maksud dan hampir sama dengan ayat asal.
+- Jika hanya mahu memuji ayat, letakkan dalam strengths, bukan languageIssues.
+- Cadangan languageIssues mesti menunjukkan pembetulan yang jelas seperti ejaan, tatabahasa, ayat lebih lengkap atau gaya lebih tepat.
 
 Ikut schema JSON yang diberikan oleh sistem.
 Berikan skor bagi semua komponen rubrik walaupun jawapan lemah.

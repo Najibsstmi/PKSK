@@ -633,12 +633,15 @@ function EssayAiResultPanel({ result, submitted, onImprove, onNavigate, onStartE
       {result.languageIssues.length ? (
         <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
           <h2 className="text-xl font-black">Isu Bahasa Yang Boleh Disemak</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+            Ayat asal ialah petikan daripada jawapan murid. Cadangan AI menunjukkan cara ayat itu boleh dibaiki.
+          </p>
           <div className="mt-4 grid gap-3">
             {result.languageIssues.map((issue, index) => (
               <article key={`${issue.original}-${index}`} className="rounded-2xl border border-slate-200 p-4">
                 <p className="text-xs font-black uppercase text-ocean-700">{issue.type.replace("_", " ")}</p>
-                <p className="mt-2 text-sm font-bold text-slate-600">Asal: <span className="text-slate-950">{issue.original || "-"}</span></p>
-                <p className="mt-1 text-sm font-bold text-leaf-700">Cadangan: {issue.suggestion || "Semak semula ayat ini."}</p>
+                <p className="mt-2 text-sm font-bold text-slate-600">Ayat asal murid: <span className="text-slate-950">{issue.original || "-"}</span></p>
+                <p className="mt-1 text-sm font-bold text-leaf-700">Cadangan AI: {issue.suggestion || "Semak semula ayat ini."}</p>
               </article>
             ))}
           </div>

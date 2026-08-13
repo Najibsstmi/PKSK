@@ -350,11 +350,55 @@ function normalizeIhcpItem(item) {
 
 function normalizeLanguageIssues(issues) {
   if (!Array.isArray(issues)) return [];
-  return issues.slice(0, 8).map((issue) => ({
-    original: sanitizeText(issue?.original),
-    suggestion: sanitizeText(issue?.suggestion),
-    type: ["ejaan", "tatabahasa", "tanda_baca", "struktur_ayat", "gaya", "lain"].includes(issue?.type) ? issue.type : "lain",
-  }));
+  return issues
+    .map((issue) => ({
+      original: sanitizeText(issue?.original),
+      suggestion: sanitizeText(issue?.suggestion),
+      type: ["ejaan", "tatabahasa", "tanda_baca", "struktur_ayat", "gaya", "lain"].includes(issue?.type) ? issue.type : "lain",
+    }))
+    .filter((issue) => hasUsefulSuggestion(issue.original, issue.suggestion))
+    .slice(0, 5);
+}
+
+function hasUsefulSuggestion(original, suggestion) {
+  const normalizedOriginal = normalizeComparableText(original);
+  const normalizedSuggestion = normalizeComparableText(suggestion);
+
+  if (!normalizedOriginal || !normalizedSuggestion || normalizedOriginal === normalizedSuggestion) {
+    return false;
+  }
+
+  const originalTokens = normalizedOriginal.split(" ");
+  const suggestionTokens = normalizedSuggestion.split(" ");
+  const addedTokens = countTokenDifference(suggestionTokens, originalTokens);
+  const removedTokens = countTokenDifference(originalTokens, suggestionTokens);
+
+  return addedTokens > 0 || removedTokens > 2;
+}
+
+function normalizeComparableText(value) {
+  return sanitizeText(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function countTokenDifference(sourceTokens, comparisonTokens) {
+  const counts = new Map();
+  comparisonTokens.forEach((token) => counts.set(token, (counts.get(token) || 0) + 1));
+
+  let difference = 0;
+  sourceTokens.forEach((token) => {
+    const count = counts.get(token) || 0;
+    if (count > 0) {
+      counts.set(token, count - 1);
+    } else {
+      difference += 1;
+    }
+  });
+
+  return difference;
 }
 
 function sanitizeList(value, fallback) {
