@@ -99,6 +99,14 @@ export async function callOpenAI(payload) {
 }
 
 export function extractOutputText(data) {
+  if (data?.status === "incomplete") {
+    const reason = data?.incomplete_details?.reason;
+    if (reason === "max_output_tokens") {
+      throw publicError(502, "AI berhenti sebelum semakan lengkap. Sila cuba semula dengan teks yang lebih jelas atau lebih pendek.");
+    }
+    throw publicError(502, "AI belum menyiapkan semakan penuh. Sila cuba semula sebentar lagi.");
+  }
+
   if (typeof data?.output_text === "string") {
     return data.output_text;
   }
@@ -132,6 +140,10 @@ function collectText(value, parts) {
 
 export function parseJsonOutput(text) {
   const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  if (!cleaned) {
+    throw publicError(502, "AI tidak memulangkan keputusan semakan. Sila cuba semula.");
+  }
+
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -443,15 +455,20 @@ export const rawGradingJsonSchema = {
           type: { type: "string" },
           feedback: { type: "string" },
           ihcp: {
-            type: "object",
-            additionalProperties: false,
-            required: ["I", "H", "C", "P"],
-            properties: {
-              I: { $ref: "#/$defs/ihcpItem" },
-              H: { $ref: "#/$defs/ihcpItem" },
-              C: { $ref: "#/$defs/ihcpItem" },
-              P: { $ref: "#/$defs/ihcpItem" },
-            },
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["I", "H", "C", "P"],
+                properties: {
+                  I: { $ref: "#/$defs/ihcpItem" },
+                  H: { $ref: "#/$defs/ihcpItem" },
+                  C: { $ref: "#/$defs/ihcpItem" },
+                  P: { $ref: "#/$defs/ihcpItem" },
+                },
+              },
+              { type: "null" },
+            ],
           },
         },
       },

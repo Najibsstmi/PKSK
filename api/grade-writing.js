@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       model: process.env.OPENAI_GRADING_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
       instructions: systemPrompt,
       input: buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }),
-      max_output_tokens: 3500,
+      max_output_tokens: 6000,
       text: {
         format: {
           type: "json_schema",
@@ -80,38 +80,16 @@ Gunakan cap panjang jika jawapan kurang daripada minimum:
 Label keputusan mesti menggunakan disclaimer: ${AI_DISCLAIMER}
 
 Kembalikan JSON sahaja tanpa markdown dan tanpa penjelasan luar JSON.
-Gunakan format ini:
-{
-  "scores": {
-    "taskFulfilment": { "score": 0, "feedback": "" },
-    "ideasAndKBAT": { "score": 0, "feedback": "" },
-    "ihcp": { "score": 0, "feedback": "" },
-    "organisation": { "score": 0, "feedback": "" },
-    "language": { "score": 0, "feedback": "" },
-    "vocabulary": { "score": 0, "feedback": "" },
-    "clarity": { "score": 0, "feedback": "" }
-  },
-  "strengths": [],
-  "improvements": [],
-  "nextAction": "",
-  "paragraphAnalysis": [
-    {
-      "paragraph": 1,
-      "type": "Pendahuluan / Isi / Penutup / Keseluruhan",
-      "feedback": "",
-      "ihcp": {
-        "I": { "status": "good", "feedback": "" },
-        "H": { "status": "partial", "feedback": "" },
-        "C": { "status": "missing", "feedback": "" },
-        "P": { "status": "partial", "feedback": "" }
-      }
-    }
-  ],
-  "languageIssues": [
-    { "original": "", "suggestion": "", "type": "ejaan" }
-  ]
-}
+Pastikan setiap feedback ringkas, padat dan lengkap:
+- feedback rubrik: maksimum 1 ayat setiap satu
+- strengths: 2 hingga 3 item sahaja
+- improvements: 2 hingga 3 item sahaja
+- nextAction: 1 ayat sahaja
+- paragraphAnalysis: maksimum 4 item
+- languageIssues: maksimum 5 item
 
+Ikut schema JSON yang diberikan oleh sistem.
+Berikan skor bagi semua komponen rubrik walaupun jawapan lemah.
 Status I-H-C-P hanya boleh guna: good, partial, missing.
 Jenis languageIssues hanya boleh guna: ejaan, tatabahasa, tanda_baca, struktur_ayat, gaya, lain.
 
