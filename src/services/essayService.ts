@@ -103,10 +103,10 @@ export async function gradeWritingAnswer(request: EssayGradingRequest): Promise<
   });
 
   if (!response.ok) {
-    await throwApiError(response, "AI belum dapat menyemak jawapan ini. Sila cuba semula sebentar lagi.");
+    await throwApiError(response, "Semakan markah AI belum berjaya. Sila cuba semula, atau semak transkripsi dan hantar semula.");
   }
 
-  return readApiJson<EssayGradingResult>(response, "AI belum dapat menyemak jawapan ini. Sila cuba semula sebentar lagi.");
+  return readApiJson<EssayGradingResult>(response, "Semakan markah AI belum berjaya. Sila cuba semula, atau semak transkripsi dan hantar semula.");
 }
 
 function validateWritingFiles(files: File[]): void {

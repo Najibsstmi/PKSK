@@ -1,4 +1,4 @@
-import { AI_DISCLAIMER, callOpenAI, extractOutputText, gradingJsonSchema, handleApiError, normalizeGrading, parseJsonOutput, publicError, readJsonBody, sendJson } from "./_essay-ai.js";
+import { AI_DISCLAIMER, callOpenAI, extractOutputText, handleApiError, normalizeGrading, parseJsonOutput, publicError, readJsonBody, sendJson } from "./_essay-ai.js";
 
 const systemPrompt = `Anda ialah pemeriksa latihan Artikulasi Penulisan PKSK untuk murid sekolah Malaysia.
 Nilai jawapan berdasarkan rubrik yang diberikan sahaja.
@@ -9,7 +9,7 @@ Nilai pada tahap umur calon. Jangan bandingkan murid sekolah dengan standard uni
 Berikan penilaian yang membina tetapi jujur.
 Jangan tulis semula keseluruhan karangan.
 Kenal pasti I-H-C-P bagi setiap perenggan isi jika dapat dikenal pasti.
-Output mesti JSON sahaja mengikut schema.`;
+Output mesti JSON sahaja mengikut format yang diminta.`;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -36,14 +36,6 @@ export default async function handler(req, res) {
       model: process.env.OPENAI_GRADING_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
       instructions: systemPrompt,
       input: buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "essay_grading_result",
-          strict: true,
-          schema: gradingJsonSchema,
-        },
-      },
       max_output_tokens: 3500,
     });
 
@@ -78,6 +70,42 @@ Gunakan cap panjang jika jawapan kurang daripada minimum:
 - bawah 60%: maksimum 55/100
 
 Label keputusan mesti menggunakan disclaimer: ${AI_DISCLAIMER}
+
+Kembalikan JSON sahaja tanpa markdown dan tanpa penjelasan luar JSON.
+Gunakan format ini:
+{
+  "scores": {
+    "taskFulfilment": { "score": 0, "feedback": "" },
+    "ideasAndKBAT": { "score": 0, "feedback": "" },
+    "ihcp": { "score": 0, "feedback": "" },
+    "organisation": { "score": 0, "feedback": "" },
+    "language": { "score": 0, "feedback": "" },
+    "vocabulary": { "score": 0, "feedback": "" },
+    "clarity": { "score": 0, "feedback": "" }
+  },
+  "strengths": [],
+  "improvements": [],
+  "nextAction": "",
+  "paragraphAnalysis": [
+    {
+      "paragraph": 1,
+      "type": "Pendahuluan / Isi / Penutup / Keseluruhan",
+      "feedback": "",
+      "ihcp": {
+        "I": { "status": "good", "feedback": "" },
+        "H": { "status": "partial", "feedback": "" },
+        "C": { "status": "missing", "feedback": "" },
+        "P": { "status": "partial", "feedback": "" }
+      }
+    }
+  ],
+  "languageIssues": [
+    { "original": "", "suggestion": "", "type": "ejaan" }
+  ]
+}
+
+Status I-H-C-P hanya boleh guna: good, partial, missing.
+Jenis languageIssues hanya boleh guna: ejaan, tatabahasa, tanda_baca, struktur_ayat, gaya, lain.
 
 Jawapan murid:
 ${studentAnswer}`;
