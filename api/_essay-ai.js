@@ -83,6 +83,9 @@ export async function callOpenAI(payload) {
     if (error?.name === "AbortError") {
       throw publicError(504, "Semakan AI mengambil masa terlalu lama. Sila cuba semula dengan gambar yang lebih jelas atau teks yang lebih pendek.");
     }
+    if (error instanceof TypeError) {
+      throw publicError(502, "Sambungan ke OpenAI belum berjaya. Sila cuba semula sebentar lagi atau maklumkan pentadbir.");
+    }
     throw error;
   } finally {
     clearTimeout(timeout);

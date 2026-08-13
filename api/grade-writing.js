@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     const result = normalizeGrading(raw, { minimumWords, studentAnswer });
     sendJson(res, 200, result);
   } catch (error) {
-    handleApiError(res, error, "AI belum dapat menyemak jawapan ini. Sila cuba semula sebentar lagi.");
+    handleApiError(res, error, "Semakan markah AI belum berjaya. Sila cuba semula, atau semak transkripsi dan hantar semula.");
   }
 }
 

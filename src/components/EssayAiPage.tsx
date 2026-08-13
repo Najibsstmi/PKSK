@@ -225,6 +225,10 @@ export function EssayAiPage({ payload, result, busy, onAutosave, onSubmit, onNav
       setError("Tulis jawapan atau sahkan transkripsi dahulu sebelum semakan AI.");
       return;
     }
+    if (countWords(cleanAnswer) < 20 || cleanAnswer.includes("[tidak jelas]")) {
+      setError("Transkripsi belum cukup jelas untuk disemak. Sila betulkan teks transkripsi dahulu, atau ambil gambar semula dengan kertas memenuhi skrin.");
+      return;
+    }
 
     setError(null);
     setProcessing(true);
