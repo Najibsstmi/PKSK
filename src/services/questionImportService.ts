@@ -1,6 +1,6 @@
 import { requireSupabase } from "../lib/supabase";
 import type { Json } from "../types/database";
-import type { DraftReviewStatus, ImportedQuestionDraft, QuestionImportRow } from "../types/imports";
+import type { DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionImportRow } from "../types/imports";
 
 export async function createPdfQuestionImport(file: File, sourceTitle: string): Promise<string> {
   const client = requireSupabase();
@@ -30,6 +30,21 @@ export async function createPdfQuestionImport(file: File, sourceTitle: string): 
     file_name: file.name,
     storage_path: storagePath,
     source_title: sourceTitle || file.name.replace(/\.pdf$/i, ""),
+  });
+
+  if (error) {
+    throw new Error(mapImportMessage(error.message));
+  }
+
+  return data;
+}
+
+export async function createCsvQuestionImport(fileName: string, sourceTitle: string, questions: ManualQuestionInput[]): Promise<string> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("admin_create_csv_question_import", {
+    file_name: fileName || "import-soalan.csv",
+    source_title: sourceTitle || fileName.replace(/\.(csv|xlsx?)$/i, ""),
+    questions_payload: questions as unknown as Json,
   });
 
   if (error) {
@@ -168,6 +183,15 @@ export function mapImportMessage(message: string): string {
   }
   if (message.includes("INVALID_REVIEW_STATUS")) {
     return "Status semakan tidak sah.";
+  }
+  if (message.includes("admin_create_csv_question_import")) {
+    return "Import CSV draft belum tersedia di database. Jalankan migration CSV draft import dahulu.";
+  }
+  if (message.includes("INVALID_CSV_PAYLOAD") || message.includes("CSV_EMPTY")) {
+    return "Fail CSV kosong atau format import tidak sah.";
+  }
+  if (message.includes("CSV_QUESTION_TEXT_REQUIRED_ROW")) {
+    return "Ada baris CSV yang tiada teks soalan. Semak fail CSV dan cuba lagi.";
   }
   if (message.includes("Bucket not found") || message.includes("question-imports")) {
     return "Storage import PDF belum disediakan. Jalankan migration import PDF dahulu.";

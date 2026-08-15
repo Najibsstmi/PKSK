@@ -456,6 +456,14 @@ export type Database = {
         };
         Returns: string;
       };
+      admin_create_csv_question_import: {
+        Args: {
+          file_name: string;
+          source_title?: string | null;
+          questions_payload?: Json | null;
+        };
+        Returns: string;
+      };
       admin_get_question_import: {
         Args: {
           p_import_id: string;

@@ -80,6 +80,7 @@ import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewSer
 import { approvePaymentRequest, fetchAdminPaymentRequests, fetchMyLatestPaymentRequest, fetchMyPendingPaymentRequest, ManualPaymentService, rejectPaymentRequest, ToyyibPayService } from "./services/paymentService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
 import {
+  createCsvQuestionImport,
   createPdfQuestionImport,
   fetchImportDrafts,
   fetchQuestionImport,
@@ -4019,7 +4020,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
   const totalCount = questions[0]?.total_count ?? questions.length;
 
   return (
-    <AdminShell title="Question Bank" text="Import PDF, semak draft, dan urus status soalan tanpa metadata berat.">
+    <AdminShell title="Question Bank" text="Urus soalan aktif. Import PDF/CSV akan masuk draft review dahulu sebelum publish.">
       <section className="rounded-2xl bg-white p-5 shadow-soft">
         <div className="grid gap-3 lg:grid-cols-[auto_auto_auto_1fr]">
           <button type="button" className="primary-button" onClick={() => setManualOpen(true)}>
@@ -4032,7 +4033,7 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
           </button>
           <button type="button" className="secondary-button" onClick={() => setCsvOpen(true)}>
             <FileSpreadsheet size={18} aria-hidden="true" />
-            Import Excel/CSV
+            Import CSV
           </button>
           <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari soalan, kategori, topik atau sumber" />
         </div>
@@ -4120,11 +4121,20 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
             </article>
           );
         })}
-        {questions.length === 0 ? <EmptyAdminPanel title="Tiada soalan ditemui" text="Cuba ubah filter atau import PDF baharu." /> : null}
+        {questions.length === 0 ? <EmptyAdminPanel title="Tiada soalan ditemui" text="Cuba ubah filter atau import PDF/CSV baharu." /> : null}
       </section>
 
       {manualOpen ? <ManualQuestionModal onClose={() => setManualOpen(false)} onCreated={loadQuestions} onMessage={onMessage} /> : null}
-      {csvOpen ? <CsvImportModal onClose={() => setCsvOpen(false)} onImported={loadQuestions} onMessage={onMessage} /> : null}
+      {csvOpen ? (
+        <CsvImportModal
+          onClose={() => setCsvOpen(false)}
+          onImported={async (importId) => {
+            await loadQuestions();
+            navigateAdminRoute("/admin/questions/import", `?id=${importId}`);
+          }}
+          onMessage={onMessage}
+        />
+      ) : null}
       {selectedQuestion ? <QuestionViewModal question={selectedQuestion} onClose={() => setSelectedQuestion(null)} /> : null}
       {editingQuestion ? <QuestionEditModal question={editingQuestion} onClose={() => setEditingQuestion(null)} onSaved={loadQuestions} onMessage={onMessage} /> : null}
     </AdminShell>
@@ -4137,10 +4147,11 @@ function CsvImportModal({
   onMessage,
 }: {
   onClose: () => void;
-  onImported: () => Promise<void>;
+  onImported: (importId: string) => Promise<void> | void;
   onMessage: (message: string | null) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [sourceTitle, setSourceTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
@@ -4176,13 +4187,10 @@ function CsvImportModal({
       const csvText = await file.text();
       const records = parseCsvRecords(csvText);
       const questions = records.map((record, index) => csvRecordToManualQuestion(record, index + 2));
+      const importId = await createCsvQuestionImport(file.name, sourceTitle, questions);
 
-      for (const question of questions) {
-        await createManualQuestion(question);
-      }
-
-      await onImported();
-      onMessage(`${questions.length} soalan berjaya diimport daripada CSV.`);
+      await onImported(importId);
+      onMessage(`${questions.length} soalan CSV disimpan sebagai draft review. Semak, approve, kemudian Publish Approved.`);
       onClose();
     } catch (error) {
       onMessage(toMessage(error));
@@ -4205,7 +4213,7 @@ function CsvImportModal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-black">Import CSV</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Muat turun template, isi soalan, kemudian upload semula. Excel boleh disimpan sebagai CSV.</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Muat turun template, isi soalan, kemudian upload semula. CSV akan masuk draft review dahulu, bukan terus aktif.</p>
           </div>
           <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
             <X size={18} aria-hidden="true" />
@@ -4249,9 +4257,12 @@ function CsvImportModal({
           <Label text="Fail CSV">
             <input className="field" type="file" accept=".csv,text/csv" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
           </Label>
+          <Label text="Nama sumber">
+            <input className="field" value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder={file?.name.replace(/\.(csv|xlsx?)$/i, "") ?? "Contoh: Set Soalan PKSK 2027"} />
+          </Label>
 
           <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
-            Bahagian A dan B ialah objektif. Bahagian C boleh diisi sebagai `essay`. Untuk pilihan jawapan bergambar, gunakan kolum `option_a_image_url`, `option_b_image_url` dan seterusnya.
+            Bahagian A dan B ialah objektif. Bahagian C boleh diisi sebagai `essay`. Selepas upload, semak draft di halaman review dan klik Publish Approved sahaja bila sudah yakin.
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -4260,7 +4271,7 @@ function CsvImportModal({
             </button>
             <button type="submit" className="primary-button" disabled={busy}>
               <FileSpreadsheet size={18} aria-hidden="true" />
-              {busy ? "Mengimport..." : "Import CSV"}
+              {busy ? "Menyediakan draft..." : "Simpan sebagai Draft Review"}
             </button>
           </div>
         </div>
@@ -4353,9 +4364,10 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
   const reviewCount = drafts.filter((draft) => draft.review_status === "needs_review" && !draft.imported_question_id).length;
   const rejectedCount = drafts.filter((draft) => draft.review_status === "rejected" && !draft.imported_question_id).length;
   const importedCount = drafts.filter((draft) => draft.imported_question_id).length;
+  const isCsvImport = importRow ? isCsvQuestionImport(importRow) : false;
 
   return (
-    <AdminShell title="Import PDF" text="Upload PDF, ekstrak soalan, semak draft, kemudian publish ke bank soalan.">
+    <AdminShell title="Import Review" text="Upload PDF atau CSV, semak draft, kemudian publish soalan yang sudah approved.">
       {!importRow ? (
         <section className="rounded-2xl bg-white p-6 shadow-soft">
           <div className="mb-5 flex items-start gap-4">
@@ -4399,7 +4411,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={busyAction || importRow.status === "processing"}
+                  disabled={busyAction || importRow.status === "processing" || isCsvImport}
                   onClick={() =>
                     runImportAction(async () => {
                       const result = await processPdfImport(importRow.id);
@@ -4407,7 +4419,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
                     }, "Ekstrak PDF selesai. Semak draft yang terhasil.")
                   }
                 >
-                  {importRow.status === "processing" ? "Sedang Ekstrak..." : "Ekstrak Soalan"}
+                  {isCsvImport ? "CSV Draft Siap" : importRow.status === "processing" ? "Sedang Ekstrak..." : "Ekstrak Soalan"}
                 </button>
                 <button type="button" className="secondary-button" disabled={busyAction || highConfidenceIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(highConfidenceIds, "approved"), "Semua draft high confidence diluluskan.")}>
                   Approve Draft Yakin
@@ -4427,7 +4439,9 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
               </div>
             </div>
             <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
-              Flow stabil: upload PDF, klik Ekstrak Soalan, semak draft, approve draft yang betul, kemudian Publish Approved. Draft belum approve tidak akan masuk simulasi.
+              {isCsvImport
+                ? "Flow CSV: soalan sudah berada dalam draft review. Semak kandungan, approve draft yang betul, kemudian Publish Approved. Draft belum approve tidak akan masuk simulasi."
+                : "Flow PDF: upload PDF, klik Ekstrak Soalan, semak draft, approve draft yang betul, kemudian Publish Approved. Draft belum approve tidak akan masuk simulasi."}
             </div>
           </section>
           <section className="grid gap-4">
@@ -4468,7 +4482,7 @@ function AdminImportHistoryPage({ onMessage }: { onMessage: (message: string | n
   }, [loadImports]);
 
   return (
-    <AdminShell title="Import History" text="Buka semula PDF yang pernah diimport dan teruskan semakan draft.">
+    <AdminShell title="Import History" text="Buka semula PDF atau CSV yang pernah diimport dan teruskan semakan draft.">
       <section className="rounded-2xl bg-white p-5 shadow-soft">
         <div className="grid gap-3 sm:grid-cols-[220px_auto]">
           <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as QuestionImportStatus | "all")}>
@@ -5683,8 +5697,8 @@ function csvRecordToManualQuestion(record: Record<string, string>, rowNumber: nu
     };
   }
 
-  const correctLabel = (getCsvValue(record, ["correct_option_label", "jawapan_betul"]) || "A").toUpperCase();
-  if (!optionLabels.includes(correctLabel)) {
+  const correctLabel = getCsvValue(record, ["correct_option_label", "jawapan_betul"]).toUpperCase() || null;
+  if (correctLabel && !optionLabels.includes(correctLabel)) {
     throw new Error(`Baris ${rowNumber}: jawapan betul mesti A, B, C atau D.`);
   }
 
@@ -5693,7 +5707,7 @@ function csvRecordToManualQuestion(record: Record<string, string>, rowNumber: nu
       option_label: label,
       option_text: getCsvValue(record, [`option_${label.toLowerCase()}`, `pilihan_${label.toLowerCase()}`, `jawapan_${label.toLowerCase()}`]) || null,
       option_image_url: getCsvValue(record, [`option_${label.toLowerCase()}_image_url`, `gambar_pilihan_${label.toLowerCase()}`]) || null,
-      is_correct: label === correctLabel,
+      is_correct: correctLabel ? label === correctLabel : false,
       sort_order: index + 1,
     }))
     .filter((option) => option.option_text || option.option_image_url);
@@ -5702,7 +5716,7 @@ function csvRecordToManualQuestion(record: Record<string, string>, rowNumber: nu
     throw new Error(`Baris ${rowNumber}: soalan objektif perlukan sekurang-kurangnya dua pilihan jawapan.`);
   }
 
-  if (!options.some((option) => option.option_label === correctLabel)) {
+  if (correctLabel && !options.some((option) => option.option_label === correctLabel)) {
     throw new Error(`Baris ${rowNumber}: pilihan jawapan betul ${correctLabel} belum diisi.`);
   }
 
@@ -5834,6 +5848,10 @@ function paymentStatusTone(status: PaymentRequest["status"]): string {
     expired: "bg-slate-100 text-slate-500",
   };
   return tones[status];
+}
+
+function isCsvQuestionImport(importRow: QuestionImportRow): boolean {
+  return importRow.storage_path?.startsWith("csv://") || /\.(csv|xlsx?)$/i.test(importRow.file_name);
 }
 
 function paymentMethodLabel(method: string): string {
