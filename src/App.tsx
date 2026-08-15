@@ -11,6 +11,7 @@
   CreditCard,
   Download,
   Eye,
+  ExternalLink,
   FileSpreadsheet,
   FileUp,
   Footprints,
@@ -19,6 +20,7 @@
   HeartHandshake,
   History,
   Image as ImageIcon,
+  Info,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
@@ -47,6 +49,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { pkskInfoConfig, type PkskInfoEvent } from "./data/pkskInfo";
 import { pkskSections, states } from "./data/pksk";
 import { useAccess } from "./hooks/useAccess";
 import { useSocialProofNotifications } from "./hooks/useSocialProofNotifications";
@@ -113,6 +116,7 @@ type AppRoute =
   | "/register"
   | "/checkout"
   | "/payment-result"
+  | "/info-pksk"
   | "/app"
   | "/app/simulasi"
   | "/app/quiz"
@@ -137,8 +141,9 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
+const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabel?: string; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
+  { to: "/info-pksk", label: "Info PKSK", shortLabel: "Info", icon: Info },
   { to: "/app/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
   { to: "/app/pencapaian", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
@@ -150,7 +155,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; authOnly?
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
-const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result"]);
+const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
   "/app/simulasi",
@@ -171,6 +176,7 @@ const validRoutes = new Set<AppRoute>(
     "/register",
     "/checkout",
     "/payment-result",
+    "/info-pksk",
     "/app/quiz",
     "/app/essay",
     "/app/profile",
@@ -322,6 +328,116 @@ const fullPreviewTotals = {
 } as const;
 const freePreviewDurationSeconds = 90 * 60;
 const databaseSetupMessage = "Sistem akses premium sedang disiapkan. Sila cuba semula sebentar lagi.";
+const pkskInfoQuickLinks = [
+  { id: "apa-itu-pksk", label: "Apa Itu PKSK" },
+  { id: "sekolah-khusus", label: "Sekolah Khusus" },
+  { id: "tarikh-penting", label: "Tarikh Penting" },
+  { id: "format-pksk", label: "Format PKSK" },
+  { id: "persediaan", label: "Persediaan" },
+  { id: "faq-pksk", label: "FAQ" },
+];
+const pkskAudienceCards: Array<{ title: string; text: string; icon: LucideIcon; tone: string }> = [
+  {
+    title: "Tingkatan 1",
+    text: "Untuk calon yang memohon kemasukan ke sekolah khusus dan MRSM bagi kemasukan Tingkatan 1.",
+    icon: GraduationCap,
+    tone: "bg-ocean-50 text-ocean-700",
+  },
+  {
+    title: "Tingkatan 4",
+    text: "Untuk calon yang memohon kemasukan ke sekolah khusus dan MRSM bagi kemasukan Tingkatan 4.",
+    icon: BookOpen,
+    tone: "bg-leaf-50 text-leaf-600",
+  },
+  {
+    title: "Tahun 1 SVM",
+    text: "Hebahan KPM 2027 turut menyebut permohonan bagi Tahun 1 Sijil Vokasional Malaysia (SVM).",
+    icon: ClipboardList,
+    tone: "bg-sun-50 text-amber-700",
+  },
+];
+const pkskFormatCards: Array<{
+  title: string;
+  label: string;
+  text: string;
+  icon: LucideIcon;
+  tone: string;
+  ctaLabel: string;
+  route: AppRoute;
+}> = [
+  {
+    title: "Bahagian A",
+    label: "Kecerdasan Insaniah",
+    text: "Latihan umum yang membantu calon membiasakan diri dengan situasi, nilai diri dan pilihan respons yang matang.",
+    icon: HeartHandshake,
+    tone: "bg-ocean-50 text-ocean-700",
+    ctaLabel: "Cuba Bahagian A",
+    route: "/app/simulasi",
+  },
+  {
+    title: "Bahagian B",
+    label: "Kecerdasan Intelek",
+    text: "Latihan umum untuk mengasah pemikiran logik, kefahaman, penaakulan dan penyelesaian masalah.",
+    icon: Brain,
+    tone: "bg-leaf-50 text-leaf-600",
+    ctaLabel: "Cuba Bahagian B",
+    route: "/app/simulasi",
+  },
+  {
+    title: "Bahagian C",
+    label: "Artikulasi Penulisan",
+    text: "Persediaan menulis secara tersusun dengan idea yang jelas, huraian ringkas dan bahasa yang kemas.",
+    icon: PenLine,
+    tone: "bg-sun-50 text-amber-700",
+    ctaLabel: "Latihan Bahagian C",
+    route: "/app/essay",
+  },
+];
+const pkskPrepCards: Array<{ title: string; text: string; icon: LucideIcon }> = [
+  { title: "Kenali format", text: "Fahami jenis latihan yang akan dihadapi tanpa menghafal satu bentuk soalan sahaja.", icon: BookOpen },
+  { title: "Latih pengurusan masa", text: "Biasakan diri menjawab dengan tenang dan tersusun dalam tempoh latihan.", icon: Clock3 },
+  { title: "Buat latihan pelbagai", text: "Gunakan set latihan berbeza supaya cara berfikir lebih fleksibel.", icon: ClipboardList },
+  { title: "Kenal pasti kelemahan", text: "Semak rekod latihan untuk melihat bahagian yang perlu diberi perhatian.", icon: Target },
+  { title: "Berlatih konsisten", text: "Latihan pendek tetapi kerap lebih mudah dijadikan rutin harian.", icon: CalendarCheck },
+];
+const pkskFaqItems = [
+  {
+    question: "Apa itu PKSK?",
+    answer:
+      "PKSK ialah pentaksiran yang digunakan dalam proses kemasukan ke Sekolah Khusus dan MRSM. Calon perlu merujuk portal rasmi KPM untuk maklumat permohonan dan pelaksanaan yang terkini.",
+  },
+  {
+    question: "Siapa yang perlu menduduki PKSK?",
+    answer:
+      "Calon yang memohon kemasukan ke sekolah khusus dan MRSM bagi sesi yang diumumkan oleh KPM perlu mengikuti proses yang ditetapkan, termasuk PKSK jika dinyatakan dalam hebahan rasmi.",
+  },
+  {
+    question: "Bilakah PKSK 2027 berlangsung?",
+    answer:
+      "Berdasarkan hebahan KPM, PKSK Tingkatan 4 berlangsung pada 21 September hingga 1 Oktober 2026, manakala PKSK Tingkatan 1 berlangsung pada 12 hingga 22 Oktober 2026.",
+  },
+  {
+    question: "Bagaimana cara membuat persediaan?",
+    answer:
+      "Calon boleh mula dengan memahami format umum, membuat latihan berstruktur, menyemak kelemahan dan menjaga rutin belajar yang konsisten.",
+  },
+  {
+    question: "Adakah PKSK Academy laman rasmi KPM?",
+    answer:
+      "Tidak. PKSK Academy oleh CikguSTEM ialah platform persediaan dan latihan bebas dan bukan laman rasmi Kementerian Pendidikan Malaysia.",
+  },
+];
+const countdownUnits = [
+  { key: "days", label: "HARI" },
+  { key: "hours", label: "JAM" },
+  { key: "minutes", label: "MINIT" },
+  { key: "seconds", label: "SAAT" },
+] as const;
+const oneSecondMs = 1000;
+const oneMinuteMs = 60 * oneSecondMs;
+const oneHourMs = 60 * oneMinuteMs;
+const oneDayMs = 24 * oneHourMs;
+const urgentCountdownMs = 7 * oneDayMs;
 
 function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
   const role = profile?.role ?? "user";
@@ -998,6 +1114,10 @@ function App() {
   }
 
   const page = (() => {
+    if (currentRoute === "/info-pksk") {
+      return <InfoPkskPage onNavigate={navigate} />;
+    }
+
     if (loading) {
       return <LoadingPage />;
     }
@@ -6424,6 +6544,320 @@ function BonusPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
   );
 }
 
+function InfoPkskPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
+  const now = useMalaysiaClock();
+  const countdownEvents = pkskInfoConfig.countdownEventIds.map((eventId) => pkskInfoConfig.events[eventId]);
+  const timelineEvents = pkskInfoConfig.timelineEventIds.map((eventId) => pkskInfoConfig.events[eventId]);
+
+  return (
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-soft">
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.05fr_0.95fr] lg:p-10">
+          <div className="flex min-w-0 flex-col justify-center">
+            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-ocean-500/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-cyan-100">
+              <Info size={16} aria-hidden="true" />
+              INFO PKSK
+            </span>
+            <h1 className="mt-5 text-3xl font-black leading-tight sm:text-5xl">Panduan PKSK {pkskInfoConfig.sessionYear}</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">
+              Maklumat penting untuk membantu calon dan ibu bapa memahami PKSK serta membuat persediaan dengan lebih tersusun.
+            </p>
+          </div>
+
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            {[
+              { icon: GraduationCap, title: "Sekolah Khusus", text: "Rujukan ringkas untuk calon", tone: "bg-ocean-500/15 text-cyan-100" },
+              { icon: CalendarCheck, title: "Tarikh", text: "Countdown dan timeline", tone: "bg-sun-400/15 text-amber-100" },
+              { icon: ClipboardList, title: "Format", text: "Bahagian A, B dan C", tone: "bg-leaf-500/15 text-emerald-100" },
+              { icon: Target, title: "Persediaan", text: "Langkah belajar tersusun", tone: "bg-white/10 text-white" },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <article key={item.title} className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.08] p-4">
+                  <span className={`grid h-11 w-11 place-items-center rounded-2xl ${item.tone}`}>
+                    <Icon size={22} aria-hidden="true" />
+                  </span>
+                  <h2 className="mt-4 text-base font-black">{item.title}</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-300">{item.text}</p>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <nav className="rounded-2xl bg-white p-3 shadow-soft" aria-label="Navigasi Info PKSK">
+        <div className="flex flex-wrap gap-2">
+          {pkskInfoQuickLinks.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => scrollToInfoSection(item.id)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700 transition hover:border-ocean-200 hover:bg-ocean-50 hover:text-ocean-700 sm:text-sm"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <section id="apa-itu-pksk" className="scroll-mt-24 rounded-2xl bg-white p-6 shadow-soft sm:p-8">
+        <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+          <div>
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+              <BookOpen size={24} aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-2xl font-black text-slate-950 sm:text-3xl">Apa Itu PKSK?</h2>
+          </div>
+          <div className="space-y-4 text-sm leading-7 text-slate-600 sm:text-base">
+            <p>
+              PKSK ialah pentaksiran yang digunakan dalam proses kemasukan ke Sekolah Khusus dan MRSM. Berdasarkan panduan permohonan KPM, pentaksiran ini menjadi
+              sebahagian penting daripada proses kemasukan bagi calon yang memohon.
+            </p>
+            <p>
+              Untuk calon dan ibu bapa, perkara paling penting ialah memahami urusan permohonan, menyemak tarikh rasmi dan membuat persediaan secara konsisten tanpa
+              bergantung kepada hafalan semata-mata.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="sekolah-khusus" className="scroll-mt-24 space-y-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Sekolah Khusus</p>
+            <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Siapa Yang Terlibat?</h2>
+          </div>
+          <p className="max-w-2xl text-sm leading-6 text-slate-600">
+            Kumpulan calon berikut disebut dalam hebahan KPM bagi kemasukan tahun {pkskInfoConfig.sessionYear}.
+          </p>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-3">
+          {pkskAudienceCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article key={card.title} className="rounded-2xl bg-white p-6 shadow-soft">
+                <span className={`grid h-12 w-12 place-items-center rounded-2xl ${card.tone}`}>
+                  <Icon size={23} aria-hidden="true" />
+                </span>
+                <h3 className="mt-5 text-xl font-black text-slate-950">{card.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{card.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section id="tarikh-penting" className="scroll-mt-24 space-y-6">
+        <section className="rounded-2xl bg-white p-6 shadow-soft sm:p-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase text-ocean-700">Countdown</p>
+              <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Countdown PKSK {pkskInfoConfig.sessionYear}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Berapa lama lagi sebelum PKSK bermula?</p>
+            </div>
+            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+              <Clock3 size={15} aria-hidden="true" />
+              {pkskInfoConfig.timezone}
+            </span>
+          </div>
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            {countdownEvents.map((event) => (
+              <CountdownCard key={event.title} event={event} now={now} />
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow-soft sm:p-8">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase text-ocean-700">Timeline</p>
+              <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Tarikh Penting PKSK {pkskInfoConfig.sessionYear}</h2>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-slate-600">Status dikira secara automatik berdasarkan tarikh mula dan tamat setiap fasa.</p>
+          </div>
+          <ol className="mt-6 grid gap-4">
+            {timelineEvents.map((event, index) => {
+              const status = getTimelineStatus(event, now);
+              return (
+                <li key={event.title} className="grid gap-3 sm:grid-cols-[52px_1fr]">
+                  <div className="flex items-center gap-3 sm:flex-col">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-600 text-sm font-black text-white">{index + 1}</span>
+                    {index < timelineEvents.length - 1 ? <span className="hidden h-full min-h-6 w-px bg-slate-200 sm:block" /> : null}
+                  </div>
+                  <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase text-ocean-700">{event.title}</p>
+                        <h3 className="mt-1 text-lg font-black text-slate-950">{event.label}</h3>
+                        <p className="mt-1 text-sm font-semibold text-slate-500">{event.dateLabel}</p>
+                      </div>
+                      <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${status.tone}`}>
+                        <ShieldCheck size={15} aria-hidden="true" />
+                        {status.label}
+                      </span>
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      </section>
+
+      <section id="format-pksk" className="scroll-mt-24 space-y-5">
+        <div>
+          <p className="text-sm font-black uppercase text-ocean-700">Format PKSK</p>
+          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Kenali Format PKSK</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Ringkasan ini menerangkan bahagian utama secara umum. Bilangan soalan, markah, tempoh dan pecahan konstruk perlu dirujuk kepada hebahan rasmi jika KPM
+            mengumumkannya.
+          </p>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-3">
+          {pkskFormatCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article key={card.title} className="rounded-2xl bg-white p-6 shadow-soft">
+                <span className={`grid h-12 w-12 place-items-center rounded-2xl ${card.tone}`}>
+                  <Icon size={23} aria-hidden="true" />
+                </span>
+                <p className="mt-5 text-sm font-black uppercase text-ocean-700">{card.title}</p>
+                <h3 className="mt-2 text-xl font-black text-slate-950">{card.label}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{card.text}</p>
+                <button type="button" className="mt-5 inline-flex items-center gap-2 text-sm font-black text-ocean-700" onClick={() => onNavigate(card.route)}>
+                  {card.ctaLabel}
+                  <ChevronRight size={17} aria-hidden="true" />
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section id="persediaan" className="scroll-mt-24 space-y-5">
+        <div>
+          <p className="text-sm font-black uppercase text-ocean-700">Persediaan</p>
+          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Bagaimana Hendak Bersedia?</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {pkskPrepCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article key={card.title} className="rounded-2xl bg-white p-5 shadow-soft">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+                  <Icon size={22} aria-hidden="true" />
+                </span>
+                <h3 className="mt-4 text-base font-black text-slate-950">{card.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{card.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-slate-950 p-6 text-white shadow-soft sm:p-8">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-black sm:text-3xl">Sudah faham tentang PKSK?</h2>
+            <p className="mt-2 text-base font-semibold text-slate-200">Sekarang masa untuk mula berlatih.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => onNavigate("/app/simulasi")}>
+            Mulakan Simulasi
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+
+      <section id="faq-pksk" className="scroll-mt-24 space-y-4">
+        <div>
+          <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
+          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">FAQ PKSK</h2>
+        </div>
+        <div className="grid gap-3">
+          {pkskFaqItems.map((item) => (
+            <details key={item.question} className="group rounded-2xl bg-white p-5 shadow-soft">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-base font-black text-slate-950 [&::-webkit-details-marker]:hidden">
+                {item.question}
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600">
+                  <ChevronRight size={17} className="transition group-open:rotate-90" aria-hidden="true" />
+                </span>
+              </summary>
+              <p className="mt-4 text-sm leading-6 text-slate-600">{item.answer}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+        <article className="rounded-2xl bg-white p-6 shadow-soft">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+            <BookOpen size={23} aria-hidden="true" />
+          </span>
+          <h2 className="mt-5 text-xl font-black text-slate-950">Sumber Rasmi</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Maklumat tarikh dan urusan permohonan hendaklah dirujuk kepada hebahan rasmi Kementerian Pendidikan Malaysia. Tarikh dan ketetapan boleh berubah dari
+            semasa ke semasa.
+          </p>
+          <div className="mt-5 grid gap-2">
+            {pkskInfoConfig.officialSources.map((source) => (
+              <a
+                key={source.url}
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-ocean-200 hover:bg-ocean-50 hover:text-ocean-700"
+              >
+                {source.label}
+                <ExternalLink size={16} aria-hidden="true" />
+              </a>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border border-amber-200 bg-sun-50 p-6 shadow-soft">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sun-100 text-amber-700">
+            <Info size={23} aria-hidden="true" />
+          </span>
+          <h2 className="mt-5 text-xl font-black text-slate-950">Disclaimer</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-700">
+            PKSK Academy oleh CikguSTEM ialah platform persediaan bebas dan tidak mempunyai hubungan rasmi dengan Kementerian Pendidikan Malaysia. Maklumat rasmi
+            berkaitan permohonan, tarikh dan pelaksanaan PKSK hendaklah dirujuk melalui portal KPM.
+          </p>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function CountdownCard({ event, now }: { event: PkskInfoEvent; now: Date | null }) {
+  const countdown = getCountdownState(event, now);
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-xl font-black text-slate-950">{event.title}</h3>
+          <p className="mt-1 text-sm font-bold text-slate-500">Tarikh mula: {event.startLabel}</p>
+        </div>
+        <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${countdown.statusTone}`}>
+          <Clock3 size={15} aria-hidden="true" />
+          {countdown.statusLabel}
+        </span>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {countdown.units.map((unit) => (
+          <div key={unit.label} className="rounded-2xl bg-white px-3 py-4 text-center shadow-sm">
+            <p className="text-3xl font-black tabular-nums text-slate-950">{unit.value}</p>
+            <p className="mt-1 text-[11px] font-black tracking-wide text-slate-500">{unit.label}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-700">{countdown.message}</p>
+    </article>
+  );
+}
+
 function GuidePage() {
   return (
     <div className="space-y-6">
@@ -6687,6 +7121,107 @@ function formatShortDate(value: string | null): string {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function useMalaysiaClock() {
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+    const timer = window.setInterval(() => setNow(new Date()), oneSecondMs);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return now;
+}
+
+function scrollToInfoSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function getCountdownState(event: PkskInfoEvent, now: Date | null) {
+  if (!now) {
+    return {
+      statusLabel: "Memuatkan",
+      statusTone: "bg-slate-100 text-slate-600",
+      message: "Memuatkan countdown...",
+      units: zeroCountdownUnits(),
+    };
+  }
+
+  const nowMs = now.getTime();
+  const startMs = new Date(event.start).getTime();
+  const endMs = new Date(event.end).getTime();
+
+  if (nowMs > endMs) {
+    return {
+      statusLabel: "Selesai",
+      statusTone: "bg-slate-100 text-slate-600",
+      message: "PKSK bagi sesi ini telah berlangsung.",
+      units: zeroCountdownUnits(),
+    };
+  }
+
+  if (nowMs >= startMs) {
+    return {
+      statusLabel: "Bermula",
+      statusTone: "bg-leaf-50 text-leaf-600",
+      message: "Tempoh PKSK sedang berlangsung.",
+      units: zeroCountdownUnits(),
+    };
+  }
+
+  const remainingMs = Math.max(0, startMs - nowMs);
+  const days = Math.floor(remainingMs / oneDayMs);
+  const hours = Math.floor((remainingMs % oneDayMs) / oneHourMs);
+  const minutes = Math.floor((remainingMs % oneHourMs) / oneMinuteMs);
+  const seconds = Math.floor((remainingMs % oneMinuteMs) / oneSecondMs);
+  const values = { days, hours, minutes, seconds };
+
+  return {
+    statusLabel: remainingMs <= urgentCountdownMs ? "Hampir" : "Akan datang",
+    statusTone: remainingMs <= urgentCountdownMs ? "bg-sun-50 text-amber-700" : "bg-ocean-50 text-ocean-700",
+    message: remainingMs <= urgentCountdownMs ? "PKSK semakin hampir!" : "Teruskan persediaan anda.",
+    units: countdownUnits.map((unit) => ({
+      label: unit.label,
+      value: formatCountdownValue(values[unit.key], unit.key === "days"),
+    })),
+  };
+}
+
+function zeroCountdownUnits() {
+  return countdownUnits.map((unit) => ({
+    label: unit.label,
+    value: formatCountdownValue(0, unit.key === "days"),
+  }));
+}
+
+function getTimelineStatus(event: PkskInfoEvent, now: Date | null) {
+  if (!now) {
+    return { label: "Akan datang", tone: "bg-slate-100 text-slate-600" };
+  }
+
+  const nowMs = now.getTime();
+  const startMs = new Date(event.start).getTime();
+  const endMs = new Date(event.end).getTime();
+
+  if (nowMs < startMs) {
+    return { label: "Akan datang", tone: "bg-ocean-50 text-ocean-700" };
+  }
+
+  if (nowMs <= endMs) {
+    return { label: "Sedang berlangsung", tone: "bg-leaf-50 text-leaf-600" };
+  }
+
+  return { label: "Selesai", tone: "bg-slate-100 text-slate-600" };
+}
+
+function formatCountdownValue(value: number, allowWide = false) {
+  if (allowWide) {
+    return String(value);
+  }
+
+  return String(value).padStart(2, "0");
 }
 
 function formatDate(value: string): string {
