@@ -94,7 +94,7 @@ export async function extractQuestionsFromPdf(input: {
     ...parseEssayQuestions(lines),
   ];
 
-  const fallbackQuestions = questions.length > 0 ? questions : parseObjectiveQuestions("B", linesUntilAnswerKey(lines), {});
+  const fallbackQuestions = questions.length > 0 ? questions : parseObjectiveQuestions(inferFallbackSection(lines), linesUntilAnswerKey(lines), {});
   const limitedQuestions = fallbackQuestions.slice(0, MAX_EXTRACTED_QUESTIONS);
   const warning = buildWarning(limitedQuestions, text, input.sourceTitle || input.fileName);
 
@@ -611,7 +611,7 @@ function parseObjectiveQuestions(section: "A" | "B", lines: string[], answers: R
     }
 
     const questionMatch = line.match(/^(\d{1,3})[\.)]\s*(.+)$/);
-    const labelledQuestionMatch = line.match(/^soalan\s+(\d{1,3})(?:[\s:.-]+(.+))?$/i);
+    const labelledQuestionMatch = line.match(/^soalan\s*(\d{1,3})(?:[\s:.-]+(.+))?$/i);
     const optionMatch = line.match(/^([A-D])[\.)]\s*(.+)$/i);
 
     if (questionMatch || labelledQuestionMatch) {
@@ -706,6 +706,14 @@ function parseEssayQuestions(lines: string[]): ExtractedQuestion[] {
   return questions;
 }
 
+function inferFallbackSection(lines: string[]): "A" | "B" {
+  const joined = lines.slice(0, 40).join("").replace(/\s+/g, "").toLowerCase();
+  if (joined.includes("bahagiana") || joined.includes("kecerdasaninsaniah")) {
+    return "A";
+  }
+  return "B";
+}
+
 function categoryFor(section: "A" | "B", number: number, questionText: string): [string, string] {
   const lowered = questionText.toLowerCase();
   if (section === "A") {
@@ -741,8 +749,26 @@ function shouldIgnoreLine(line: string): boolean {
     HEADER_PATTERNS.some((pattern) => pattern.test(line)) ||
     /soalan\s+objektif/i.test(line) ||
     /^\d+\s*\|\s*page$/i.test(line) ||
-    /^t\.me\//i.test(line)
+    /^t\.me\//i.test(line) ||
+    /^page$/i.test(line) ||
+    /^ukkm$/i.test(line) ||
+    /^[|_=.-]$/.test(line) ||
+    isNoisyPdfLine(line)
   );
+}
+
+function isNoisyPdfLine(line: string): boolean {
+  const controlOrBinary = (line.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u00FE\u00FF]/g) ?? []).length;
+  if (controlOrBinary >= 3) {
+    return true;
+  }
+
+  if (line.length < 80) {
+    return false;
+  }
+
+  const noisy = (line.match(/[^\x20-\x7E\u00A0-\u024F]/g) ?? []).length;
+  return noisy / line.length > 0.12;
 }
 
 function buildWarning(questions: ExtractedQuestion[], extractedText: string, sourceName: string): string | null {
