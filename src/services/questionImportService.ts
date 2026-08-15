@@ -172,8 +172,16 @@ export function mapImportMessage(message: string): string {
   if (message.includes("Bucket not found") || message.includes("question-imports")) {
     return "Storage import PDF belum disediakan. Jalankan migration import PDF dahulu.";
   }
-  if (message.includes("FunctionsFetchError") || message.includes("process-pdf-import")) {
-    return "Pemproses PDF belum aktif. Deploy Edge Function process-pdf-import dahulu.";
+  if (
+    message.includes("FunctionsFetchError") ||
+    message.includes("Failed to send a request to the Edge Function") ||
+    message.includes("Failed to fetch") ||
+    message.includes("process-pdf-import")
+  ) {
+    return "PDF berjaya dimuat naik, tetapi pemproses PDF belum dapat dihubungi. Pastikan Supabase Edge Function process-pdf-import sudah deploy.";
+  }
+  if (message.includes("SUPABASE_SERVICE_ROLE_KEY") || message.includes("SUPABASE_URL") || message.includes("SUPABASE_ANON_KEY")) {
+    return "Pemproses PDF sudah dipanggil, tetapi secret server Supabase belum lengkap. Set SUPABASE_SERVICE_ROLE_KEY untuk Edge Function.";
   }
   if (message.includes("teks tidak dapat dibaca") || message.includes("scan/gambar")) {
     return "PDF berjaya dimuat naik, tetapi teks tidak dapat dibaca. Gunakan PDF yang ada teks sebenar, atau aktifkan OCR/AI selepas beri kebenaran.";
