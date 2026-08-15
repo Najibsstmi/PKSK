@@ -6,6 +6,7 @@
   ChevronRight,
   ClipboardList,
   Clock3,
+  Copy,
   Crown,
   CheckCircle2,
   CreditCard,
@@ -16,6 +17,7 @@
   FileUp,
   Footprints,
   Gift,
+  Gem,
   GraduationCap,
   HeartHandshake,
   History,
@@ -61,6 +63,20 @@ import { SocialProofNotification } from "./components/SocialProofNotification";
 import { SocialProofUserCard } from "./components/SocialProofUserCard";
 import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
 import {
+  applyForDiamond,
+  approveDiamondPartner,
+  fetchAdminDiamondPartner,
+  fetchAdminDiamondPartners,
+  fetchDiamondDashboard,
+  fetchMyDiamondProfile,
+  markAgentCommissionPaid,
+  reactivateDiamondPartner,
+  rejectDiamondPartner,
+  suspendDiamondPartner,
+  trackReferralClick,
+  updateMyDiamondBankInfo,
+} from "./services/agentService";
+import {
   blockUser,
   extendPremium,
   fetchAdminKpis,
@@ -79,7 +95,17 @@ import {
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
 import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
-import { approvePaymentRequest, fetchAdminPaymentRequests, fetchMyLatestPaymentRequest, fetchMyPendingPaymentRequest, ManualPaymentService, rejectPaymentRequest, ToyyibPayService } from "./services/paymentService";
+import {
+  approvePaymentRequest,
+  captureReferralCodeFromUrl,
+  fetchAdminPaymentRequests,
+  fetchMyLatestPaymentRequest,
+  fetchMyPendingPaymentRequest,
+  ManualPaymentService,
+  rejectPaymentRequest,
+  rememberStoredReferralAttribution,
+  ToyyibPayService,
+} from "./services/paymentService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
 import {
   createCsvQuestionImport,
@@ -102,6 +128,7 @@ import {
   submitAnswer,
 } from "./services/questionService";
 import { fetchQuestionBankCounts } from "./services/questionStatsService";
+import type { AdminDiamondPartnerDetail, AdminDiamondPartnerRow, AgentCommissionSummary, AgentStatus, DiamondApplicationInput, DiamondDashboard, DiamondProfile } from "./types/agent";
 import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, QuestionBankCounts, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
@@ -129,11 +156,13 @@ type AppRoute =
   | "/app/sejarah"
   | "/app/lencana"
   | "/app/bonus"
+  | "/app/diamond"
   | "/app/panduan"
   | "/admin"
   | "/admin/users"
   | "/admin/subscriptions"
   | "/admin/payment-requests"
+  | "/admin/agents"
   | "/admin/questions"
   | "/admin/questions/import"
   | "/admin/questions/import-history"
@@ -144,20 +173,21 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabel?: string; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
+const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabel?: string; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean; diamondOnly?: boolean }> = [
   { to: "/app", label: "Dashboard", shortLabel: "Utama", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
   { to: "/info-pksk", label: "Info PKSK", shortLabel: "Info", icon: Info },
   { to: "/app/simulasi", label: "Simulasi", shortLabel: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
   { to: "/app/pencapaian", label: "Pencapaian", shortLabel: "Skor", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
   { to: "/app/bonus", label: "Bonus", icon: Gift, authOnly: true, premiumOnly: true },
+  { to: "/app/diamond", label: "Diamond", icon: Gem, authOnly: true, premiumOnly: true, diamondOnly: true },
   { to: "/app/sejarah", label: "Sejarah", shortLabel: "Rekod", icon: History, authOnly: true, premiumOnly: true },
   { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true, premiumOnly: true },
   { to: "/admin", label: "Admin Panel", shortLabel: "Admin", icon: Users, authOnly: true, adminOnly: true },
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
-const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
+const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
@@ -169,6 +199,7 @@ const premiumRoutes = new Set<AppRoute>([
   "/app/sejarah",
   "/app/lencana",
   "/app/bonus",
+  "/app/diamond",
   "/app/panduan",
 ]);
 const validRoutes = new Set<AppRoute>(
@@ -186,6 +217,7 @@ const validRoutes = new Set<AppRoute>(
     "/admin/users",
     "/admin/subscriptions",
     "/admin/payment-requests",
+    "/admin/agents",
     "/admin/questions",
     "/admin/questions/import",
     "/admin/questions/import-history",
@@ -529,6 +561,7 @@ function App() {
   const [attempts, setAttempts] = useState<QuizAttemptRow[]>([]);
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
   const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
+  const [diamondProfile, setDiamondProfile] = useState<DiamondProfile | null>(null);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
   const [activeEssayPayload, setActiveEssayPayload] = useState<EssayAttemptPayload | null>(null);
@@ -550,6 +583,12 @@ function App() {
   const canShowSocialProofNotification =
     isSupabaseConfigured && !loading && currentRoute === "/" && (!isLoggedIn || (Boolean(accessStatus) && !access.isPremium && !access.isBlocked));
   const { currentItem, dismissCurrentItem } = useSocialProofNotifications(canShowSocialProofNotification);
+
+  useEffect(() => {
+    const urlReferralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? null;
+    captureReferralCodeFromUrl();
+    trackReferralClick(urlReferralCode).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
@@ -587,6 +626,7 @@ function App() {
         setAttempts([]);
         setBadges([]);
         setPendingPayment(null);
+        setDiamondProfile(null);
         setActivePayload(null);
         setActiveEssayPayload(null);
         setEssayResult(null);
@@ -657,11 +697,13 @@ function App() {
       const activeAttempt = nextAccessStatus.is_premium ? await fetchActiveAttempt() : null;
       const activeEssayAttemptId = nextAccessStatus.is_premium ? await fetchActiveEssayAttempt().catch(() => null) : null;
       const nextPendingPayment = nextAccessStatus.is_premium ? null : await fetchMyPendingPaymentRequest().catch(() => null);
+      const nextDiamondProfile = nextAccessStatus.is_premium ? await fetchMyDiamondProfile().catch(() => null) : null;
       setProfile(nextProfile);
       setAccessStatus(nextAccessStatus);
       setAttempts(nextAttempts);
       setBadges(nextBadges);
       setPendingPayment(nextPendingPayment);
+      setDiamondProfile(nextDiamondProfile);
 
       const savedAttemptId = window.localStorage.getItem("pksk-active-attempt") ?? activeAttempt?.id;
       if (savedAttemptId) {
@@ -690,6 +732,7 @@ function App() {
       return;
     }
 
+    rememberStoredReferralAttribution().catch(() => undefined);
     refreshData(session.user.id);
   }, [refreshData, session?.user.id]);
 
@@ -1287,6 +1330,9 @@ function App() {
       if (currentRoute === "/admin/payment-requests") {
         return <AdminPaymentRequestsPage onMessage={setMessage} onPaymentUpdated={() => session?.user.id ? refreshData(session.user.id) : undefined} />;
       }
+      if (currentRoute === "/admin/agents") {
+        return <AdminDiamondPartnersPage onMessage={setMessage} />;
+      }
       if (currentRoute === "/admin/settings") {
         return <AdminSettingsPage settings={appSettings} />;
       }
@@ -1332,6 +1378,7 @@ function App() {
           profileReady={profileReady}
           performance={performance}
           pendingPayment={pendingPayment}
+          diamondProfile={diamondProfile}
           questionBankCounts={questionBankCounts}
           activePayload={activePayload}
           activeEssayPayload={activeEssayPayload}
@@ -1343,6 +1390,17 @@ function App() {
           onStartGuestPreview={handleStartGuestPreview}
           onAuthMode={openAuth}
           onShowPaywall={openPaywall}
+          onDiamondProfileUpdated={setDiamondProfile}
+        />
+      );
+    }
+    if (currentRoute === "/app/diamond") {
+      return (
+        <DiamondPage
+          diamondProfile={diamondProfile}
+          onNavigate={navigate}
+          onMessage={setMessage}
+          onDiamondProfileUpdated={setDiamondProfile}
         />
       );
     }
@@ -1402,6 +1460,7 @@ function App() {
         access={access}
         isMenuOpen={isMenuOpen}
         profile={profile}
+        diamondProfile={diamondProfile}
         onNavigate={navigate}
         onPremiumCheckout={openPaywall}
         onMenu={() => setIsMenuOpen((current) => !current)}
@@ -1413,7 +1472,7 @@ function App() {
         {page}
       </main>
 
-      {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} onNavigate={navigate} /> : null}
+      {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} diamondProfile={diamondProfile} onNavigate={navigate} /> : null}
       <InstallAppButton
         showHelp={showInstallHelp}
         isInstalled={isInstalledApp}
@@ -1434,6 +1493,7 @@ function TopBar({
   access,
   isMenuOpen,
   profile,
+  diamondProfile,
   onNavigate,
   onPremiumCheckout,
   onMenu,
@@ -1444,6 +1504,7 @@ function TopBar({
   access: ReturnType<typeof useAccess>;
   isMenuOpen: boolean;
   profile: ProfileRow | null;
+  diamondProfile: DiamondProfile | null;
   onNavigate: (route: AppRoute) => void;
   onPremiumCheckout: () => void;
   onMenu: () => void;
@@ -1451,6 +1512,7 @@ function TopBar({
 }) {
   const isPublicShell = publicRoutes.has(currentRoute);
   const isPremiumPage = currentRoute === "/premium";
+  const isDiamondActive = diamondProfile?.status === "active";
   const marketingLinks: Array<{ to: AppRoute; label: string; tone?: "primary" | "secondary" }> = isLoggedIn
     ? access.canUsePremiumFeature()
       ? [{ to: "/app", label: "Buka PKSK Academy", tone: "primary" }]
@@ -1516,7 +1578,11 @@ function TopBar({
                 if (item.adminOnly && !access.isAdmin) {
                   return null;
                 }
+                if (item.diamondOnly && !isDiamondActive) {
+                  return null;
+                }
                 const isBonusNav = item.to === "/app/bonus";
+                const isDiamondNav = item.to === "/app/diamond";
                 const isActive = currentRoute === item.to;
                 return (
                   <button
@@ -1528,6 +1594,10 @@ function TopBar({
                         ? isActive
                           ? "topbar-nav-button--bonus-active"
                           : "topbar-nav-button--bonus"
+                        : isDiamondNav
+                          ? isActive
+                            ? "topbar-nav-button--diamond-active"
+                            : "topbar-nav-button--diamond"
                         : isActive
                           ? "topbar-nav-button--active"
                           : "topbar-nav-button--idle"
@@ -1635,7 +1705,11 @@ function TopBar({
                   if (item.adminOnly && !access.isAdmin) {
                     return null;
                   }
+                  if (item.diamondOnly && !isDiamondActive) {
+                    return null;
+                  }
                   const isBonusNav = item.to === "/app/bonus";
+                  const isDiamondNav = item.to === "/app/diamond";
                   return (
                     <button
                       key={item.to}
@@ -1646,6 +1720,10 @@ function TopBar({
                           ? currentRoute === item.to
                             ? "bg-gradient-to-r from-amber-100 to-ocean-50 text-amber-800"
                             : "bg-amber-50 text-amber-800"
+                          : isDiamondNav
+                            ? currentRoute === item.to
+                              ? "bg-slate-900 text-white"
+                              : "bg-slate-950 text-cyan-100"
                           : currentRoute === item.to
                             ? "bg-ocean-50 text-ocean-700"
                             : "text-slate-600"
@@ -1679,18 +1757,24 @@ function BottomNav({
   currentRoute,
   isLoggedIn,
   access,
+  diamondProfile,
   onNavigate,
 }: {
   currentRoute: AppRoute;
   isLoggedIn: boolean;
   access: ReturnType<typeof useAccess>;
+  diamondProfile: DiamondProfile | null;
   onNavigate: (route: AppRoute) => void;
 }) {
+  const isDiamondActive = diamondProfile?.status === "active";
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur lg:hidden" aria-label="Navigasi bawah">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
         {bottomNavItems.map((item) => {
           const disabled = (item.authOnly && !isLoggedIn) || (item.premiumOnly && !access.canUsePremiumFeature()) || (item.adminOnly && !access.isAdmin);
+          if (item.diamondOnly && !isDiamondActive) {
+            return null;
+          }
           const isBonusNav = item.to === "/app/bonus";
           return (
             <button
@@ -2273,6 +2357,7 @@ function Dashboard({
   profileReady,
   performance,
   pendingPayment,
+  diamondProfile,
   questionBankCounts,
   activePayload,
   activeEssayPayload,
@@ -2284,6 +2369,7 @@ function Dashboard({
   onStartGuestPreview,
   onAuthMode,
   onShowPaywall,
+  onDiamondProfileUpdated,
 }: {
   isLoggedIn: boolean;
   access: ReturnType<typeof useAccess>;
@@ -2291,6 +2377,7 @@ function Dashboard({
   profileReady: boolean;
   performance: ReturnType<typeof calculatePerformance>;
   pendingPayment: PaymentRequest | null;
+  diamondProfile: DiamondProfile | null;
   questionBankCounts: QuestionBankCounts | null;
   activePayload: AttemptPayload | null;
   activeEssayPayload: EssayAttemptPayload | null;
@@ -2302,6 +2389,7 @@ function Dashboard({
   onStartGuestPreview: (section: "A" | "B") => void;
   onAuthMode: (mode: AuthMode) => void;
   onShowPaywall: () => void;
+  onDiamondProfileUpdated: (profile: DiamondProfile) => void;
 }) {
   const displayName = profile?.display_name ?? "Calon PKSK";
   const level = getLevelProgress(profile?.xp ?? 0);
@@ -2340,6 +2428,12 @@ function Dashboard({
                 <div className="h-3 overflow-hidden rounded-full bg-slate-200">
                   <div className="h-full rounded-full bg-ocean-600 transition-all" style={{ width: `${level.percentage}%` }} />
                 </div>
+                {diamondProfile?.status === "active" ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-cyan-100">
+                    <Gem size={15} aria-hidden="true" />
+                    Diamond Partner
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="flex max-w-[330px] flex-col gap-3 sm:max-w-none sm:flex-row">
@@ -2395,6 +2489,10 @@ function Dashboard({
             <QuestionBankDashboardCard counts={questionBankCounts} />
           </section>
 
+          {diamondProfile?.status !== "active" && diamondProfile?.status !== "suspended" ? (
+            <DiamondApplicationCard diamondProfile={diamondProfile} onApplied={onDiamondProfileUpdated} />
+          ) : null}
+
           <section className="grid gap-5 lg:grid-cols-3">
             <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan, kemudian Bahagian C." icon={ShieldCheck} onClick={() => onStartQuiz("full", null, 100)} />
             <ModeCard title="Pilih Bahagian" text="Pilih Bahagian A, B atau C untuk fokus." icon={Brain} onClick={() => onNavigate("/app/simulasi")} />
@@ -2407,6 +2505,430 @@ function Dashboard({
         </>
       ) : null}
     </div>
+  );
+}
+
+function DiamondApplicationCard({
+  diamondProfile,
+  onApplied,
+}: {
+  diamondProfile: DiamondProfile | null;
+  onApplied: (profile: DiamondProfile) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isPending = diamondProfile?.status === "pending";
+
+  if (isPending) {
+    return (
+      <section className="overflow-hidden rounded-2xl border border-cyan-100 bg-white shadow-soft">
+        <div className="grid gap-5 p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-950 text-cyan-100">
+            <Gem size={26} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Premium Diamond</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-950">Permohonan Diamond sedang disemak</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Permohonan anda telah diterima dan sedang menunggu kelulusan Admin.</p>
+          </div>
+          <span className="w-fit rounded-xl bg-sun-50 px-4 py-3 text-sm font-black text-amber-700">Pending Review</span>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="relative overflow-hidden rounded-2xl border border-cyan-100 bg-slate-950 p-6 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_70%_40%,rgba(34,211,238,0.30),transparent_34%),radial-gradient(circle_at_35%_75%,rgba(250,204,21,0.20),transparent_28%)] lg:block" aria-hidden="true" />
+        <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="flex min-w-0 gap-4">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-cyan-400/15 text-cyan-200 ring-1 ring-cyan-200/20">
+              <Gem size={27} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-black uppercase text-cyan-200">Premium Diamond</p>
+              <h2 className="mt-1 text-2xl font-black text-white">Sudah Premium? Jadi Diamond Partner.</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+                Kongsi PKSK Academy dan terima RM23 komisen bagi setiap pembelian Premium yang berjaya melalui link anda.
+              </p>
+            </div>
+          </div>
+          <button type="button" className="primary-button bg-cyan-500 text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.22)] hover:bg-cyan-300" onClick={() => setIsOpen(true)}>
+            Mohon Jadi Diamond Partner
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+      {isOpen ? <DiamondApplicationModal onClose={() => setIsOpen(false)} onApplied={(profile) => {
+        onApplied(profile);
+        setIsOpen(false);
+      }} /> : null}
+    </>
+  );
+}
+
+function DiamondApplicationModal({
+  onClose,
+  onApplied,
+}: {
+  onClose: () => void;
+  onApplied: (profile: DiamondProfile) => void;
+}) {
+  const [form, setForm] = useState<DiamondApplicationInput>({
+    bankAccountName: "",
+    bankName: "",
+    bankAccountNumber: "",
+    phone: "",
+    termsAccepted: false,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const profile = await applyForDiamond(form);
+      onApplied(profile);
+    } catch (submitError) {
+      setError(toMessage(submitError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/50 px-4 py-6">
+      <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Diamond Partner</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-950">Mohon Jadi Diamond Partner</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Komisen RM23 bagi setiap pembelian Premium yang sah. Komisen layak dibayar selepas 14 hari daripada tarikh pembayaran pembeli disahkan berjaya.
+            </p>
+          </div>
+          <button type="button" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100" onClick={onClose} aria-label="Tutup">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {error ? <p className="mt-4 rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{error}</p> : null}
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <Label text="Nama Pemegang Akaun">
+            <input className="field" value={form.bankAccountName} onChange={(event) => setForm((current) => ({ ...current, bankAccountName: event.target.value }))} required />
+          </Label>
+          <Label text="Nama Bank">
+            <input className="field" value={form.bankName} onChange={(event) => setForm((current) => ({ ...current, bankName: event.target.value }))} required />
+          </Label>
+          <Label text="Nombor Akaun Bank">
+            <input className="field" inputMode="numeric" value={form.bankAccountNumber} onChange={(event) => setForm((current) => ({ ...current, bankAccountNumber: event.target.value }))} required />
+          </Label>
+          <Label text="No. Telefon">
+            <input className="field" inputMode="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} required />
+          </Label>
+        </div>
+
+        <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold leading-6 text-slate-700">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0"
+            checked={form.termsAccepted}
+            onChange={(event) => setForm((current) => ({ ...current, termsAccepted: event.target.checked }))}
+            required
+          />
+          <span>Saya mengesahkan maklumat bank yang diberikan adalah betul dan bersetuju dengan syarat program Diamond Partner.</span>
+        </label>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <button type="submit" className="primary-button flex-1" disabled={busy}>
+            {busy ? "Menghantar..." : "Hantar Permohonan"}
+          </button>
+          <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>
+            Batal
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function DiamondPage({
+  diamondProfile,
+  onNavigate,
+  onMessage,
+  onDiamondProfileUpdated,
+}: {
+  diamondProfile: DiamondProfile | null;
+  onNavigate: (route: AppRoute) => void;
+  onMessage: (message: string | null) => void;
+  onDiamondProfileUpdated: (profile: DiamondProfile) => void;
+}) {
+  const [localProfile, setLocalProfile] = useState<DiamondProfile | null>(diamondProfile);
+  const [dashboard, setDashboard] = useState<DiamondDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadDiamond = useCallback(async () => {
+    setLoading(true);
+    try {
+      const nextProfile = await fetchMyDiamondProfile();
+      setLocalProfile(nextProfile);
+      onDiamondProfileUpdated(nextProfile);
+      if (nextProfile.status === "active") {
+        setDashboard(await fetchDiamondDashboard());
+      } else {
+        setDashboard(null);
+      }
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [onDiamondProfileUpdated, onMessage]);
+
+  useEffect(() => {
+    loadDiamond();
+  }, [loadDiamond]);
+
+  useEffect(() => {
+    setLocalProfile(diamondProfile);
+  }, [diamondProfile]);
+
+  if (loading) {
+    return <LoadingPage />;
+  }
+
+  if (!localProfile || localProfile.status === "not_agent") {
+    return (
+      <div className="space-y-6">
+        <PageHeader icon={Gem} title="Diamond Partner" text="Mohon sebagai Diamond Partner selepas akaun Premium aktif." />
+        <DiamondApplicationCard diamondProfile={localProfile} onApplied={(profile) => {
+          setLocalProfile(profile);
+          onDiamondProfileUpdated(profile);
+        }} />
+      </div>
+    );
+  }
+
+  if (localProfile.status === "pending") {
+    return (
+      <div className="space-y-6">
+        <PageHeader icon={Gem} title="Diamond Partner" text="Permohonan anda sedang disemak oleh Admin." />
+        <DiamondApplicationCard diamondProfile={localProfile} onApplied={onDiamondProfileUpdated} />
+      </div>
+    );
+  }
+
+  if (localProfile.status === "suspended") {
+    return (
+      <AccessDeniedPage
+        title="Akses Diamond Partner sedang digantung"
+        text="Akses Diamond Partner akaun ini sedang digantung. Akses Premium anda masih kekal aktif."
+        buttonLabel="Ke Dashboard"
+        buttonRoute="/app"
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  const data = dashboard ?? {
+    profile: localProfile,
+    stats: { total_clicks: 0, total_sales: 0, total_commission: 0, pending_14_days: 0, eligible: 0, paid: 0 },
+    commissions: [],
+  };
+
+  async function copyReferralLink() {
+    if (!data.profile.referral_link) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(data.profile.referral_link);
+      onMessage("Link referral Diamond telah disalin.");
+    } catch {
+      onMessage("Link belum dapat disalin secara automatik. Sila salin manual.");
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(34,211,238,0.25),transparent_30%),radial-gradient(circle_at_12%_85%,rgba(168,85,247,0.18),transparent_34%)]" aria-hidden="true" />
+        <div className="relative max-w-3xl">
+          <p className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm font-black text-cyan-100 ring-1 ring-white/10">
+            <Gem size={17} aria-hidden="true" />
+            Diamond Partner
+          </p>
+          <h1 className="mt-5 text-3xl font-black leading-tight sm:text-5xl">Kongsi PKSK Academy dan jana komisen.</h1>
+          <p className="mt-4 text-base leading-7 text-slate-200">
+            RM{data.profile.commission_amount.toFixed(0)} direkod untuk setiap pembelian Premium yang berjaya melalui referral anda, dengan tempoh hold 14 hari sebelum layak dibayar.
+          </p>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard icon={Users} label="Jumlah Klik" value={`${data.stats.total_clicks}`} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard icon={CheckCircle2} label="Jumlah Jualan" value={`${data.stats.total_sales}`} tone="bg-leaf-50 text-leaf-600" />
+        <StatCard icon={CreditCard} label="Komisen" value={formatCurrency(data.stats.total_commission, "MYR")} tone="bg-sun-50 text-amber-700" />
+        <StatCard icon={Clock3} label="Menunggu 14 Hari" value={formatCurrency(data.stats.pending_14_days, "MYR")} tone="bg-slate-100 text-slate-700" />
+        <StatCard icon={Sparkles} label="Sedia Dibayar" value={formatCurrency(data.stats.eligible, "MYR")} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard icon={Trophy} label="Sudah Dibayar" value={formatCurrency(data.stats.paid, "MYR")} tone="bg-leaf-50 text-leaf-600" />
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <article className="rounded-2xl bg-white p-6 shadow-soft">
+          <p className="text-sm font-black uppercase text-ocean-700">Link Referral Anda</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">{data.profile.referral_code ?? "Belum tersedia"}</h2>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-black text-slate-700">
+            {data.profile.referral_link ?? "-"}
+          </div>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button type="button" className="primary-button" onClick={copyReferralLink} disabled={!data.profile.referral_link}>
+              <Copy size={17} aria-hidden="true" />
+              Salin Link
+            </button>
+            {data.profile.referral_link ? (
+              <a className="secondary-button" href={`https://wa.me/?text=${encodeURIComponent(`Jom cuba PKSK Academy Premium: ${data.profile.referral_link}`)}`} target="_blank" rel="noreferrer">
+                <MessageCircle size={17} aria-hidden="true" />
+                Kongsi WhatsApp
+              </a>
+            ) : null}
+          </div>
+        </article>
+
+        <DiamondBankInfoPanel profile={data.profile} onProfileUpdated={(profile) => {
+          setLocalProfile(profile);
+          onDiamondProfileUpdated(profile);
+          onMessage("Maklumat bank Diamond telah dikemas kini.");
+        }} />
+      </section>
+
+      <DiamondCommissionList commissions={data.commissions} />
+    </div>
+  );
+}
+
+function DiamondBankInfoPanel({
+  profile,
+  onProfileUpdated,
+}: {
+  profile: DiamondProfile;
+  onProfileUpdated: (profile: DiamondProfile) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [form, setForm] = useState({
+    bankAccountName: profile.bank_account_name ?? "",
+    bankName: profile.bank_name ?? "",
+    bankAccountNumber: "",
+    phone: profile.phone ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await updateMyDiamondBankInfo(form);
+      onProfileUpdated(updated);
+      setForm((current) => ({ ...current, bankAccountNumber: "" }));
+      setIsEditing(false);
+    } catch (submitError) {
+      setError(toMessage(submitError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="rounded-2xl bg-white p-6 shadow-soft">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-black uppercase text-ocean-700">Maklumat Pembayaran Komisen</p>
+          <h2 className="mt-2 text-xl font-black text-slate-950">{profile.bank_name ?? "Bank belum lengkap"}</h2>
+          <p className="mt-2 text-sm font-bold text-slate-600">{profile.bank_account_name ?? "-"}</p>
+          <p className="mt-1 text-sm font-black text-slate-900">{profile.bank_account_last4 ? `********${profile.bank_account_last4}` : "Nombor akaun disimpan dengan selamat"}</p>
+        </div>
+        <button type="button" className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700" onClick={() => setIsEditing((current) => !current)}>
+          {isEditing ? "Tutup" : "Update"}
+        </button>
+      </div>
+
+      {isEditing ? (
+        <form className="mt-5 grid gap-3" onSubmit={handleSubmit}>
+          {error ? <p className="rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{error}</p> : null}
+          <input className="field" value={form.bankAccountName} onChange={(event) => setForm((current) => ({ ...current, bankAccountName: event.target.value }))} placeholder="Nama pemegang akaun" required />
+          <input className="field" value={form.bankName} onChange={(event) => setForm((current) => ({ ...current, bankName: event.target.value }))} placeholder="Nama bank" required />
+          <input className="field" inputMode="numeric" value={form.bankAccountNumber} onChange={(event) => setForm((current) => ({ ...current, bankAccountNumber: event.target.value }))} placeholder="Nombor akaun penuh untuk kemas kini" required />
+          <input className="field" inputMode="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="No. telefon" required />
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? "Menyimpan..." : "Simpan Maklumat"}
+          </button>
+        </form>
+      ) : null}
+    </article>
+  );
+}
+
+function DiamondCommissionList({ commissions }: { commissions: AgentCommissionSummary[] }) {
+  return (
+    <section className="rounded-2xl bg-white p-6 shadow-soft">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase text-ocean-700">Commission List</p>
+          <h2 className="mt-1 text-2xl font-black text-slate-950">Komisen Diamond</h2>
+        </div>
+        <p className="text-sm font-bold text-slate-500">{commissions.length} rekod</p>
+      </div>
+
+      <div className="mt-5 hidden overflow-x-auto md:block">
+        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+            <tr>
+              {["Pembeli", "Tarikh Bayaran", "Komisen", "Layak Dibayar", "Status"].map((header) => (
+                <th key={header} className="px-4 py-3">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {commissions.map((commission) => (
+              <tr key={commission.id}>
+                <td className="px-4 py-3 font-black text-slate-900">{commission.buyer_name ?? commission.buyer_email_masked ?? "Pembeli"}</td>
+                <td className="px-4 py-3 text-slate-600">{formatShortDate(commission.payment_confirmed_at)}</td>
+                <td className="px-4 py-3 font-black text-slate-900">{formatCurrency(commission.amount, "MYR")}</td>
+                <td className="px-4 py-3 text-slate-600">{formatShortDate(commission.eligible_at)}</td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-xl px-3 py-2 text-xs font-black ${commissionStatusTone(commission.effective_status)}`}>{commissionStatusLabel(commission.effective_status)}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:hidden">
+        {commissions.map((commission) => (
+          <article key={commission.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-black text-slate-950">{commission.buyer_name ?? commission.buyer_email_masked ?? "Pembeli"}</h3>
+                <p className="mt-1 text-sm text-slate-500">{formatShortDate(commission.payment_confirmed_at)}</p>
+              </div>
+              <span className={`rounded-xl px-3 py-2 text-xs font-black ${commissionStatusTone(commission.effective_status)}`}>{commissionStatusLabel(commission.effective_status)}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Metric label="Komisen" value={formatCurrency(commission.amount, "MYR")} />
+              <Metric label="Layak" value={formatShortDate(commission.eligible_at)} />
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {commissions.length === 0 ? <p className="mt-5 rounded-2xl bg-slate-50 p-6 text-center text-sm font-bold text-slate-500">Belum ada komisen direkodkan.</p> : null}
+    </section>
   );
 }
 
@@ -3450,6 +3972,8 @@ function PaymentResultPage({
               provider_bill_code: returnTarget.billCode ?? null,
               provider_reference: verification.providerReference,
               external_reference: returnTarget.externalReference ?? null,
+              referral_code: null,
+              referral_agent_id: null,
               paid_at: verification.status === "paid" ? new Date().toISOString() : null,
               notes: null,
               created_at: new Date().toISOString(),
@@ -3587,6 +4111,7 @@ function AdminNav() {
     { to: "/admin/users", label: "Users" },
     { to: "/admin/subscriptions", label: "Subscriptions" },
     { to: "/admin/payment-requests", label: "Payment Requests" },
+    { to: "/admin/agents", label: "Diamond Partners" },
     { to: "/admin/questions", label: "Question Bank" },
     { to: "/admin/questions/import-history", label: "Import History" },
     { to: "/admin/settings", label: "System Settings" },
@@ -3681,6 +4206,7 @@ function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: App
       <section className="grid gap-5 md:grid-cols-3">
         <ModeCard title="Manage Users" text="Cari pengguna, buka akses premium dan block akaun." icon={Users} onClick={() => onNavigate("/admin/users")} />
         <ModeCard title="Payment Requests" text="Semak bayaran QR DuitNow dan approve Premium." icon={MessageCircle} onClick={() => onNavigate("/admin/payment-requests")} />
+        <ModeCard title="Diamond Partners" text="Approve permohonan, semak komisen dan tanda payout manual." icon={Gem} onClick={() => onNavigate("/admin/agents")} />
         <ModeCard title="Question Bank" text="Semak soalan aktif dan status bank soalan." icon={BookOpen} onClick={() => onNavigate("/admin/questions")} />
         <ModeCard title="System Settings" text="Semak had preview percuma dan pelan subscription." icon={ShieldCheck} onClick={() => onNavigate("/admin/settings")} />
       </section>
@@ -3851,6 +4377,295 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
         </section>
       ) : null}
     </AdminShell>
+  );
+}
+
+function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string | null) => void }) {
+  const [partners, setPartners] = useState<AdminDiamondPartnerRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<AgentStatus | "all">("pending");
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<AdminDiamondPartnerDetail | null>(null);
+
+  const loadPartners = useCallback(async () => {
+    try {
+      const nextPartners = await fetchAdminDiamondPartners(search, statusFilter);
+      setPartners(nextPartners);
+    } catch (error) {
+      onMessage(toMessage(error));
+    }
+  }, [onMessage, search, statusFilter]);
+
+  useEffect(() => {
+    loadPartners();
+  }, [loadPartners]);
+
+  async function runAction(agentId: string, action: () => Promise<void>, successMessage: string) {
+    setBusyAction(agentId);
+    onMessage(null);
+    try {
+      await action();
+      await loadPartners();
+      if (selectedDetail?.agent.id === agentId) {
+        setSelectedDetail(await fetchAdminDiamondPartner(agentId));
+      }
+      onMessage(successMessage);
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openDetail(agentId: string) {
+    setBusyAction(agentId);
+    onMessage(null);
+    try {
+      setSelectedDetail(await fetchAdminDiamondPartner(agentId));
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function markPaid(commission: AgentCommissionSummary) {
+    const confirmed = window.confirm(`Sahkan komisen ${formatCurrency(commission.amount, "MYR")} telah dibayar kepada Diamond Partner ini?`);
+    if (!confirmed || !selectedDetail) {
+      return;
+    }
+
+    setBusyAction(commission.id);
+    onMessage(null);
+    try {
+      await markAgentCommissionPaid(commission.id);
+      await loadPartners();
+      setSelectedDetail(await fetchAdminDiamondPartner(selectedDetail.agent.id));
+      onMessage("Komisen telah ditanda sebagai paid.");
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  const totalCount = partners[0]?.total_count ?? partners.length;
+
+  return (
+    <AdminShell title="Diamond Partners" text="Approve permohonan, semak referral dan urus payout komisen manual.">
+      <section className="rounded-2xl bg-white p-5 shadow-soft">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
+          <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama, e-mel, bank atau referral code" />
+          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AgentStatus | "all")}>
+            <option value="pending">Pending</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="not_agent">Rejected</option>
+            <option value="all">All</option>
+          </select>
+          <button type="button" className="secondary-button" onClick={loadPartners}>
+            Search
+          </button>
+        </div>
+        <p className="mt-4 border-t border-slate-100 pt-4 text-sm font-bold text-slate-500">{totalCount} Diamond Partner ditemui</p>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+              <tr>
+                {["Nama", "Email", "Referral", "Status", "Jualan", "Total", "Eligible", "Paid", "Bank", "Created", "Actions"].map((header) => (
+                  <th key={header} className="px-4 py-3">{header}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {partners.map((partner) => (
+                <tr key={partner.id} className="align-top">
+                  <td className="px-4 py-3 font-black text-slate-900">{partner.name ?? "User"}</td>
+                  <td className="px-4 py-3 text-slate-600">{partner.email ?? "-"}</td>
+                  <td className="px-4 py-3 font-black text-ocean-700">{partner.referral_code ?? "-"}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-xl px-3 py-2 text-xs font-black ${diamondStatusTone(partner.status)}`}>{diamondStatusLabel(partner.status)}</span>
+                  </td>
+                  <td className="px-4 py-3 font-black text-slate-900">{partner.total_sales}</td>
+                  <td className="px-4 py-3 text-slate-700">{formatCurrency(partner.total_commission, "MYR")}</td>
+                  <td className="px-4 py-3 text-slate-700">{formatCurrency(partner.eligible_commission, "MYR")}</td>
+                  <td className="px-4 py-3 text-slate-700">{formatCurrency(partner.paid_commission, "MYR")}</td>
+                  <td className="px-4 py-3 text-slate-600">{partner.bank_name ?? "-"} {partner.bank_account_last4 ? `••••${partner.bank_account_last4}` : ""}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(partner.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex min-w-[220px] flex-wrap gap-2">
+                      <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-700" disabled={busyAction === partner.id} onClick={() => openDetail(partner.id)}>
+                        View
+                      </button>
+                      {partner.status === "pending" ? (
+                        <>
+                          <button type="button" className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => approveDiamondPartner(partner.id), "Diamond Partner telah diluluskan.")}>
+                            Approve
+                          </button>
+                          <button type="button" className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => rejectDiamondPartner(partner.id), "Permohonan Diamond ditolak.")}>
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
+                      {partner.status === "active" ? (
+                        <button type="button" className="rounded-lg bg-sun-50 px-3 py-2 text-xs font-black text-amber-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => suspendDiamondPartner(partner.id), "Diamond Partner digantung. Premium user tidak terjejas.")}>
+                          Suspend
+                        </button>
+                      ) : null}
+                      {partner.status === "suspended" ? (
+                        <button type="button" className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => reactivateDiamondPartner(partner.id), "Diamond Partner diaktifkan semula.")}>
+                          Reactivate
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {partners.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={11}>
+                    Tiada Diamond Partner untuk filter ini.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {selectedDetail ? (
+        <AdminDiamondPartnerModal
+          detail={selectedDetail}
+          busyAction={busyAction}
+          onClose={() => setSelectedDetail(null)}
+          onApprove={(agentId) => runAction(agentId, () => approveDiamondPartner(agentId), "Diamond Partner telah diluluskan.")}
+          onReject={(agentId) => runAction(agentId, () => rejectDiamondPartner(agentId), "Permohonan Diamond ditolak.")}
+          onSuspend={(agentId) => runAction(agentId, () => suspendDiamondPartner(agentId), "Diamond Partner digantung.")}
+          onReactivate={(agentId) => runAction(agentId, () => reactivateDiamondPartner(agentId), "Diamond Partner diaktifkan semula.")}
+          onMarkPaid={markPaid}
+        />
+      ) : null}
+    </AdminShell>
+  );
+}
+
+function AdminDiamondPartnerModal({
+  detail,
+  busyAction,
+  onClose,
+  onApprove,
+  onReject,
+  onSuspend,
+  onReactivate,
+  onMarkPaid,
+}: {
+  detail: AdminDiamondPartnerDetail;
+  busyAction: string | null;
+  onClose: () => void;
+  onApprove: (agentId: string) => void;
+  onReject: (agentId: string) => void;
+  onSuspend: (agentId: string) => void;
+  onReactivate: (agentId: string) => void;
+  onMarkPaid: (commission: AgentCommissionSummary) => void;
+}) {
+  const { agent } = detail;
+
+  return (
+    <section className="fixed inset-0 z-40 overflow-y-auto bg-slate-950/40 px-4 py-6">
+      <div className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-6 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Diamond Partner</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-950">{agent.name ?? agent.email ?? "User"}</h2>
+            <p className="mt-1 text-sm text-slate-500">{agent.email ?? "-"}</p>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose} aria-label="Tutup">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <SummaryPanel title="Status" value={diamondStatusLabel(agent.status)} />
+          <SummaryPanel title="Referral" value={agent.referral_code ?? "-"} />
+          <SummaryPanel title="Eligible" value={formatCurrency(agent.eligible_commission, "MYR")} />
+          <SummaryPanel title="Paid" value={formatCurrency(agent.paid_commission, "MYR")} />
+        </div>
+
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <h3 className="text-lg font-black text-slate-950">Maklumat Bank</h3>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Nama Akaun" value={agent.bank_account_name ?? "-"} />
+            <Metric label="Bank" value={agent.bank_name ?? "-"} />
+            <Metric label="Nombor Akaun" value={agent.bank_account_number ?? "-"} />
+            <Metric label="Telefon" value={agent.phone ?? "-"} />
+          </div>
+        </section>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {agent.status === "pending" ? (
+            <>
+              <button type="button" className="primary-button" disabled={busyAction === agent.id} onClick={() => onApprove(agent.id)}>Approve</button>
+              <button type="button" className="secondary-button border-coral-100 bg-coral-50 text-coral-600" disabled={busyAction === agent.id} onClick={() => onReject(agent.id)}>Reject</button>
+            </>
+          ) : null}
+          {agent.status === "active" ? (
+            <button type="button" className="secondary-button border-amber-100 bg-sun-50 text-amber-700" disabled={busyAction === agent.id} onClick={() => onSuspend(agent.id)}>Suspend</button>
+          ) : null}
+          {agent.status === "suspended" ? (
+            <button type="button" className="primary-button" disabled={busyAction === agent.id} onClick={() => onReactivate(agent.id)}>Reactivate</button>
+          ) : null}
+        </div>
+
+        <section className="mt-6">
+          <h3 className="text-lg font-black text-slate-950">Komisen</h3>
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+              <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
+                <tr>
+                  {["Pembeli", "Bayaran", "Layak", "Jumlah", "Status", "Action"].map((header) => (
+                    <th key={header} className="px-4 py-3">{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {detail.commissions.map((commission) => (
+                  <tr key={commission.id}>
+                    <td className="px-4 py-3 font-black text-slate-900">{commission.buyer_name ?? commission.buyer_email_masked ?? "Pembeli"}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatShortDate(commission.payment_confirmed_at)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatShortDate(commission.eligible_at)}</td>
+                    <td className="px-4 py-3 font-black text-slate-900">{formatCurrency(commission.amount, "MYR")}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-xl px-3 py-2 text-xs font-black ${commissionStatusTone(commission.effective_status)}`}>{commissionStatusLabel(commission.effective_status)}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {commission.effective_status === "eligible" ? (
+                        <button type="button" className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600" disabled={busyAction === commission.id} onClick={() => onMarkPaid(commission)}>
+                          Mark Paid
+                        </button>
+                      ) : commission.effective_status === "paid" ? (
+                        <span className="text-xs font-bold text-slate-500">{formatShortDate(commission.paid_at)}</span>
+                      ) : (
+                        <span className="text-xs font-bold text-slate-500">Belum layak</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {detail.commissions.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={6}>
+                      Belum ada komisen.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -5899,6 +6714,46 @@ function paymentStatusTone(status: PaymentRequest["status"]): string {
     cancelled: "bg-slate-100 text-slate-500",
     rejected: "bg-coral-50 text-coral-600",
     expired: "bg-slate-100 text-slate-500",
+  };
+  return tones[status];
+}
+
+function diamondStatusLabel(status: AgentStatus): string {
+  const labels: Record<AgentStatus, string> = {
+    not_agent: "Rejected",
+    pending: "Pending",
+    active: "Active",
+    suspended: "Suspended",
+  };
+  return labels[status];
+}
+
+function diamondStatusTone(status: AgentStatus): string {
+  const tones: Record<AgentStatus, string> = {
+    not_agent: "bg-slate-100 text-slate-600",
+    pending: "bg-sun-50 text-amber-700",
+    active: "bg-leaf-50 text-leaf-600",
+    suspended: "bg-coral-50 text-coral-600",
+  };
+  return tones[status];
+}
+
+function commissionStatusLabel(status: AgentCommissionSummary["effective_status"]): string {
+  const labels: Record<AgentCommissionSummary["effective_status"], string> = {
+    pending_14_days: "Menunggu 14 Hari",
+    eligible: "Sedia Dibayar",
+    paid: "Sudah Dibayar",
+    cancelled: "Cancelled",
+  };
+  return labels[status];
+}
+
+function commissionStatusTone(status: AgentCommissionSummary["effective_status"]): string {
+  const tones: Record<AgentCommissionSummary["effective_status"], string> = {
+    pending_14_days: "bg-sun-50 text-amber-700",
+    eligible: "bg-ocean-50 text-ocean-700",
+    paid: "bg-leaf-50 text-leaf-600",
+    cancelled: "bg-slate-100 text-slate-500",
   };
   return tones[status];
 }

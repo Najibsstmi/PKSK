@@ -23,6 +23,7 @@ type CheckoutCustomerPayload = {
 
 type CreateBillPayload = {
   customer?: CheckoutCustomerPayload;
+  referralCode?: string;
 };
 
 type PaymentProfile = {
@@ -39,6 +40,11 @@ type CheckoutUser = {
   email: string;
   displayName: string;
   phone: string;
+};
+
+type ReferralAttribution = {
+  agentId: string | null;
+  referralCode: string | null;
 };
 
 serve(async (request) => {
@@ -64,6 +70,7 @@ serve(async (request) => {
     const checkoutUser = authenticatedUser
       ? await resolveAuthenticatedCheckoutUser(serviceClient, authenticatedUser, requestPayload.customer)
       : await resolveGuestCheckoutUser(serviceClient, requestPayload.customer);
+    const referralAttribution = await resolveReferralAttribution(serviceClient, checkoutUser.id, requestPayload.referralCode);
 
     const externalReference = `PKSK-${checkoutUser.id}-${Date.now()}`;
     const callbackUrl = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/toyyibpay-callback`;
@@ -79,6 +86,8 @@ serve(async (request) => {
         provider: "toyyibpay",
         payment_method: "toyyibpay",
         external_reference: externalReference,
+        referral_code: referralAttribution.referralCode,
+        referral_agent_id: referralAttribution.agentId,
         notes: authenticatedUser ? "ToyyibPay online banking" : "ToyyibPay checkout with customer signup",
       })
       .select("id")
@@ -176,6 +185,42 @@ async function readRequestPayload(request: Request): Promise<CreateBillPayload> 
   } catch {
     return {};
   }
+}
+
+async function resolveReferralAttribution(
+  serviceClient: ReturnType<typeof createClient>,
+  userId: string,
+  referralCode?: string,
+): Promise<ReferralAttribution> {
+  const cleanCode = normalizeReferralCode(referralCode ?? "");
+
+  if (cleanCode) {
+    const { error } = await serviceClient.rpc("set_referral_attribution_for_user", {
+      p_user_id: userId,
+      p_referral_code: cleanCode,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  const { data, error } = await serviceClient
+    .from("affiliate_referrals")
+    .select("agent_id,referral_code")
+    .eq("referred_user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    agentId: data?.agent_id ? String(data.agent_id) : null,
+    referralCode: data?.referral_code ? String(data.referral_code) : null,
+  };
 }
 
 async function getAuthenticatedUser(supabaseUrl: string, anonKey: string, authHeader: string): Promise<AuthUser | null> {
@@ -341,6 +386,11 @@ function cleanPhone(value: string): string {
     return `6${digits}`;
   }
   return digits;
+}
+
+function normalizeReferralCode(value: string): string | null {
+  const code = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return code || null;
 }
 
 function statusForErrorMessage(message: string): number {

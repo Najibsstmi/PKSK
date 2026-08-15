@@ -15,6 +15,8 @@ export type PaymentRequest = {
   provider_bill_code: string | null;
   provider_reference: string | null;
   external_reference: string | null;
+  referral_code: string | null;
+  referral_agent_id: string | null;
   paid_at: string | null;
   notes: string | null;
   created_at: string;
@@ -48,6 +50,8 @@ export type CreatePaymentRequestResult = {
   status: PaymentRequestStatus;
   provider: string;
   payment_method: PaymentMethod;
+  referral_code: string | null;
+  referral_agent_id: string | null;
 };
 
 export type ToyyibPayBillResult = {

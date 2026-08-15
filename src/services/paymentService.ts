@@ -16,11 +16,14 @@ type PaymentProvider = {
   buildConfirmationUrl: (config: ManualPaymentConfig) => string;
 };
 
+const referralStorageKey = "pksk-referral-code";
+
 export const ManualPaymentService: PaymentProvider = {
   async createRequest(email) {
     const client = requireSupabase();
     const { data, error } = await client.rpc("create_manual_payment_request", {
       p_email: email?.trim() || null,
+      p_referral_code: getStoredReferralCode(),
     });
 
     if (error) {
@@ -64,13 +67,15 @@ export const ToyyibPayService = {
       throw new Error("Sesi log masuk belum bersedia. Sila log masuk semula atau isi maklumat pelanggan.");
     }
 
+    const referralCode = getStoredReferralCode();
+    const body = {
+      ...(customer ? { customer } : {}),
+      ...(referralCode ? { referralCode } : {}),
+    };
+
     const { data, error } = await client.functions.invoke("create-toyyibpay-bill", {
       headers,
-      body: customer
-        ? {
-            customer,
-          }
-        : {},
+      body,
     });
 
     if (error) {
@@ -116,6 +121,47 @@ export const ToyyibPayService = {
     };
   },
 };
+
+export function captureReferralCodeFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const referralCode = normalizeReferralCode(params.get("ref"));
+  if (!referralCode) {
+    return getStoredReferralCode();
+  }
+
+  const existingCode = getStoredReferralCode();
+  if (existingCode) {
+    return existingCode;
+  }
+
+  window.localStorage.setItem(referralStorageKey, referralCode);
+  return referralCode;
+}
+
+export function getStoredReferralCode(): string | null {
+  return normalizeReferralCode(window.localStorage.getItem(referralStorageKey));
+}
+
+export async function rememberStoredReferralAttribution(): Promise<void> {
+  const referralCode = getStoredReferralCode();
+  if (!referralCode) {
+    return;
+  }
+
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("remember_my_referral_attribution", {
+    p_referral_code: referralCode,
+  });
+
+  if (error) {
+    throw new Error(mapPaymentMessage(error.message));
+  }
+
+  const payload = data as Partial<{ attributed: boolean; reason: string }> | null;
+  if (payload?.attributed === false && payload.reason) {
+    window.localStorage.removeItem(referralStorageKey);
+  }
+}
 
 async function prepareCheckoutAccount(customer: ToyyibPayCustomerInput): Promise<void> {
   const client = requireSupabase();
@@ -231,6 +277,8 @@ function normalizePaymentCreateResult(payload: Partial<CreatePaymentRequestResul
     status: normalizePaymentStatus(payload.status),
     provider: String(payload.provider ?? "manual_qr"),
     payment_method: String(payload.payment_method ?? payload.provider ?? "manual_qr"),
+    referral_code: payload.referral_code ? String(payload.referral_code) : null,
+    referral_agent_id: payload.referral_agent_id ? String(payload.referral_agent_id) : null,
   };
 }
 
@@ -247,6 +295,8 @@ function normalizePaymentRequest(payload: Partial<PaymentRequest>): PaymentReque
     provider_bill_code: payload.provider_bill_code ? String(payload.provider_bill_code) : null,
     provider_reference: payload.provider_reference ? String(payload.provider_reference) : null,
     external_reference: payload.external_reference ? String(payload.external_reference) : null,
+    referral_code: payload.referral_code ? String(payload.referral_code) : null,
+    referral_agent_id: payload.referral_agent_id ? String(payload.referral_agent_id) : null,
     paid_at: payload.paid_at ? String(payload.paid_at) : null,
     notes: payload.notes ? String(payload.notes) : null,
     created_at: String(payload.created_at ?? new Date().toISOString()),
@@ -266,6 +316,11 @@ function normalizeAdminPaymentRequest(payload: Partial<AdminPaymentRequestRow>):
 
 function normalizePaymentStatus(status: unknown): PaymentRequestStatus {
   return status === "approved" || status === "rejected" || status === "expired" || status === "paid" || status === "failed" || status === "cancelled" ? status : "pending";
+}
+
+function normalizeReferralCode(value: string | null): string | null {
+  const code = value?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? "";
+  return code || null;
 }
 
 function normalizeWhatsAppNumber(phoneNumber: string): string {

@@ -161,6 +161,8 @@ export type PaymentRequestRow = {
   provider_bill_code: string | null;
   provider_reference: string | null;
   external_reference: string | null;
+  referral_code: string | null;
+  referral_agent_id: string | null;
   paid_at: string | null;
   provider_response: Json;
   notes: string | null;
@@ -168,6 +170,50 @@ export type PaymentRequestRow = {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type AgentRow = {
+  id: string;
+  user_id: string;
+  referral_code: string | null;
+  status: "not_agent" | "pending" | "active" | "suspended";
+  bank_account_name: string | null;
+  bank_name: string | null;
+  bank_account_number: string | null;
+  phone: string | null;
+  commission_amount: number;
+  approved_at: string | null;
+  approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AffiliateReferralRow = {
+  id: string;
+  agent_id: string;
+  referred_user_id: string;
+  referral_code: string;
+  created_at: string;
+};
+
+export type AgentCommissionRow = {
+  id: string;
+  agent_id: string;
+  buyer_user_id: string;
+  payment_request_id: string;
+  amount: number;
+  status: "pending_14_days" | "eligible" | "paid" | "cancelled";
+  payment_confirmed_at: string;
+  eligible_at: string;
+  paid_at: string | null;
+  created_at: string;
+};
+
+export type AgentReferralClickRow = {
+  id: string;
+  agent_id: string;
+  referral_code: string;
+  clicked_at: string;
 };
 
 export type Database = {
@@ -262,6 +308,30 @@ export type Database = {
         Row: PaymentRequestRow;
         Insert: Partial<PaymentRequestRow>;
         Update: Partial<PaymentRequestRow>;
+        Relationships: [];
+      };
+      agents: {
+        Row: AgentRow;
+        Insert: Partial<AgentRow>;
+        Update: Partial<AgentRow>;
+        Relationships: [];
+      };
+      affiliate_referrals: {
+        Row: AffiliateReferralRow;
+        Insert: Partial<AffiliateReferralRow>;
+        Update: Partial<AffiliateReferralRow>;
+        Relationships: [];
+      };
+      agent_commissions: {
+        Row: AgentCommissionRow;
+        Insert: Partial<AgentCommissionRow>;
+        Update: Partial<AgentCommissionRow>;
+        Relationships: [];
+      };
+      agent_referral_clicks: {
+        Row: AgentReferralClickRow;
+        Insert: Partial<AgentReferralClickRow>;
+        Update: Partial<AgentReferralClickRow>;
         Relationships: [];
       };
     };
@@ -377,6 +447,91 @@ export type Database = {
       create_manual_payment_request: {
         Args: {
           p_email?: string | null;
+          p_referral_code?: string | null;
+        };
+        Returns: Json;
+      };
+      remember_my_referral_attribution: {
+        Args: {
+          p_referral_code: string;
+        };
+        Returns: Json;
+      };
+      track_referral_click: {
+        Args: {
+          p_referral_code: string;
+        };
+        Returns: Json;
+      };
+      get_my_diamond_profile: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      apply_for_diamond: {
+        Args: {
+          p_bank_account_name: string;
+          p_bank_name: string;
+          p_bank_account_number: string;
+          p_phone: string;
+          p_terms_accepted: boolean;
+        };
+        Returns: Json;
+      };
+      update_my_diamond_bank_info: {
+        Args: {
+          p_bank_account_name: string;
+          p_bank_name: string;
+          p_bank_account_number: string;
+          p_phone: string;
+        };
+        Returns: Json;
+      };
+      get_my_diamond_dashboard: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_list_diamond_partners: {
+        Args: {
+          search_text?: string | null;
+          status_filter?: string | null;
+          page_number?: number;
+          page_size?: number;
+        };
+        Returns: Json;
+      };
+      admin_get_diamond_partner: {
+        Args: {
+          p_agent_id: string;
+        };
+        Returns: Json;
+      };
+      admin_approve_diamond_partner: {
+        Args: {
+          p_agent_id: string;
+        };
+        Returns: Json;
+      };
+      admin_reject_diamond_partner: {
+        Args: {
+          p_agent_id: string;
+        };
+        Returns: Json;
+      };
+      admin_suspend_diamond_partner: {
+        Args: {
+          p_agent_id: string;
+        };
+        Returns: Json;
+      };
+      admin_reactivate_diamond_partner: {
+        Args: {
+          p_agent_id: string;
+        };
+        Returns: Json;
+      };
+      admin_mark_agent_commission_paid: {
+        Args: {
+          p_commission_id: string;
         };
         Returns: Json;
       };

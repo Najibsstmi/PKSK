@@ -418,6 +418,21 @@ a {
     box-shadow: 0 12px 26px rgba(245, 158, 11, 0.16);
   }
 
+  .topbar-nav-button--diamond {
+    border-color: rgba(34, 211, 238, 0.2);
+    background: linear-gradient(135deg, #0f172a 0%, #164e63 100%);
+    color: #cffafe;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.14);
+  }
+
+  .topbar-nav-button--diamond:hover,
+  .topbar-nav-button--diamond-active {
+    border-color: rgba(34, 211, 238, 0.38);
+    background: linear-gradient(135deg, #020617 0%, #0e7490 100%);
+    color: #ffffff;
+    box-shadow: 0 14px 30px rgba(8, 145, 178, 0.22);
+  }
+
   .topbar-account-button {
     display: inline-flex;
     height: 42px;
