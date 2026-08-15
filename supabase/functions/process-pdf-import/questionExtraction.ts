@@ -320,14 +320,17 @@ function parseObjectiveQuestions(section: "A" | "B", lines: string[], answers: R
     }
 
     const questionMatch = line.match(/^(\d{1,3})[\.)]\s*(.+)$/);
+    const labelledQuestionMatch = line.match(/^soalan\s+(\d{1,3})(?:[\s:.-]+(.+))?$/i);
     const optionMatch = line.match(/^([A-D])[\.)]\s*(.+)$/i);
 
-    if (questionMatch) {
+    if (questionMatch || labelledQuestionMatch) {
       flushQuestion();
+      const number = questionMatch?.[1] ?? labelledQuestionMatch?.[1] ?? "";
+      const text = questionMatch?.[2] ?? labelledQuestionMatch?.[2] ?? "";
       current = {
-        number: questionMatch[1],
+        number,
         section,
-        questionParts: [questionMatch[2]],
+        questionParts: text ? [text] : [],
         options: [],
       };
       continue;
@@ -443,7 +446,12 @@ function categoryFor(section: "A" | "B", number: number, questionText: string): 
 }
 
 function shouldIgnoreLine(line: string): boolean {
-  return HEADER_PATTERNS.some((pattern) => pattern.test(line)) || /soalan\s+objektif/i.test(line);
+  return (
+    HEADER_PATTERNS.some((pattern) => pattern.test(line)) ||
+    /soalan\s+objektif/i.test(line) ||
+    /^\d+\s*\|\s*page$/i.test(line) ||
+    /^t\.me\//i.test(line)
+  );
 }
 
 function buildWarning(questions: ExtractedQuestion[], extractedText: string, sourceName: string): string | null {
