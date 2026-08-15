@@ -4387,9 +4387,9 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<AdminDiamondPartnerDetail | null>(null);
 
-  const loadPartners = useCallback(async () => {
+  const loadPartners = useCallback(async (nextStatusFilter: AgentStatus | "all" = statusFilter) => {
     try {
-      const nextPartners = await fetchAdminDiamondPartners(search, statusFilter);
+      const nextPartners = await fetchAdminDiamondPartners(search, nextStatusFilter);
       setPartners(nextPartners);
     } catch (error) {
       onMessage(toMessage(error));
@@ -4400,12 +4400,16 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
     loadPartners();
   }, [loadPartners]);
 
-  async function runAction(agentId: string, action: () => Promise<void>, successMessage: string) {
+  async function runAction(agentId: string, action: () => Promise<void>, successMessage: string, nextStatusFilter?: AgentStatus | "all") {
     setBusyAction(agentId);
     onMessage(null);
     try {
       await action();
-      await loadPartners();
+      const targetFilter = statusFilter === "all" ? "all" : (nextStatusFilter ?? statusFilter);
+      if (targetFilter !== statusFilter) {
+        setStatusFilter(targetFilter);
+      }
+      await loadPartners(targetFilter);
       if (selectedDetail?.agent.id === agentId) {
         setSelectedDetail(await fetchAdminDiamondPartner(agentId));
       }
@@ -4463,7 +4467,7 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
             <option value="not_agent">Rejected</option>
             <option value="all">All</option>
           </select>
-          <button type="button" className="secondary-button" onClick={loadPartners}>
+          <button type="button" className="secondary-button" onClick={() => loadPartners()}>
             Search
           </button>
         </div>
@@ -4502,21 +4506,21 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
                       </button>
                       {partner.status === "pending" ? (
                         <>
-                          <button type="button" className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => approveDiamondPartner(partner.id), "Diamond Partner telah diluluskan.")}>
+                          <button type="button" className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => approveDiamondPartner(partner.id), "Diamond Partner telah diluluskan.", "active")}>
                             Approve
                           </button>
-                          <button type="button" className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => rejectDiamondPartner(partner.id), "Permohonan Diamond ditolak.")}>
+                          <button type="button" className="rounded-lg bg-coral-50 px-3 py-2 text-xs font-black text-coral-600" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => rejectDiamondPartner(partner.id), "Permohonan Diamond ditolak.", "not_agent")}>
                             Reject
                           </button>
                         </>
                       ) : null}
                       {partner.status === "active" ? (
-                        <button type="button" className="rounded-lg bg-sun-50 px-3 py-2 text-xs font-black text-amber-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => suspendDiamondPartner(partner.id), "Diamond Partner digantung. Premium user tidak terjejas.")}>
+                        <button type="button" className="rounded-lg bg-sun-50 px-3 py-2 text-xs font-black text-amber-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => suspendDiamondPartner(partner.id), "Diamond Partner digantung. Premium user tidak terjejas.", "suspended")}>
                           Suspend
                         </button>
                       ) : null}
                       {partner.status === "suspended" ? (
-                        <button type="button" className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => reactivateDiamondPartner(partner.id), "Diamond Partner diaktifkan semula.")}>
+                        <button type="button" className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700" disabled={busyAction === partner.id} onClick={() => runAction(partner.id, () => reactivateDiamondPartner(partner.id), "Diamond Partner diaktifkan semula.", "active")}>
                           Reactivate
                         </button>
                       ) : null}
@@ -4527,7 +4531,7 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
               {partners.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={11}>
-                    Tiada Diamond Partner untuk filter ini.
+                    {diamondEmptyMessage(statusFilter)}
                   </td>
                 </tr>
               ) : null}
@@ -4541,10 +4545,10 @@ function AdminDiamondPartnersPage({ onMessage }: { onMessage: (message: string |
           detail={selectedDetail}
           busyAction={busyAction}
           onClose={() => setSelectedDetail(null)}
-          onApprove={(agentId) => runAction(agentId, () => approveDiamondPartner(agentId), "Diamond Partner telah diluluskan.")}
-          onReject={(agentId) => runAction(agentId, () => rejectDiamondPartner(agentId), "Permohonan Diamond ditolak.")}
-          onSuspend={(agentId) => runAction(agentId, () => suspendDiamondPartner(agentId), "Diamond Partner digantung.")}
-          onReactivate={(agentId) => runAction(agentId, () => reactivateDiamondPartner(agentId), "Diamond Partner diaktifkan semula.")}
+          onApprove={(agentId) => runAction(agentId, () => approveDiamondPartner(agentId), "Diamond Partner telah diluluskan.", "active")}
+          onReject={(agentId) => runAction(agentId, () => rejectDiamondPartner(agentId), "Permohonan Diamond ditolak.", "not_agent")}
+          onSuspend={(agentId) => runAction(agentId, () => suspendDiamondPartner(agentId), "Diamond Partner digantung.", "suspended")}
+          onReactivate={(agentId) => runAction(agentId, () => reactivateDiamondPartner(agentId), "Diamond Partner diaktifkan semula.", "active")}
           onMarkPaid={markPaid}
         />
       ) : null}
@@ -6736,6 +6740,22 @@ function diamondStatusTone(status: AgentStatus): string {
     suspended: "bg-coral-50 text-coral-600",
   };
   return tones[status];
+}
+
+function diamondEmptyMessage(status: AgentStatus | "all"): string {
+  if (status === "pending") {
+    return "Tiada permohonan pending. Diamond Partner yang sudah approve ada di filter Active.";
+  }
+  if (status === "active") {
+    return "Belum ada Diamond Partner active untuk filter ini.";
+  }
+  if (status === "suspended") {
+    return "Tiada Diamond Partner yang sedang digantung.";
+  }
+  if (status === "not_agent") {
+    return "Tiada permohonan Diamond yang ditolak.";
+  }
+  return "Tiada Diamond Partner ditemui untuk carian ini.";
 }
 
 function commissionStatusLabel(status: AgentCommissionSummary["effective_status"]): string {
