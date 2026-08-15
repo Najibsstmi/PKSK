@@ -61,6 +61,7 @@ type UnicodeMap = {
 };
 
 const MAX_EXTRACTED_QUESTIONS = 500;
+const PDF_WORD_GAP_THRESHOLD = -120;
 const HEADER_PATTERNS = [
   /^bahagian\s+[abc]\b/i,
   /^jawapan\b/i,
@@ -306,9 +307,9 @@ function extractTextOperators(content: string, unicodeMaps: UnicodeMap[], fontMa
     const activeMap = activeFont ? fontMaps.get(activeFont) ?? null : null;
 
     if (match[2] !== undefined) {
-      const parts = extractPdfStrings(match[2] ?? "", unicodeMaps, activeMap);
-      if (parts.length > 0) {
-        output.push(parts.join(""));
+      const part = decodePdfArrayText(match[2] ?? "", unicodeMaps, activeMap);
+      if (part) {
+        output.push(part);
       }
       continue;
     }
@@ -324,17 +325,53 @@ function extractTextOperators(content: string, unicodeMaps: UnicodeMap[], fontMa
   return output.join("\n");
 }
 
-function extractPdfStrings(arrayContent: string, unicodeMaps: UnicodeMap[], activeMap: UnicodeMap | null): string[] {
+function decodePdfArrayText(arrayContent: string, unicodeMaps: UnicodeMap[], activeMap: UnicodeMap | null): string {
   const parts: string[] = [];
-  const tokenRegex = /\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>/g;
+  const tokenRegex = /\((?:\\.|[^\\()])*\)|<[\dA-Fa-f\s]+>|-?\d*\.?\d+/g;
   let match: RegExpExecArray | null;
+  let shouldInsertSpace = false;
+
   while ((match = tokenRegex.exec(arrayContent))) {
-    const decoded = decodePdfToken(match[0], unicodeMaps, activeMap);
+    const token = match[0];
+
+    if (!token.startsWith("(") && !token.startsWith("<")) {
+      const spacingAdjustment = Number(token);
+      if (Number.isFinite(spacingAdjustment) && spacingAdjustment <= PDF_WORD_GAP_THRESHOLD) {
+        shouldInsertSpace = true;
+      }
+      continue;
+    }
+
+    const decoded = decodePdfToken(token, unicodeMaps, activeMap);
     if (decoded) {
+      if (shouldInsertSpace && shouldSeparatePdfText(parts.join(""), decoded)) {
+        parts.push(" ");
+      }
       parts.push(decoded);
+      shouldInsertSpace = false;
     }
   }
-  return parts;
+
+  return normalizeText(parts.join(""));
+}
+
+function shouldSeparatePdfText(left: string, right: string): boolean {
+  const leftChar = left.match(/\S(?=\s*$)/)?.[0] ?? "";
+  const rightChar = right.match(/\S/)?.[0] ?? "";
+
+  if (!leftChar || !rightChar) {
+    return false;
+  }
+
+  if (/[\s([{/\\-]/.test(leftChar) || /[\s.,;:?!%)]/.test(rightChar)) {
+    return false;
+  }
+
+  if (/[.,;:?!]/.test(leftChar) && /[\p{L}\p{N}]/u.test(rightChar)) {
+    return true;
+  }
+
+  return /[\p{L}\p{N}]/u.test(leftChar) && /[\p{L}\p{N}]/u.test(rightChar);
 }
 
 function decodePdfToken(token: string, unicodeMaps: UnicodeMap[], activeMap: UnicodeMap | null): string {

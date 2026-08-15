@@ -4331,15 +4331,17 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
     }
   }
 
-  async function runImportAction(action: () => Promise<string | null | undefined | void>, successMessage: string) {
+  async function runImportAction(action: () => Promise<string | null | undefined | void>, successMessage: string): Promise<boolean> {
     setBusyAction(true);
     onMessage(null);
     try {
       const actionMessage = await action();
       await loadImport();
       onMessage(actionMessage || successMessage);
+      return true;
     } catch (error) {
       onMessage(toMessage(error));
+      return false;
     } finally {
       setBusyAction(false);
     }
@@ -5171,23 +5173,76 @@ function DraftReviewCard({
   draft: ImportedQuestionDraft;
   selected: boolean;
   onSelect: (checked: boolean) => void;
-  onSave: (draft: ImportedQuestionDraft) => Promise<void>;
-  onStatus: (status: DraftReviewStatus) => Promise<void>;
+  onSave: (draft: ImportedQuestionDraft) => Promise<boolean>;
+  onStatus: (status: DraftReviewStatus) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [localDraft, setLocalDraft] = useState(draft);
+  const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalDraft(draft);
   }, [draft]);
 
   const confidence = confidenceLevel(localDraft.confidence);
+  const editableOptionLabels = localDraft.options.map((option, index) => normalizeDraftOptionLabel(option, index)).filter(Boolean);
 
   function updateOption(index: number, value: string) {
     setLocalDraft((current) => ({
       ...current,
       options: current.options.map((option, optionIndex) => (optionIndex === index ? { ...option, option_text: value } : option)),
     }));
+  }
+
+  function updateCorrectLabel(label: string) {
+    const nextLabel = label.trim().toUpperCase() || null;
+    setLocalDraft((current) => ({
+      ...current,
+      correct_option_label: nextLabel,
+      options: current.options.map((option, index) => {
+        const optionLabel = normalizeDraftOptionLabel(option, index);
+        return {
+          ...option,
+          option_label: optionLabel,
+          is_correct: nextLabel ? optionLabel === nextLabel : false,
+        };
+      }),
+    }));
+  }
+
+  async function handleSaveDraft() {
+    const nextDraft = buildDraftSavePayload(localDraft);
+    if (!nextDraft.question_text.trim()) {
+      setSaveError("Soalan perlu diisi sebelum simpan.");
+      return;
+    }
+
+    if (
+      nextDraft.question_type === "objective" &&
+      nextDraft.correct_option_label &&
+      !nextDraft.options.some((option) => option.option_label === nextDraft.correct_option_label)
+    ) {
+      setSaveError("Jawapan mesti padan dengan label pilihan yang wujud.");
+      return;
+    }
+
+    setSaving(true);
+    setSaveNotice(null);
+    setSaveError(null);
+    try {
+      const saved = await onSave(nextDraft);
+      if (saved) {
+        setLocalDraft(nextDraft);
+        setSaveNotice("Disimpan");
+        setEditing(false);
+      } else {
+        setSaveError("Simpan gagal. Semak mesej sistem di atas dan cuba lagi.");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -5200,6 +5255,8 @@ function DraftReviewCard({
             <div className="mt-2 flex flex-wrap gap-2">
               <span className={`rounded-lg px-3 py-1 text-xs font-black ${confidenceTone(confidence)}`}>{confidence} confidence</span>
               <span className={`rounded-lg px-3 py-1 text-xs font-black ${draftStatusTone(localDraft.review_status)}`}>{draftStatusLabel(localDraft.review_status)}</span>
+              {saving ? <span className="rounded-lg bg-ocean-50 px-3 py-1 text-xs font-black text-ocean-700">Menyimpan...</span> : null}
+              {saveNotice ? <span className="rounded-lg bg-leaf-50 px-3 py-1 text-xs font-black text-leaf-600">{saveNotice}</span> : null}
               {draft.imported_question_id ? <span className="rounded-lg bg-leaf-50 px-3 py-1 text-xs font-black text-leaf-600">Imported</span> : null}
             </div>
           </div>
@@ -5258,7 +5315,14 @@ function DraftReviewCard({
               </select>
             </Label>
             <Label text="Jawapan">
-              <input className="field" value={localDraft.correct_option_label ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, correct_option_label: event.target.value.toUpperCase() })} />
+              <select className="field" value={localDraft.correct_option_label ?? ""} onChange={(event) => updateCorrectLabel(event.target.value)}>
+                <option value="">Tiada</option>
+                {editableOptionLabels.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </Label>
           </div>
           <Label text="Soalan">
@@ -5272,18 +5336,28 @@ function DraftReviewCard({
               <input className="field" value={localDraft.topic ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, topic: event.target.value })} />
             </Label>
           </div>
+          <Label text="Nota / explanation">
+            <textarea className="field" value={localDraft.explanation ?? ""} onChange={(event) => setLocalDraft({ ...localDraft, explanation: event.target.value })} placeholder="Optional. Contoh: Cadangan AI, sebab jawapan, atau nota semakan." />
+          </Label>
           {localDraft.question_type === "objective" ? (
             <div className="grid gap-3">
               {localDraft.options.map((option, index) => (
                 <div key={option.id ?? `${option.option_label}-${index}`} className="grid gap-2 sm:grid-cols-[64px_1fr]">
-                  <span className="grid h-12 place-items-center rounded-xl bg-white text-sm font-black text-slate-600">{option.option_label ?? optionLabels[index] ?? index + 1}</span>
+                  <span
+                    className={`grid h-12 place-items-center rounded-xl text-sm font-black ${
+                      option.is_correct ? "bg-leaf-50 text-leaf-700 ring-1 ring-leaf-100" : "bg-white text-slate-600"
+                    }`}
+                  >
+                    {option.option_label ?? optionLabels[index] ?? index + 1}
+                  </span>
                   <input className="field" value={option.option_text ?? ""} onChange={(event) => updateOption(index, event.target.value)} placeholder="Teks pilihan" />
                 </div>
               ))}
             </div>
           ) : null}
-          <button type="button" className="primary-button w-full sm:w-auto" onClick={() => onSave(localDraft)}>
-            Simpan Edit
+          {saveError ? <p className="rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{saveError}</p> : null}
+          <button type="button" className="primary-button w-full sm:w-auto" onClick={handleSaveDraft} disabled={saving || Boolean(draft.imported_question_id)}>
+            {saving ? "Menyimpan..." : "Simpan Edit"}
           </button>
         </div>
       ) : (
@@ -5298,6 +5372,11 @@ function DraftReviewCard({
                   {option.option_image_url ? <img src={option.option_image_url} alt="" className="mt-3 max-h-40 rounded-lg object-contain" /> : null}
                 </div>
               ))}
+            </div>
+          ) : null}
+          {localDraft.explanation ? (
+            <div className="mt-4 rounded-xl bg-sun-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">
+              <span className="font-black">Nota:</span> {localDraft.explanation}
             </div>
           ) : null}
           <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -5322,6 +5401,37 @@ function EmptyAdminPanel({ title, text }: { title: string; text: string }) {
 }
 
 const optionLabels = ["A", "B", "C", "D"];
+
+function buildDraftSavePayload(draft: ImportedQuestionDraft): ImportedQuestionDraft {
+  const correctLabel = draft.question_type === "objective" ? draft.correct_option_label?.trim().toUpperCase() || null : null;
+  const options = draft.options
+    .map((option, index) => {
+      const optionLabel = normalizeDraftOptionLabel(option, index);
+      return {
+        ...option,
+        option_label: optionLabel,
+        option_text: option.option_text?.trim() || null,
+        option_image_url: option.option_image_url?.trim() || null,
+        is_correct: correctLabel ? optionLabel === correctLabel : Boolean(option.is_correct),
+        sort_order: index + 1,
+      };
+    })
+    .filter((option) => option.option_text || option.option_image_url);
+
+  return {
+    ...draft,
+    question_text: draft.question_text.trim(),
+    category: draft.category?.trim() || null,
+    topic: draft.topic?.trim() || null,
+    explanation: draft.explanation?.trim() || null,
+    correct_option_label: correctLabel,
+    options,
+  };
+}
+
+function normalizeDraftOptionLabel(option: DraftOption, index: number): string {
+  return (option.option_label || optionLabels[index] || String.fromCharCode(65 + index)).trim().toUpperCase();
+}
 
 function defaultDraftOptions() {
   return optionLabels.map((label, index) => ({
