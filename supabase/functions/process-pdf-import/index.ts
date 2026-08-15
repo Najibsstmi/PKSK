@@ -55,32 +55,24 @@ serve(async (request) => {
       return json({ error: "ADMIN_REQUIRED" }, 403);
     }
 
-    const { data: importRow, error: importError } = await serviceClient
-      .from("question_imports")
-      .select("*")
-      .eq("id", importId)
-      .single();
+    const importLookup = await getImportRow(serviceClient, userClient, importId);
+    const importRow = importLookup.row;
+    const importClient = importLookup.source === "service" ? serviceClient : userClient;
 
-    if (importError || !importRow) {
+    if (!importRow) {
       return json({ error: "IMPORT_NOT_FOUND" }, 404);
     }
 
-    await markImport(serviceClient, importId, {
+    await markImport(importClient, importId, {
       status: "processing",
       processing_stage: "extracting_text",
       processing_error: null,
     });
 
-    const { data: fileBlob, error: downloadError } = await serviceClient.storage
-      .from("question-imports")
-      .download(importRow.storage_path);
-
-    if (downloadError || !fileBlob) {
-      throw new Error(downloadError?.message ?? "PDF could not be downloaded from storage.");
-    }
+    const fileBlob = await downloadImportPdf(importClient, serviceClient, importRow.storage_path);
 
     const pdfBytes = new Uint8Array(await fileBlob.arrayBuffer());
-    await markImport(serviceClient, importId, { processing_stage: "extracting_questions" });
+    await markImport(importClient, importId, { processing_stage: "extracting_questions" });
 
     const extraction = await extractQuestionsFromPdf({
       pdfBytes,
@@ -88,10 +80,10 @@ serve(async (request) => {
       sourceTitle: importRow.source_title,
     });
 
-    await serviceClient.from("imported_question_drafts").delete().eq("import_id", importId).is("imported_question_id", null);
-    await insertDrafts(serviceClient, importId, extraction.questions);
+    await importClient.from("imported_question_drafts").delete().eq("import_id", importId).is("imported_question_id", null);
+    await insertDrafts(importClient, importId, extraction.questions);
 
-    await markImport(serviceClient, importId, {
+    await markImport(importClient, importId, {
       status: extraction.questions.length > 0 ? "review" : "failed",
       processing_stage: extraction.questions.length > 0 ? "ready_for_review" : "no_questions_detected",
       total_detected: extraction.questions.length,
@@ -180,6 +172,42 @@ async function insertDrafts(serviceClient: ReturnType<typeof createClient>, impo
       }
     }
   }
+}
+
+async function getImportRow(serviceClient: ReturnType<typeof createClient>, userClient: ReturnType<typeof createClient>, importId: string) {
+  const columns = "id,uploaded_by,file_name,storage_path,source_title,status,processing_stage,total_detected,total_imported,processing_error,created_at,completed_at";
+  const serviceResult = await serviceClient.from("question_imports").select(columns).eq("id", importId).maybeSingle();
+  if (serviceResult.data) {
+    return { row: serviceResult.data, source: "service" as const };
+  }
+
+  const userResult = await userClient.from("question_imports").select(columns).eq("id", importId).maybeSingle();
+  if (userResult.data) {
+    return { row: userResult.data, source: "user" as const };
+  }
+
+  if (serviceResult.error && serviceResult.error.code !== "PGRST116") {
+    throw new Error(serviceResult.error.message);
+  }
+  if (userResult.error && userResult.error.code !== "PGRST116") {
+    throw new Error(userResult.error.message);
+  }
+
+  return { row: null, source: "none" as const };
+}
+
+async function downloadImportPdf(primaryClient: ReturnType<typeof createClient>, fallbackClient: ReturnType<typeof createClient>, storagePath: string) {
+  const primaryResult = await primaryClient.storage.from("question-imports").download(storagePath);
+  if (primaryResult.data) {
+    return primaryResult.data;
+  }
+
+  const fallbackResult = await fallbackClient.storage.from("question-imports").download(storagePath);
+  if (fallbackResult.data) {
+    return fallbackResult.data;
+  }
+
+  throw new Error(fallbackResult.error?.message ?? primaryResult.error?.message ?? "PDF could not be downloaded from storage.");
 }
 
 async function markImport(serviceClient: ReturnType<typeof createClient>, importId: string, values: Record<string, unknown>) {
