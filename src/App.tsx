@@ -22,6 +22,7 @@
   Image as ImageIcon,
   Info,
   LayoutDashboard,
+  Lightbulb,
   LockKeyhole,
   LogOut,
   MessageCircle,
@@ -32,6 +33,7 @@
   RefreshCw,
   Rocket,
   Save,
+  Search,
   ShieldCheck,
   Share2,
   Sparkles,
@@ -49,7 +51,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { pkskInfoConfig, type PkskInfoEvent } from "./data/pkskInfo";
+import { pkskInfoConfig, type PkskInfoEvent, type PkskInfoEventId } from "./data/pkskInfo";
 import { pkskSections, states } from "./data/pksk";
 import { useAccess } from "./hooks/useAccess";
 import { useSocialProofNotifications } from "./hooks/useSocialProofNotifications";
@@ -434,6 +436,53 @@ const countdownUnits = [
   { key: "minutes", label: "MINIT" },
   { key: "seconds", label: "SAAT" },
 ] as const;
+const pkskCountdownHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
+  { icon: CalendarCheck, title: "Persediaan hari ini", text: "kejayaan esok", tone: "bg-blue-50 text-blue-700 ring-blue-100" },
+  { icon: Target, title: "Fokus, usaha", text: "dan doa", tone: "bg-violet-50 text-violet-700 ring-violet-100" },
+  { icon: Trophy, title: "Lakukan yang terbaik", text: "serahkan selebihnya", tone: "bg-amber-50 text-amber-700 ring-amber-100" },
+];
+const pkskCountdownThemes: Partial<
+  Record<
+    PkskInfoEventId,
+    {
+      badge: string;
+      message: string;
+      background: string;
+      glow: string;
+      unitText: string;
+      progress: string;
+      leftIcon: LucideIcon;
+      rightIcon: LucideIcon;
+    }
+  >
+> = {
+  form4: {
+    badge: "Teruskan usaha!",
+    message: "Setiap hari adalah satu langkah lebih dekat ke kejayaan!",
+    background: "linear-gradient(135deg, #062B6F 0%, #0647A8 52%, #0891B2 100%)",
+    glow: "bg-cyan-300/25",
+    unitText: "text-cyan-200",
+    progress: "linear-gradient(90deg, #38BDF8 0%, #22D3EE 48%, #14B8A6 100%)",
+    leftIcon: Rocket,
+    rightIcon: Trophy,
+  },
+  form1: {
+    badge: "Jom bersiap!",
+    message: "Fokus, konsisten dan yakin pada diri sendiri!",
+    background: "linear-gradient(135deg, #064E3B 0%, #047857 48%, #0F766E 100%)",
+    glow: "bg-emerald-300/25",
+    unitText: "text-emerald-200",
+    progress: "linear-gradient(90deg, #A7F3D0 0%, #6EE7B7 48%, #22C55E 100%)",
+    leftIcon: Sparkles,
+    rightIcon: Target,
+  },
+};
+const pkskTimelineThemes: Partial<Record<PkskInfoEventId, { icon: LucideIcon; tone: string }>> = {
+  application: { icon: ClipboardList, tone: "bg-violet-50 text-violet-700 ring-violet-100" },
+  centreCheck: { icon: Search, tone: "bg-amber-50 text-amber-700 ring-amber-100" },
+  form4: { icon: BookOpen, tone: "bg-blue-50 text-blue-700 ring-blue-100" },
+  form1: { icon: Users, tone: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
+};
 const oneSecondMs = 1000;
 const oneMinuteMs = 60 * oneSecondMs;
 const oneHourMs = 60 * oneMinuteMs;
@@ -2087,6 +2136,8 @@ function LandingPage({
 
       <SocialProofUserCard />
 
+      <PkskCountdownSection variant="dashboard" showTimeline={false} />
+
       <section className="landing-feature-strip" aria-label="Ciri utama PKSK Academy">
         {featureHighlights.map((item) => (
           <article key={item.title} className="landing-feature-card">
@@ -2325,6 +2376,8 @@ function Dashboard({
       </section>
 
       {isLoggedIn && !access.isPremium && pendingPayment ? <PaymentPendingBanner payment={pendingPayment} /> : null}
+
+      {isLoggedIn ? <PkskCountdownSection variant="dashboard" showTimeline={false} /> : null}
 
       {!isLoggedIn ? (
         <FreePreviewSection onStartGuestPreview={onStartGuestPreview} onShowPaywall={onShowPaywall} />
@@ -6687,26 +6740,24 @@ function BonusPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
 }
 
 function InfoPkskPage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
-  const now = useMalaysiaClock();
-  const countdownEvents = pkskInfoConfig.countdownEventIds.map((eventId) => pkskInfoConfig.events[eventId]);
-  const timelineEvents = pkskInfoConfig.timelineEventIds.map((eventId) => pkskInfoConfig.events[eventId]);
+  const [isFormatOpen, setIsFormatOpen] = useState(false);
 
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-soft">
         <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.05fr_0.95fr] lg:p-10">
           <div className="flex min-w-0 flex-col justify-center">
-            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-ocean-500/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-cyan-100">
+            <span className="hidden w-fit items-center gap-2 rounded-xl bg-ocean-500/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-cyan-100 lg:inline-flex">
               <Info size={16} aria-hidden="true" />
               INFO PKSK
             </span>
-            <h1 className="mt-5 text-3xl font-black leading-tight sm:text-5xl">Panduan PKSK {pkskInfoConfig.sessionYear}</h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">
+            <h1 className="text-3xl font-black leading-tight sm:text-5xl lg:mt-5">Panduan PKSK {pkskInfoConfig.sessionYear}</h1>
+            <p className="mt-4 hidden max-w-2xl text-base leading-7 text-slate-200 sm:text-lg lg:block">
               Maklumat penting untuk membantu calon dan ibu bapa memahami PKSK serta membuat persediaan dengan lebih tersusun.
             </p>
           </div>
 
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="hidden min-w-0 gap-3 lg:grid lg:grid-cols-2">
             {[
               { icon: GraduationCap, title: "Sekolah Khusus", text: "Rujukan ringkas untuk calon", tone: "bg-ocean-500/15 text-cyan-100" },
               { icon: CalendarCheck, title: "Tarikh", text: "Countdown dan timeline", tone: "bg-sun-400/15 text-amber-100" },
@@ -6790,73 +6841,32 @@ function InfoPkskPage({ onNavigate }: { onNavigate: (route: AppRoute) => void })
         </div>
       </section>
 
-      <section id="tarikh-penting" className="scroll-mt-24 space-y-6">
-        <section className="rounded-2xl bg-white p-6 shadow-soft sm:p-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase text-ocean-700">Countdown</p>
-              <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Countdown PKSK {pkskInfoConfig.sessionYear}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Berapa lama lagi sebelum PKSK bermula?</p>
-            </div>
-            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
-              <Clock3 size={15} aria-hidden="true" />
-              {pkskInfoConfig.timezone}
-            </span>
-          </div>
-          <div className="mt-6 grid gap-5 lg:grid-cols-2">
-            {countdownEvents.map((event) => (
-              <CountdownCard key={event.title} event={event} now={now} />
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white p-6 shadow-soft sm:p-8">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase text-ocean-700">Timeline</p>
-              <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Tarikh Penting PKSK {pkskInfoConfig.sessionYear}</h2>
-            </div>
-            <p className="max-w-xl text-sm leading-6 text-slate-600">Status dikira secara automatik berdasarkan tarikh mula dan tamat setiap fasa.</p>
-          </div>
-          <ol className="mt-6 grid gap-4">
-            {timelineEvents.map((event, index) => {
-              const status = getTimelineStatus(event, now);
-              return (
-                <li key={event.title} className="grid gap-3 sm:grid-cols-[52px_1fr]">
-                  <div className="flex items-center gap-3 sm:flex-col">
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-600 text-sm font-black text-white">{index + 1}</span>
-                    {index < timelineEvents.length - 1 ? <span className="hidden h-full min-h-6 w-px bg-slate-200 sm:block" /> : null}
-                  </div>
-                  <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs font-black uppercase text-ocean-700">{event.title}</p>
-                        <h3 className="mt-1 text-lg font-black text-slate-950">{event.label}</h3>
-                        <p className="mt-1 text-sm font-semibold text-slate-500">{event.dateLabel}</p>
-                      </div>
-                      <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${status.tone}`}>
-                        <ShieldCheck size={15} aria-hidden="true" />
-                        {status.label}
-                      </span>
-                    </div>
-                  </article>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      </section>
+      <PkskCountdownSection id="tarikh-penting" variant="full" showTimeline />
 
       <section id="format-pksk" className="scroll-mt-24 space-y-5">
-        <div>
-          <p className="text-sm font-black uppercase text-ocean-700">Format PKSK</p>
-          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Kenali Format PKSK</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Ringkasan ini menerangkan bahagian utama secara umum. Bilangan soalan, markah, tempoh dan pecahan konstruk perlu dirujuk kepada hebahan rasmi jika KPM
-            mengumumkannya.
-          </p>
+        <div className="rounded-2xl bg-white p-5 shadow-soft lg:bg-transparent lg:p-0 lg:shadow-none">
+          <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-black uppercase text-ocean-700">Format PKSK</p>
+              <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Kenali Format PKSK</h2>
+              <p className={`${isFormatOpen ? "block" : "hidden"} mt-2 max-w-3xl text-sm leading-6 text-slate-600 lg:block`}>
+                Ringkasan ini menerangkan bahagian utama secara umum. Bilangan soalan, markah, tempoh dan pecahan konstruk perlu dirujuk kepada hebahan rasmi jika KPM
+                mengumumkannya.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-ocean-100 bg-ocean-50 px-4 py-2 text-sm font-black text-ocean-800 lg:hidden"
+              onClick={() => setIsFormatOpen((current) => !current)}
+              aria-expanded={isFormatOpen}
+              aria-controls="pksk-format-content"
+            >
+              {isFormatOpen ? "Sembunyi format" : "Lihat format"}
+              <ChevronRight size={17} className={`transition ${isFormatOpen ? "rotate-90" : ""}`} aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div id="pksk-format-content" className={`${isFormatOpen ? "grid" : "hidden"} gap-5 lg:grid lg:grid-cols-3`}>
           {pkskFormatCards.map((card) => {
             const Icon = card.icon;
             return (
@@ -6972,31 +6982,235 @@ function InfoPkskPage({ onNavigate }: { onNavigate: (route: AppRoute) => void })
   );
 }
 
-function CountdownCard({ event, now }: { event: PkskInfoEvent; now: Date | null }) {
-  const countdown = getCountdownState(event, now);
+function PkskCountdownSection({
+  id,
+  variant = "full",
+  showTimeline = true,
+}: {
+  id?: string;
+  variant?: "full" | "dashboard";
+  showTimeline?: boolean;
+}) {
+  const now = useMalaysiaClock();
+  const compact = variant === "dashboard";
+  const countdownItems = pkskInfoConfig.countdownEventIds.map((eventId) => ({ eventId, event: pkskInfoConfig.events[eventId] }));
+  const timelineItems = pkskInfoConfig.timelineEventIds.map((eventId) => ({ eventId, event: pkskInfoConfig.events[eventId] }));
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-xl font-black text-slate-950">{event.title}</h3>
-          <p className="mt-1 text-sm font-bold text-slate-500">Tarikh mula: {event.startLabel}</p>
+    <section id={id} className={`${id ? "scroll-mt-24" : ""} min-w-0 ${compact ? "rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6" : "space-y-6"}`}>
+      <div className={`min-w-0 ${compact ? "rounded-2xl bg-gradient-to-br from-white via-ocean-50/60 to-sun-50/50 p-5 ring-1 ring-ocean-100 sm:p-6" : "rounded-2xl bg-white p-5 shadow-soft sm:p-8"}`}>
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <p className="text-sm font-black uppercase text-ocean-700">Countdown</p>
+            <h2 className={`${compact ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"} mt-2 font-black leading-tight text-slate-950`}>
+              Countdown PKSK {pkskInfoConfig.sessionYear}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Berapa lama lagi sebelum PKSK bermula?</p>
+          </div>
+
+          <div className="hidden min-w-0 flex-wrap gap-3 md:flex lg:justify-end">
+            <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-slate-700 shadow-sm ring-1 ring-slate-100">
+              <Clock3 size={15} aria-hidden="true" />
+              {pkskInfoConfig.timezone}
+            </span>
+            {!compact ? <PkskCountdownIllustration /> : null}
+          </div>
         </div>
-        <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${countdown.statusTone}`}>
-          <Clock3 size={15} aria-hidden="true" />
+
+        {!compact ? (
+          <div className="mt-6 hidden gap-3 md:grid md:grid-cols-3">
+            {pkskCountdownHighlights.map((item) => {
+              const Icon = item.icon;
+              return (
+                <article key={item.title} className="flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ring-1 ${item.tone}`}>
+                    <Icon size={21} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-slate-800">{item.title}</h3>
+                    <p className="text-xs font-bold leading-5 text-slate-500">{item.text}</p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className={`${compact ? "mt-5" : "mt-7"} grid min-w-0 gap-5 lg:grid-cols-2`}>
+          {countdownItems.map((item) => (
+            <PkskExamCountdownCard key={item.eventId} eventId={item.eventId} event={item.event} now={now} compact={compact} />
+          ))}
+        </div>
+      </div>
+
+      {showTimeline ? <PkskImportantTimeline items={timelineItems} now={now} /> : null}
+
+      {showTimeline ? (
+        <section className="rounded-2xl border border-amber-100 bg-amber-50/90 p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-amber-700 shadow-sm">
+              <Lightbulb size={22} aria-hidden="true" />
+            </span>
+            <p className="text-sm font-bold leading-6 text-amber-900">
+              Ingat! Persediaan awal, latihan konsisten dan doa adalah kunci kejayaan PKSK.
+            </p>
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function PkskCountdownIllustration() {
+  return (
+    <div className="hidden min-w-[260px] items-center justify-end gap-3 rounded-[2rem] bg-gradient-to-br from-sky-50 via-white to-amber-50 px-5 py-4 shadow-sm ring-1 ring-slate-100 md:flex" aria-hidden="true">
+      <span className="grid h-16 w-16 rotate-[-4deg] place-items-center rounded-2xl bg-blue-600 text-white shadow-lg">
+        <CalendarCheck size={31} />
+      </span>
+      <div className="grid gap-2">
+        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white text-amber-600 shadow-sm">
+          <Trophy size={22} />
+        </span>
+        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
+          <BookOpen size={21} />
+        </span>
+      </div>
+      <span className="grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-700 shadow-sm">
+        <Target size={28} />
+      </span>
+    </div>
+  );
+}
+
+function PkskExamCountdownCard({
+  eventId,
+  event,
+  now,
+  compact,
+}: {
+  eventId: PkskInfoEventId;
+  event: PkskInfoEvent;
+  now: Date | null;
+  compact: boolean;
+}) {
+  const countdown = getCountdownState(event, now);
+  const theme = pkskCountdownThemes[eventId] ?? pkskCountdownThemes.form4!;
+  const progress = getCountdownProgress(event, now);
+  const progressLabel = `${Math.round(progress)}%`;
+  const LeftIcon = theme.leftIcon;
+  const RightIcon = theme.rightIcon;
+  const message = countdown.statusLabel === "Akan datang" ? theme.message : countdown.message;
+
+  return (
+    <article
+      className={`relative min-w-0 overflow-hidden rounded-2xl p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.20)] ring-1 ring-white/10 sm:p-6 ${compact ? "" : "min-h-[260px]"}`}
+      style={{ background: theme.background }}
+    >
+      <div className={`absolute -left-10 -top-10 h-32 w-32 rounded-full ${theme.glow} blur-2xl`} aria-hidden="true" />
+      <div className="absolute -bottom-16 right-8 h-40 w-40 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
+      <RightIcon className="absolute right-5 top-5 text-white/30" size={compact ? 54 : 72} aria-hidden="true" />
+
+      <div className="relative flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-white ring-1 ring-white/15">
+            <LeftIcon size={15} aria-hidden="true" />
+            {theme.badge}
+          </span>
+          <h3 className={`${compact ? "text-xl" : "text-2xl"} mt-4 font-black leading-tight`}>{event.title}</h3>
+          <p className="mt-2 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl bg-slate-950/25 px-3 py-2 text-xs font-black text-white/90 ring-1 ring-white/10">
+            <CalendarCheck size={15} aria-hidden="true" />
+            Tarikh mula: {event.startLabel}
+          </p>
+        </div>
+        <span className={`relative z-10 inline-flex max-w-full shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 text-[11px] font-black ${countdown.statusTone}`}>
+          <Clock3 size={14} aria-hidden="true" />
           {countdown.statusLabel}
         </span>
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {countdown.units.map((unit) => (
-          <div key={unit.label} className="rounded-2xl bg-white px-3 py-4 text-center shadow-sm">
-            <p className="text-3xl font-black tabular-nums text-slate-950">{unit.value}</p>
-            <p className="mt-1 text-[11px] font-black tracking-wide text-slate-500">{unit.label}</p>
+
+      <div className="relative mt-5 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3" aria-label={`Countdown ${event.title}`}>
+        {countdown.units.map((unit, index) => (
+          <div key={unit.label} className="relative">
+            <div className="rounded-2xl bg-slate-950/30 px-2 py-3 text-center shadow-inner ring-1 ring-white/10 sm:px-3 sm:py-4">
+              <p className={`${compact ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"} font-black leading-none tabular-nums ${theme.unitText}`}>{unit.value}</p>
+              <p className="mt-2 text-[10px] font-black tracking-wide text-white/75 sm:text-[11px]">{unit.label}</p>
+            </div>
+            {index < countdown.units.length - 1 ? (
+              <span className="pointer-events-none absolute -right-[0.48rem] top-1/2 hidden -translate-y-1/2 text-2xl font-black text-white/50 sm:block">:</span>
+            ) : null}
           </div>
         ))}
       </div>
-      <p className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-700">{countdown.message}</p>
+
+      <div className="relative mt-5 space-y-3">
+        <p className="flex items-center gap-2 text-xs font-bold leading-5 text-white/90 sm:text-sm">
+          <Star size={15} className="shrink-0 text-amber-200" aria-hidden="true" />
+          {message}
+        </p>
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3" aria-label={`Progress menuju ${event.title}: ${progressLabel}`}>
+          <div className="h-3 w-full min-w-0 flex-1 overflow-hidden rounded-full bg-slate-950/30 ring-1 ring-white/10">
+            <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${progress}%`, background: theme.progress }} />
+          </div>
+          <span className="self-end rounded-full bg-slate-950/40 px-3 py-1 text-xs font-black text-white ring-1 ring-white/10 sm:self-auto">{progressLabel}</span>
+        </div>
+      </div>
     </article>
+  );
+}
+
+function PkskImportantTimeline({ items, now }: { items: Array<{ eventId: PkskInfoEventId; event: PkskInfoEvent }>; now: Date | null }) {
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+
+  return (
+    <section className="min-w-0 overflow-hidden rounded-2xl bg-white p-5 shadow-soft sm:p-8">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-black uppercase text-ocean-700">Jadual Penting</p>
+          <h2 className="text-2xl font-black text-slate-950 sm:text-3xl">Jadual Penting PKSK {pkskInfoConfig.sessionYear}</h2>
+          <p className={`${isTimelineOpen ? "block" : "hidden"} mt-2 max-w-xl text-sm leading-6 text-slate-600 lg:block`}>
+            Status dikira secara automatik berdasarkan tarikh mula dan tamat setiap fasa.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-ocean-100 bg-ocean-50 px-4 py-2 text-sm font-black text-ocean-800 lg:hidden"
+          onClick={() => setIsTimelineOpen((current) => !current)}
+          aria-expanded={isTimelineOpen}
+          aria-controls="pksk-timeline-content"
+        >
+          {isTimelineOpen ? "Sembunyi jadual" : "Lihat jadual"}
+          <ChevronRight size={17} className={`transition ${isTimelineOpen ? "rotate-90" : ""}`} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div id="pksk-timeline-content" className={`${isTimelineOpen ? "block" : "hidden"} relative mt-7 lg:block`}>
+        <div className="absolute bottom-6 left-[1.35rem] top-6 w-px bg-slate-200 lg:hidden" aria-hidden="true" />
+        <div className="absolute left-12 right-12 top-[2.35rem] hidden h-px bg-slate-200 lg:block" aria-hidden="true" />
+        <ol className="relative grid min-w-0 gap-4 lg:grid-cols-4">
+          {items.map(({ eventId, event }) => {
+            const status = getTimelineStatus(event, now);
+            const theme = pkskTimelineThemes[eventId] ?? pkskTimelineThemes.form4!;
+            const Icon = theme.icon;
+            return (
+              <li key={eventId} className="relative grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-4 lg:block">
+                <span className={`relative z-10 grid h-11 w-11 place-items-center rounded-2xl bg-white shadow-sm ring-1 ${theme.tone}`}>
+                  <Icon size={22} aria-hidden="true" />
+                </span>
+                <article className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:mt-4">
+                  <p className="text-xs font-black uppercase text-ocean-700">{event.title}</p>
+                  <h3 className="mt-1 text-base font-black leading-tight text-slate-950">{event.label}</h3>
+                  <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black leading-5 text-slate-600 ring-1 ring-slate-100">{event.dateLabel}</p>
+                  <span className={`mt-3 inline-flex max-w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${status.tone}`}>
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    {status.label}
+                  </span>
+                </article>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
   );
 }
 
@@ -7306,9 +7520,9 @@ function getCountdownState(event: PkskInfoEvent, now: Date | null) {
 
   if (nowMs >= startMs) {
     return {
-      statusLabel: "Bermula",
+      statusLabel: "Sedang berlangsung",
       statusTone: "bg-leaf-50 text-leaf-600",
-      message: "Tempoh PKSK sedang berlangsung.",
+      message: "PKSK sedang berlangsung",
       units: zeroCountdownUnits(),
     };
   }
@@ -7321,7 +7535,7 @@ function getCountdownState(event: PkskInfoEvent, now: Date | null) {
   const values = { days, hours, minutes, seconds };
 
   return {
-    statusLabel: remainingMs <= urgentCountdownMs ? "Hampir" : "Akan datang",
+    statusLabel: remainingMs <= urgentCountdownMs ? "Semakin hampir" : "Akan datang",
     statusTone: remainingMs <= urgentCountdownMs ? "bg-sun-50 text-amber-700" : "bg-ocean-50 text-ocean-700",
     message: remainingMs <= urgentCountdownMs ? "PKSK semakin hampir!" : "Teruskan persediaan anda.",
     units: countdownUnits.map((unit) => ({
@@ -7329,6 +7543,30 @@ function getCountdownState(event: PkskInfoEvent, now: Date | null) {
       value: formatCountdownValue(values[unit.key], unit.key === "days"),
     })),
   };
+}
+
+function getCountdownProgress(event: PkskInfoEvent, now: Date | null): number {
+  if (!now) {
+    return 0;
+  }
+
+  const anchorMs = new Date(pkskInfoConfig.events.application.start).getTime();
+  const startMs = new Date(event.start).getTime();
+  const nowMs = now.getTime();
+
+  if (nowMs >= startMs) {
+    return 100;
+  }
+
+  if (startMs <= anchorMs || nowMs <= anchorMs) {
+    return 0;
+  }
+
+  return clampNumber(((nowMs - anchorMs) / (startMs - anchorMs)) * 100, 0, 100);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function zeroCountdownUnits() {
