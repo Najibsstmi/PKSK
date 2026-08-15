@@ -84,7 +84,7 @@ declare
 begin
   loop
     v_attempt := v_attempt + 1;
-    v_code := upper(substr(encode(gen_random_bytes(5), 'hex'), 1, 7));
+    v_code := 'D' || upper(substr(md5(clock_timestamp()::text || random()::text || p_agent_id::text || v_attempt::text), 1, 6));
 
     exit when not exists (
       select 1
