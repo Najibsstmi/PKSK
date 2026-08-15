@@ -142,15 +142,15 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabel?: string; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean }> = [
-  { to: "/app", label: "Dashboard", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
+  { to: "/app", label: "Dashboard", shortLabel: "Utama", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
   { to: "/info-pksk", label: "Info PKSK", shortLabel: "Info", icon: Info },
-  { to: "/app/simulasi", label: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
-  { to: "/app/pencapaian", label: "Pencapaian", icon: Award, authOnly: true, premiumOnly: true },
+  { to: "/app/simulasi", label: "Simulasi", shortLabel: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
+  { to: "/app/pencapaian", label: "Pencapaian", shortLabel: "Skor", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
   { to: "/app/bonus", label: "Bonus", icon: Gift, authOnly: true, premiumOnly: true },
-  { to: "/app/sejarah", label: "Sejarah", icon: History, authOnly: true, premiumOnly: true },
+  { to: "/app/sejarah", label: "Sejarah", shortLabel: "Rekod", icon: History, authOnly: true, premiumOnly: true },
   { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true, premiumOnly: true },
-  { to: "/admin", label: "Admin Panel", icon: Users, authOnly: true, adminOnly: true },
+  { to: "/admin", label: "Admin Panel", shortLabel: "Admin", icon: Users, authOnly: true, adminOnly: true },
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
@@ -1451,7 +1451,7 @@ function TopBar({
           </span>
         </button>
 
-        <nav className="hidden items-center gap-1 lg:flex" aria-label="Navigasi utama">
+        <nav className="topbar-main-nav hidden lg:flex" aria-label="Navigasi utama">
           {isPublicShell
             ? currentRoute === "/"
               ? null
@@ -1467,23 +1467,36 @@ function TopBar({
                   return null;
                 }
                 const isBonusNav = item.to === "/app/bonus";
+                const isActive = currentRoute === item.to;
                 return (
                   <button
                     key={item.to}
                     type="button"
                     onClick={() => onNavigate(item.to)}
-                    className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
+                    className={`topbar-nav-button ${
                       isBonusNav
-                        ? currentRoute === item.to
-                          ? "bg-gradient-to-r from-amber-100 to-ocean-50 text-amber-800 shadow-sm ring-1 ring-amber-200"
-                          : "bg-gradient-to-r from-amber-50 to-white text-amber-700 ring-1 ring-amber-100 hover:-translate-y-0.5 hover:shadow-md"
-                        : currentRoute === item.to
-                          ? "bg-ocean-50 text-ocean-700"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                        ? isActive
+                          ? "topbar-nav-button--bonus-active"
+                          : "topbar-nav-button--bonus"
+                        : isActive
+                          ? "topbar-nav-button--active"
+                          : "topbar-nav-button--idle"
                     }`}
+                    aria-current={isActive ? "page" : undefined}
+                    aria-label={item.label}
+                    title={item.label}
                   >
-                    <item.icon size={17} aria-hidden="true" />
-                    {item.label}
+                    <item.icon className="topbar-nav-icon" size={17} aria-hidden="true" />
+                    <span className="topbar-nav-label">
+                      {item.shortLabel ? (
+                        <>
+                          <span className="hidden 2xl:inline">{item.label}</span>
+                          <span className="2xl:hidden">{item.shortLabel}</span>
+                        </>
+                      ) : (
+                        item.label
+                      )}
+                    </span>
                   </button>
                 );
               })}
@@ -1530,10 +1543,10 @@ function TopBar({
               <button
                 type="button"
                 onClick={() => onNavigate("/app/profile")}
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-700"
+                className="topbar-account-button"
               >
                 <UserRound size={17} aria-hidden="true" />
-                {profile?.display_name ?? "Profil"}
+                <span className="topbar-account-name">{profile?.display_name ?? "Profil"}</span>
               </button>
               <button
                 type="button"
@@ -1635,6 +1648,7 @@ function BottomNav({
               type="button"
               disabled={disabled}
               onClick={() => onNavigate(item.to)}
+              aria-label={item.label}
               className={`grid min-h-[56px] place-items-center rounded-xl px-1 text-[11px] font-bold ${
                 isBonusNav
                   ? currentRoute === item.to
@@ -1646,7 +1660,7 @@ function BottomNav({
               } ${disabled ? "opacity-40" : ""}`}
             >
               <item.icon size={19} aria-hidden="true" />
-              {item.label}
+              <span className="leading-none">{item.shortLabel ?? item.label}</span>
             </button>
           );
         })}
