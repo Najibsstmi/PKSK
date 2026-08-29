@@ -468,6 +468,11 @@ const countdownUnits = [
   { key: "minutes", label: "MINIT" },
   { key: "seconds", label: "SAAT" },
 ] as const;
+const pkskCountdownBackgroundStyle = {
+  backgroundImage: 'linear-gradient(120deg, rgba(15, 23, 42, 0.76), rgba(8, 145, 178, 0.24)), url("/assets/pksk-countdown-bg.png")',
+  backgroundPosition: "center",
+  backgroundSize: "cover",
+};
 const pkskCountdownHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
   { icon: CalendarCheck, title: "Persediaan hari ini", text: "kejayaan esok", tone: "bg-blue-50 text-blue-700 ring-blue-100" },
   { icon: Target, title: "Fokus, usaha", text: "dan doa", tone: "bg-violet-50 text-violet-700 ring-violet-100" },
@@ -7873,32 +7878,43 @@ function PkskCountdownSection({
 
   return (
     <section id={id} className={`${id ? "scroll-mt-24" : ""} min-w-0 ${compact ? "rounded-2xl border border-ocean-100 bg-white p-5 shadow-soft sm:p-6" : "space-y-6"}`}>
-      <div className={`min-w-0 ${compact ? "rounded-2xl bg-gradient-to-br from-white via-ocean-50/60 to-sun-50/50 p-5 ring-1 ring-ocean-100 sm:p-6" : "rounded-2xl bg-white p-5 shadow-soft sm:p-8"}`}>
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div
+        className={`min-w-0 ${
+          compact
+            ? "rounded-2xl bg-gradient-to-br from-white via-ocean-50/60 to-sun-50/50 p-5 ring-1 ring-ocean-100 sm:p-6"
+            : "relative overflow-hidden rounded-2xl border border-cyan-100/50 bg-slate-950 p-5 text-white shadow-soft sm:p-8"
+        }`}
+        style={compact ? undefined : pkskCountdownBackgroundStyle}
+      >
+        {!compact ? <div className="absolute inset-0 bg-gradient-to-b from-white/10 via-transparent to-slate-950/40" aria-hidden="true" /> : null}
+        <div className="relative z-10 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
-            <p className="text-sm font-black uppercase text-ocean-700">Countdown</p>
-            <h2 className={`${compact ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"} mt-2 font-black leading-tight text-slate-950`}>
+            <p className={`text-sm font-black uppercase ${compact ? "text-ocean-700" : "text-cyan-100"}`}>Countdown</p>
+            <h2 className={`${compact ? "text-2xl text-slate-950 sm:text-3xl" : "text-3xl text-white sm:text-4xl"} mt-2 font-black leading-tight`}>
               Countdown PKSK {pkskInfoConfig.sessionYear}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Berapa lama lagi sebelum PKSK bermula?</p>
+            <p className={`mt-2 text-sm leading-6 ${compact ? "text-slate-600" : "font-semibold text-cyan-50"}`}>Berapa lama lagi sebelum PKSK bermula?</p>
           </div>
 
           <div className="hidden min-w-0 flex-wrap gap-3 md:flex lg:justify-end">
-            <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-slate-700 shadow-sm ring-1 ring-slate-100">
+            <span
+              className={`inline-flex max-w-full items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-slate-700 shadow-sm ${
+                compact ? "ring-1 ring-slate-100" : "ring-1 ring-white/30"
+              }`}
+            >
               <Clock3 size={15} aria-hidden="true" />
               {pkskInfoConfig.timezone}
             </span>
-            {!compact ? <PkskCountdownIllustration /> : null}
           </div>
         </div>
 
         {!compact ? (
-          <div className="mt-6 hidden gap-3 md:grid md:grid-cols-3">
+          <div className="relative z-10 mt-6 hidden gap-3 md:grid md:grid-cols-3">
             {pkskCountdownHighlights.map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100">
-                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ring-1 ${item.tone}`}>
+                <article key={item.title} className="flex min-w-0 items-center gap-3 rounded-2xl bg-white/92 px-4 py-3 shadow-sm backdrop-blur ring-1 ring-white/25">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white ring-1 ${item.tone}`}>
                     <Icon size={21} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
@@ -7911,7 +7927,7 @@ function PkskCountdownSection({
           </div>
         ) : null}
 
-        <div className={`${compact ? "mt-5" : "mt-7"} grid min-w-0 gap-5 lg:grid-cols-2`}>
+        <div className={`${compact ? "mt-5" : "relative z-10 mt-7"} grid min-w-0 gap-5 lg:grid-cols-2`}>
           {countdownItems.map((item) => (
             <PkskExamCountdownCard key={item.eventId} eventId={item.eventId} event={item.event} now={now} compact={compact} />
           ))}
@@ -7933,27 +7949,6 @@ function PkskCountdownSection({
         </section>
       ) : null}
     </section>
-  );
-}
-
-function PkskCountdownIllustration() {
-  return (
-    <div className="hidden min-w-[260px] items-center justify-end gap-3 rounded-[2rem] bg-gradient-to-br from-sky-50 via-white to-amber-50 px-5 py-4 shadow-sm ring-1 ring-slate-100 md:flex" aria-hidden="true">
-      <span className="grid h-16 w-16 rotate-[-4deg] place-items-center rounded-2xl bg-blue-600 text-white shadow-lg">
-        <CalendarCheck size={31} />
-      </span>
-      <div className="grid gap-2">
-        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white text-amber-600 shadow-sm">
-          <Trophy size={22} />
-        </span>
-        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
-          <BookOpen size={21} />
-        </span>
-      </div>
-      <span className="grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-700 shadow-sm">
-        <Target size={28} />
-      </span>
-    </div>
   );
 }
 
