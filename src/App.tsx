@@ -486,6 +486,12 @@ const pkskCountdownBackgroundStyle = {
   backgroundPosition: "center",
   backgroundSize: "cover",
 };
+const diamondPartnerBannerStyle = {
+  backgroundImage:
+    'linear-gradient(90deg, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.91) 42%, rgba(236,254,255,0.62) 68%, rgba(255,255,255,0.14) 100%), url("/assets/diamond-partner-banner.png")',
+  backgroundPosition: "center right",
+  backgroundSize: "cover",
+};
 const pkskCountdownHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
   { icon: CalendarCheck, title: "Persediaan hari ini", text: "kejayaan esok", tone: "bg-blue-50 text-blue-700 ring-blue-100" },
   { icon: Target, title: "Fokus, usaha", text: "dan doa", tone: "bg-violet-50 text-violet-700 ring-violet-100" },
@@ -1740,8 +1746,8 @@ function TopBar({
                             : "bg-amber-50 text-amber-800"
                           : isDiamondNav
                             ? currentRoute === item.to
-                              ? "bg-slate-900 text-white"
-                              : "bg-slate-950 text-cyan-100"
+                              ? "bg-gradient-to-r from-cyan-100 via-white to-amber-50 text-ocean-800 ring-1 ring-cyan-200"
+                              : "bg-cyan-50 text-ocean-800"
                           : currentRoute === item.to
                             ? "bg-ocean-50 text-ocean-700"
                             : "text-slate-600"
@@ -2540,7 +2546,7 @@ function DiamondApplicationCard({
     return (
       <section className="overflow-hidden rounded-2xl border border-cyan-100 bg-white shadow-soft">
         <div className="grid gap-5 p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-950 text-cyan-100">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-cyan-50 text-ocean-700 ring-1 ring-cyan-100">
             <Gem size={26} aria-hidden="true" />
           </span>
           <div>
@@ -2556,22 +2562,21 @@ function DiamondApplicationCard({
 
   return (
     <>
-      <section className="relative overflow-hidden rounded-2xl border border-cyan-100 bg-slate-950 p-6 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_70%_40%,rgba(34,211,238,0.30),transparent_34%),radial-gradient(circle_at_35%_75%,rgba(250,204,21,0.20),transparent_28%)] lg:block" aria-hidden="true" />
+      <section className="relative overflow-hidden rounded-2xl border border-cyan-100 bg-white p-6 text-slate-950 shadow-[0_24px_60px_rgba(14,116,144,0.14)]" style={diamondPartnerBannerStyle}>
         <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="flex min-w-0 gap-4">
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-cyan-400/15 text-cyan-200 ring-1 ring-cyan-200/20">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/85 text-ocean-700 shadow-sm ring-1 ring-cyan-100">
               <Gem size={27} aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-black uppercase text-cyan-200">Premium Diamond</p>
-              <h2 className="mt-1 text-2xl font-black text-white">Sudah Premium? Jadi Diamond Partner.</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+              <p className="text-sm font-black uppercase text-ocean-700">Premium Diamond</p>
+              <h2 className="mt-1 text-2xl font-black text-slate-950">Sudah Premium? Jadi Diamond Partner.</h2>
+              <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-700">
                 Kongsi PKSK Academy dan terima RM23 komisen bagi setiap pembelian Premium yang berjaya melalui link anda.
               </p>
             </div>
           </div>
-          <button type="button" className="primary-button bg-cyan-500 text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.22)] hover:bg-cyan-300" onClick={() => setIsOpen(true)}>
+          <button type="button" className="primary-button bg-ocean-600 text-white shadow-[0_16px_34px_rgba(14,116,144,0.22)] hover:bg-ocean-700" onClick={() => setIsOpen(true)}>
             Mohon Jadi Diamond Partner
             <ChevronRight size={18} aria-hidden="true" />
           </button>
@@ -2772,15 +2777,14 @@ function DiamondPage({
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(34,211,238,0.25),transparent_30%),radial-gradient(circle_at_12%_85%,rgba(168,85,247,0.18),transparent_34%)]" aria-hidden="true" />
-        <div className="relative max-w-3xl">
-          <p className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm font-black text-cyan-100 ring-1 ring-white/10">
+      <section className="relative min-h-[255px] overflow-hidden rounded-2xl border border-cyan-100 bg-white p-6 text-slate-950 shadow-[0_24px_60px_rgba(14,116,144,0.14)] sm:p-8 lg:p-10" style={diamondPartnerBannerStyle}>
+        <div className="relative max-w-2xl">
+          <p className="inline-flex items-center gap-2 rounded-xl bg-white/82 px-3 py-2 text-sm font-black text-ocean-700 shadow-sm ring-1 ring-cyan-100">
             <Gem size={17} aria-hidden="true" />
             Diamond Partner
           </p>
-          <h1 className="mt-5 text-3xl font-black leading-tight sm:text-5xl">Kongsi PKSK Academy dan jana komisen.</h1>
-          <p className="mt-4 text-base leading-7 text-slate-200">
+          <h1 className="mt-5 text-3xl font-black leading-tight text-slate-950 sm:text-5xl">Kongsi PKSK Academy dan jana komisen.</h1>
+          <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-slate-700">
             RM{data.profile.commission_amount.toFixed(0)} direkod untuk setiap pembelian Premium yang berjaya melalui referral anda, dengan tempoh hold 14 hari sebelum layak dibayar.
           </p>
         </div>
