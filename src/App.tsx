@@ -1701,7 +1701,7 @@ function TopBar({
           <div className="mx-auto grid max-w-7xl gap-2">
             {isPublicShell
               ? visibleMobileMarketingLinks.map((item) => renderMarketingButton(item, true))
-              : navItems.map((item) => {
+              : mobileMenuNavItems.map((item) => {
                   if (item.authOnly && !isLoggedIn) {
                     return null;
                   }
