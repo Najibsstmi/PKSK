@@ -177,7 +177,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
   { to: "/app", label: "Dashboard", shortLabel: "Utama", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
   { to: "/info-pksk", label: "Info PKSK", shortLabel: "Info", icon: Info },
   { to: "/app/simulasi", label: "Simulasi", shortLabel: "Simulasi", icon: Target, authOnly: true, premiumOnly: true },
-  { to: "/app/pencapaian", label: "Pencapaian", shortLabel: "Skor", icon: Award, authOnly: true, premiumOnly: true },
+  { to: "/app/pencapaian", label: "Pencapaian", shortLabel: "Prestasi", icon: Award, authOnly: true, premiumOnly: true },
   { to: "/app/lencana", label: "Lencana", icon: Trophy, authOnly: true, premiumOnly: true },
   { to: "/app/bonus", label: "Bonus", icon: Gift, authOnly: true, premiumOnly: true },
   { to: "/app/diamond", label: "Diamond", icon: Gem, authOnly: true, premiumOnly: true, diamondOnly: true },
@@ -187,6 +187,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
 ];
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
+const mobileMenuNavItems = navItems.filter((item) => !["/app/pencapaian", "/app/lencana"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
