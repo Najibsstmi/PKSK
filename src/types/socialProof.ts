@@ -1,7 +1,7 @@
 export type RecentPremiumSubscriber = {
   id: string;
   displayName: string;
-  subscribedAt: string;
+  subscribedAt?: string | null;
 };
 
 export type SocialProofItem =
@@ -14,5 +14,5 @@ export type SocialProofItem =
       type: "real";
       id: string;
       displayName: string;
-      subscribedAt: string;
+      subscribedAt?: string | null;
     };

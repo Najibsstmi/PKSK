@@ -1,14 +1,42 @@
 import { Sparkles, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { fetchPublicSocialProofStats } from "../services/socialProofService";
+
+const fallbackUserCount = 1000;
 
 function displayCount(value: number): string {
-  return value >= 1000 ? "1,000+" : value.toLocaleString("en-US");
+  const formatted = Math.max(0, Math.round(value)).toLocaleString("en-US");
+  return value >= fallbackUserCount ? `${formatted}+` : formatted;
 }
 
 export function SocialProofUserCard() {
   const [count, setCount] = useState(0);
+  const [targetCount, setTargetCount] = useState(fallbackUserCount);
   const [hasAnimated, setHasAnimated] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchPublicSocialProofStats().then((stats) => {
+      if (!isMounted || !stats) {
+        return;
+      }
+
+      setTargetCount(Math.max(fallbackUserCount, stats.display_users));
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasAnimated) {
+      setCount(targetCount);
+    }
+  }, [hasAnimated, targetCount]);
 
   useEffect(() => {
     const node = cardRef.current;
@@ -17,7 +45,7 @@ export function SocialProofUserCard() {
     }
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setCount(1000);
+      setCount(targetCount);
       setHasAnimated(true);
       return;
     }
@@ -37,26 +65,34 @@ export function SocialProofUserCard() {
         function tick(now: number) {
           const progress = Math.min(1, (now - start) / duration);
           const eased = 1 - Math.pow(1 - progress, 3);
-          setCount(Math.round(1000 * eased));
+          setCount(Math.round(targetCount * eased));
 
           if (progress < 1) {
-            window.requestAnimationFrame(tick);
+            animationFrameRef.current = window.requestAnimationFrame(tick);
           } else {
-            setCount(1000);
+            animationFrameRef.current = null;
+            setCount(targetCount);
           }
         }
 
-        window.requestAnimationFrame(tick);
+        animationFrameRef.current = window.requestAnimationFrame(tick);
       },
       { threshold: 0.35 },
     );
 
     observer.observe(node);
-    return () => observer.disconnect();
-  }, [hasAnimated]);
+    return () => {
+      observer.disconnect();
+
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [hasAnimated, targetCount]);
 
   return (
-    <section ref={cardRef} className="social-proof-card" aria-label="1,000+ pengguna telah menggunakan PKSK Academy Simulator">
+    <section ref={cardRef} className="social-proof-card" aria-label={`${displayCount(targetCount)} pengguna telah menggunakan PKSK Academy Simulator`}>
       <div className="relative z-10 grid gap-5 md:grid-cols-[auto_1fr_auto] md:items-center">
         <span className="grid h-14 w-14 place-items-center rounded-2xl bg-ocean-600 text-white shadow-lg shadow-ocean-600/20">
           <Users size={28} aria-hidden="true" />

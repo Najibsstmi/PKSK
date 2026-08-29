@@ -84,7 +84,7 @@ export const ToyyibPayService = {
 
     const payload = data as Partial<ToyyibPayBillResult> | null;
     if (!payload?.paymentUrl) {
-      throw new Error("Pautan ToyyibPay belum dapat disediakan. Sila cuba semula.");
+      throw new Error("Pautan bayaran online belum dapat disediakan. Sila cuba semula.");
     }
 
     return {
@@ -347,28 +347,28 @@ function mapPaymentMessage(message: string): string {
     return "Status bayaran tidak sah.";
   }
   if (message.includes("TOYYIBPAY_TRANSACTION_LOOKUP_FAILED")) {
-    return "Status ToyyibPay belum dapat disemak. Sila cuba refresh sebentar lagi.";
+    return "Status bayaran online belum dapat disemak. Sila cuba refresh sebentar lagi.";
   }
   if (message.includes("TOYYIBPAY_BILL_CODE_REQUIRED")) {
-    return "Kod bil ToyyibPay belum ditemui. Sila buka semula halaman Premium dan cuba sekali lagi.";
+    return "Maklumat bil bayaran online belum ditemui. Sila buka semula halaman Premium dan cuba sekali lagi.";
   }
   if (message.includes("INVALID_PAYMENT_AMOUNT")) {
-    return "Jumlah bayaran ToyyibPay tidak sepadan dengan harga Premium.";
+    return "Jumlah bayaran online tidak sepadan dengan harga Premium.";
   }
   if (message.includes("PAYMENT_ACCESS_DENIED")) {
     return "Anda tidak mempunyai akses untuk menyemak rekod bayaran ini.";
   }
   if (message.includes("INVALID_PAYMENT_METHOD")) {
-    return "Rekod ini bukan bayaran ToyyibPay.";
+    return "Rekod ini bukan bayaran online.";
   }
   if (message.includes("TOYYIBPAY_BILL_FAILED")) {
     if (toyyibPayDetails) {
-      return `ToyyibPay belum dapat sediakan bil. Maklumat ralat: ${toyyibPayDetails}`;
+      return `Bayaran online belum dapat disediakan. Maklumat ralat: ${toyyibPayDetails}`;
     }
-    return "Bil ToyyibPay belum dapat disediakan. Sila cuba semula atau gunakan QR DuitNow.";
+    return "Bayaran online belum dapat disediakan. Sila cuba semula atau gunakan QR DuitNow.";
   }
   if (message.includes("TOYYIBPAY_SECRET_KEY") || message.includes("TOYYIBPAY_CATEGORY_CODE")) {
-    return "Tetapan ToyyibPay belum lengkap. Sila semak Secret Key dan Category Code dalam Supabase.";
+    return "Tetapan bayaran online belum lengkap. Sila semak konfigurasi pembayaran dalam Supabase.";
   }
   if (message.includes("PREMIUM_ALREADY_ACTIVE")) {
     return "Akaun Premium sudah aktif.";
@@ -389,7 +389,7 @@ function mapPaymentMessage(message: string): string {
     return "Kata laluan perlu sekurang-kurangnya 6 aksara.";
   }
   if (message.includes("CHECKOUT_SIGNUP_REQUIRED")) {
-    return "Akaun pelanggan belum sempat disediakan. Sila cuba tekan ToyyibPay sekali lagi.";
+    return "Akaun pelanggan belum sempat disediakan. Sila cuba tekan Bayar Secara Online sekali lagi.";
   }
   if (message.includes("ACCOUNT_BLOCKED")) {
     return "Akaun ini sedang disemak oleh pentadbir.";
@@ -441,7 +441,7 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
     }
   }
 
-  return error instanceof Error ? error.message : "Bil ToyyibPay belum dapat disediakan. Sila cuba semula.";
+  return error instanceof Error ? error.message : "Bayaran online belum dapat disediakan. Sila cuba semula.";
 }
 
 function formatFunctionErrorPayload(payload: Record<string, unknown>): string {

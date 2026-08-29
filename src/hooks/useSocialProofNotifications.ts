@@ -3,7 +3,7 @@ import { legacySocialProofNames } from "../data/legacySocialProofNames";
 import { fetchRecentPremiumSubscribers } from "../services/socialProofService";
 import type { RecentPremiumSubscriber, SocialProofItem } from "../types/socialProof";
 
-const STORAGE_VERSION = "v3";
+const STORAGE_VERSION = "v4";
 const SHOWN_ITEM_KEYS_KEY = `pksk-shown-social-proof-item-keys-${STORAGE_VERSION}`;
 const SHOWN_NAMES_KEY = `pksk-shown-social-proof-names-${STORAGE_VERSION}`;
 const SHOWN_COUNT_KEY = `pksk-shown-social-proof-count-${STORAGE_VERSION}`;
@@ -72,12 +72,17 @@ function toRealSocialProofItems(subscribers: RecentPremiumSubscriber[]): SocialP
   }));
 }
 
+function chooseNextItem(items: SocialProofItem[]): SocialProofItem {
+  return items.find((item) => item.type === "real") ?? items[Math.floor(Math.random() * items.length)];
+}
+
 export function useSocialProofNotifications(enabled: boolean) {
   const [realSubscribers, setRealSubscribers] = useState<RecentPremiumSubscriber[]>([]);
   const [currentItem, setCurrentItem] = useState<SocialProofItem | null>(null);
 
   const enabledRef = useRef(enabled);
   const fetchedRef = useRef(false);
+  const fetchSettledRef = useRef(false);
   const itemsRef = useRef<SocialProofItem[]>(legacySocialProofItems);
   const currentRef = useRef<SocialProofItem | null>(null);
   const shownItemKeysRef = useRef<Set<string>>(new Set());
@@ -134,6 +139,7 @@ export function useSocialProofNotifications(enabled: boolean) {
     if (
       !enabledRef.current ||
       stoppedRef.current ||
+      !fetchSettledRef.current ||
       shownCountRef.current >= MAX_NOTIFICATIONS_PER_SESSION ||
       dismissedCountRef.current >= MAX_DISMISSES_PER_SESSION ||
       showTimerRef.current !== null ||
@@ -164,7 +170,7 @@ export function useSocialProofNotifications(enabled: boolean) {
         return;
       }
 
-      const nextItem = nextOptions[Math.floor(Math.random() * nextOptions.length)];
+      const nextItem = chooseNextItem(nextOptions);
       shownItemKeysRef.current.add(itemStorageKey(nextItem));
       shownNamesRef.current.add(normalizeName(nextItem.displayName));
       shownCountRef.current += 1;
@@ -193,11 +199,19 @@ export function useSocialProofNotifications(enabled: boolean) {
     }
 
     fetchedRef.current = true;
-    fetchRecentPremiumSubscribers().then((nextSubscribers) => {
-      if (isMounted) {
+    fetchRecentPremiumSubscribers()
+      .catch(() => [])
+      .then((nextSubscribers) => {
+        if (!isMounted) {
+          fetchedRef.current = false;
+          return;
+        }
+
+        itemsRef.current = [...toRealSocialProofItems(nextSubscribers), ...legacySocialProofItems];
+        fetchSettledRef.current = true;
         setRealSubscribers(nextSubscribers);
-      }
-    });
+        scheduleNextRef.current(true);
+      });
 
     return () => {
       isMounted = false;

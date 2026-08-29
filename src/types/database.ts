@@ -388,14 +388,16 @@ export type Database = {
         Args: Record<string, never>;
         Returns: Json;
       };
+      get_public_social_proof_stats: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
       get_recent_premium_subscribers: {
         Args: {
           p_limit?: number | null;
         };
         Returns: Array<{
-          id: string;
           display_name: string;
-          subscribed_at: string;
         }>;
       };
       get_guest_preview_questions: {

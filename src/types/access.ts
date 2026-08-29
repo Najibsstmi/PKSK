@@ -94,6 +94,11 @@ export type QuestionBankCounts = {
   total: number;
 };
 
+export type PublicSocialProofStats = {
+  registered_users: number;
+  display_users: number;
+};
+
 export type SubscriptionHistory = {
   id: string;
   user_id: string;

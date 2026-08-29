@@ -3090,7 +3090,7 @@ function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
             <h2 className="text-xl font-black text-slate-950">{isToyyibPay ? "Pembayaran sedang diproses" : "Wang anda sedang disemak."}</h2>
             <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
               {isToyyibPay
-                ? `Kami sedang menunggu pengesahan pembayaran ToyyibPay ${formatCurrency(payment.amount, payment.currency)}. Akses Premium akan dibuka secara automatik selepas bayaran berjaya disahkan.`
+                ? `Kami sedang menunggu pengesahan bayaran online ${formatCurrency(payment.amount, payment.currency)}. Akses Premium akan dibuka secara automatik selepas bayaran berjaya disahkan.`
                 : `Rekod bayaran ${formatCurrency(payment.amount, payment.currency)} sudah diterima. Akaun Premium akan aktif selepas Admin sahkan bayaran.`}
             </p>
           </div>
@@ -3581,8 +3581,8 @@ function PaywallPage({
         <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview percuma boleh digunakan tanpa e-mel dan kata laluan." />
-          <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih ToyyibPay untuk bayaran automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
-          <FaqItem title="Bagaimana Premium diaktifkan?" text="ToyyibPay mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
+          <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih Bayaran Online untuk pengaktifan automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
+          <FaqItem title="Bagaimana Premium diaktifkan?" text="Bayaran online mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
         </div>
       </section>
       {paymentMethodOpen ? (
@@ -3705,8 +3705,8 @@ function PaymentMethodDialog({
               <h3 className="text-lg font-black text-slate-950">Maklumat pelanggan</h3>
               <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
                 {isLoggedIn
-                  ? "Bayaran akan dipautkan kepada akaun ini selepas ToyyibPay berjaya."
-                  : "Isi maklumat ini sekali sahaja. Akaun Premium akan disediakan selepas bayaran ToyyibPay berjaya."}
+                  ? "Bayaran akan dipautkan kepada akaun ini selepas bayaran online berjaya."
+                  : "Isi maklumat ini sekali sahaja. Akaun Premium akan disediakan selepas bayaran online berjaya."}
               </p>
             </div>
           </div>
@@ -3772,13 +3772,13 @@ function PaymentMethodDialog({
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-ocean-700 shadow-sm">
               <CreditCard size={24} aria-hidden="true" />
             </div>
-            <h3 className="mt-5 text-xl font-black text-slate-950">ToyyibPay</h3>
+            <h3 className="mt-5 text-xl font-black text-slate-950">Bayaran Online</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
               Bayar melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
             </p>
             <button type="button" className="primary-button mt-5 w-full" onClick={handleToyyibPayClick} disabled={toyyibPayBusy}>
               <CreditCard size={18} aria-hidden="true" />
-              {toyyibPayBusy ? "Menyediakan bil..." : "Teruskan ke ToyyibPay"}
+              {toyyibPayBusy ? "Menyediakan bayaran..." : "Bayar Secara Online"}
             </button>
           </article>
 
@@ -3938,13 +3938,13 @@ function CheckoutPage({
         <div>
           <h1 className="text-3xl font-black">Bayaran dibuat di halaman Premium.</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            Buka halaman Premium untuk pilih ToyyibPay atau QR DuitNow manual.
+            Buka halaman Premium untuk pilih Bayaran Online atau QR DuitNow manual.
           </p>
         </div>
         <div className="rounded-2xl bg-slate-50 p-5 text-left">
           <h2 className="text-lg font-black">Flow ringkas</h2>
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            ToyyibPay akan mengaktifkan Premium secara automatik selepas bayaran sah. QR DuitNow masih tersedia untuk bayaran manual melalui WhatsApp.
+            Bayaran online akan mengaktifkan Premium secara automatik selepas bayaran sah. QR DuitNow masih tersedia untuk bayaran manual melalui WhatsApp.
           </p>
         </div>
         <button type="button" className="primary-button mx-auto" onClick={() => onNavigate("/premium")}>
@@ -4087,7 +4087,7 @@ function PaymentResultPage({
   const title = failedStatus ? "Pembayaran tidak berjaya." : loading ? "Menyemak bayaran..." : "Pembayaran sedang disahkan.";
   const text = failedStatus
     ? "Premium belum diaktifkan. Anda boleh cuba semula atau gunakan QR DuitNow manual."
-    : "Sistem sedang menyemak bayaran ToyyibPay. Jika bayaran berjaya, Premium akan dibuka secara automatik selepas pengesahan diterima.";
+    : "Sistem sedang menyemak bayaran online. Jika bayaran berjaya, Premium akan dibuka secara automatik selepas pengesahan diterima.";
 
   return (
     <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
@@ -4761,11 +4761,11 @@ function AdminPaymentRequestsPage({
       await onPaymentUpdated();
 
       if (result.status === "paid" || result.premiumActivated) {
-        onMessage("Bayaran ToyyibPay berjaya disahkan. Akaun Premium telah diaktifkan secara automatik.");
+        onMessage("Bayaran online berjaya disahkan. Akaun Premium telah diaktifkan secara automatik.");
       } else if (result.status === "failed" || result.status === "cancelled") {
-        onMessage("ToyyibPay mengesahkan bayaran ini tidak berjaya. Status rekod telah dikemas kini.");
+        onMessage("Bayaran online ini tidak berjaya. Status rekod telah dikemas kini.");
       } else {
-        onMessage("ToyyibPay belum mengesahkan bayaran ini. Biarkan sebagai Pending atau semak semula sebentar lagi.");
+        onMessage("Bayaran online belum disahkan. Biarkan sebagai Pending atau semak semula sebentar lagi.");
       }
     } catch (error) {
       onMessage(toMessage(error));
@@ -4777,7 +4777,7 @@ function AdminPaymentRequestsPage({
   const totalCount = requests[0]?.total_count ?? requests.length;
 
   return (
-    <AdminShell title="Payment Requests" text="Semak bayaran ToyyibPay automatik dan QR DuitNow manual dalam satu tempat.">
+    <AdminShell title="Payment Requests" text="Semak bayaran online automatik dan QR DuitNow manual dalam satu tempat.">
       <section className="rounded-2xl bg-white p-5 shadow-soft">
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
           <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama atau e-mel" />
@@ -4835,7 +4835,7 @@ function AdminPaymentRequestsPage({
                         disabled={busyAction === request.id}
                         onClick={() => verifyToyyibPayPayment(request)}
                       >
-                        {busyAction === request.id ? "Menyemak..." : "Semak ToyyibPay"}
+                        {busyAction === request.id ? "Menyemak..." : "Semak Online"}
                       </button>
                     ) : request.status === "pending" ? (
                       <div className="flex flex-wrap gap-2">
@@ -4861,7 +4861,7 @@ function AdminPaymentRequestsPage({
                       </div>
                     ) : (
                       <span className="text-xs font-bold text-slate-500">
-                        {request.payment_method === "toyyibpay" && request.status === "paid" ? "Auto ToyyibPay" : request.reviewed_at ? `Disemak ${formatShortDate(request.reviewed_at)}` : "Selesai"}
+                        {request.payment_method === "toyyibpay" && request.status === "paid" ? "Auto Online" : request.reviewed_at ? `Disemak ${formatShortDate(request.reviewed_at)}` : "Selesai"}
                       </span>
                     )}
                   </td>
@@ -6806,12 +6806,12 @@ function isCsvQuestionImport(importRow: QuestionImportRow): boolean {
 
 function paymentMethodLabel(method: string): string {
   if (method === "toyyibpay") {
-    return "ToyyibPay";
+    return "Bayaran Online";
   }
   if (method === "manual_qr" || method === "manual_whatsapp") {
-    return "QR Manual";
+    return "QR DuitNow";
   }
-  return method || "QR Manual";
+  return method || "QR DuitNow";
 }
 
 function confidenceLevel(value: number | null): "High" | "Medium" | "Low" {
@@ -7420,13 +7420,13 @@ function PerformancePage({
   return (
     <div className="space-y-6">
       <PageHeader icon={Award} title="Prestasi Saya" text="Lihat perkembangan simulasi, markah terbaik dan lencana yang telah dibuka." />
-      <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard icon={ClipboardList} label="Simulasi" value={`${stats.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
-        <StatCard icon={Star} label="Terbaik" value={`${stats.bestScore}%`} tone="bg-sun-50 text-amber-700" />
-        <StatCard icon={Target} label="Purata" value={`${stats.averageScore}%`} tone="bg-leaf-50 text-leaf-600" />
-        <StatCard icon={Zap} label="Mata" value={`${stats.totalXp}`} tone="bg-coral-50 text-coral-600" />
-        <StatCard icon={Rocket} label="Level" value={`${stats.level}`} tone="bg-ocean-50 text-ocean-700" />
-        <StatCard icon={Trophy} label="Lencana" value={`${stats.badgeCount}`} tone="bg-sun-50 text-amber-700" />
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard compact icon={ClipboardList} label="Simulasi" value={`${stats.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard compact icon={Star} label="Terbaik" value={`${stats.bestScore}%`} tone="bg-sun-50 text-amber-700" />
+        <StatCard compact icon={Target} label="Purata" value={`${stats.averageScore}%`} tone="bg-leaf-50 text-leaf-600" />
+        <StatCard compact icon={Zap} label="Mata" value={`${stats.totalXp}`} tone="bg-coral-50 text-coral-600" />
+        <StatCard compact icon={Rocket} label="Level" value={`${stats.level}`} tone="bg-ocean-50 text-ocean-700" />
+        <StatCard compact icon={Trophy} label="Lencana" value={`${stats.badgeCount}`} tone="bg-sun-50 text-amber-700" />
       </section>
       <section className="rounded-2xl bg-white p-6 shadow-soft">
         <h2 className="text-xl font-black">Trend Cubaan</h2>
@@ -8246,16 +8246,16 @@ function ModeCard({
   );
 }
 
-function StatCard({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: string }) {
+function StatCard({ icon: Icon, label, value, tone, compact = false }: { icon: LucideIcon; label: string; value: string; tone: string; compact?: boolean }) {
   return (
-    <article className="rounded-2xl bg-white p-5 shadow-soft">
-      <div className="flex items-center gap-4">
-        <span className={`grid h-12 w-12 place-items-center rounded-2xl ${tone}`}>
-          <Icon size={23} aria-hidden="true" />
+    <article className={`rounded-2xl bg-white shadow-soft ${compact ? "p-4" : "p-5"}`}>
+      <div className={compact ? "grid gap-3" : "flex items-center gap-4"}>
+        <span className={`grid place-items-center ${compact ? "h-10 w-10 rounded-xl" : "h-12 w-12 rounded-2xl"} ${tone}`}>
+          <Icon size={compact ? 20 : 23} aria-hidden="true" />
         </span>
-        <div>
-          <p className="text-sm font-semibold text-slate-500">{label}</p>
-          <p className="text-2xl font-black text-slate-950">{value}</p>
+        <div className="min-w-0">
+          <p className={`${compact ? "text-xs" : "text-sm"} font-semibold text-slate-500`}>{label}</p>
+          <p className={`${compact ? "text-xl" : "text-2xl"} truncate font-black text-slate-950`}>{value}</p>
         </div>
       </div>
     </article>

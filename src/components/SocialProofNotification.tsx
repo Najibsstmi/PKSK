@@ -18,7 +18,7 @@ export function SocialProofNotification({ item, onDismiss, onOpenPremium }: Soci
   const message = isRealSubscriber
     ? `${item.displayName} baru menyertai PKSK Academy Premium!`
     : `${item.displayName} telah menggunakan PKSK Academy Premium`;
-  const subtext = isRealSubscriber ? formatRelativeTime(item.subscribedAt) : "Sebahagian daripada komuniti 1,000+ pengguna";
+  const subtext = isRealSubscriber && item.subscribedAt ? formatRelativeTime(item.subscribedAt) : isRealSubscriber ? "Baru menyertai Premium" : "Sebahagian daripada komuniti 1,000+ pengguna";
   const Icon = isRealSubscriber ? Sparkles : Star;
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
