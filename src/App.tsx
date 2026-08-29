@@ -107,6 +107,7 @@ import {
   ToyyibPayService,
 } from "./services/paymentService";
 import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
+import { trackPremiumPurchase } from "./utils/metaPixel";
 import {
   createCsvQuestionImport,
   createPdfQuestionImport,
@@ -3981,6 +3982,16 @@ function PaymentResultPage({
       if (isLoggedIn || hasToyyibPayReturnTarget(returnTarget)) {
         try {
           const verification = await ToyyibPayService.verifyPayment(returnTarget);
+          if (verification.status === "paid" || verification.status === "approved" || verification.premiumActivated) {
+            trackPremiumPurchase({
+              amount: 49,
+              currency: "MYR",
+              externalReference: returnTarget.externalReference ?? null,
+              paymentId: verification.paymentId,
+              providerBillCode: returnTarget.billCode ?? null,
+              providerReference: verification.providerReference,
+            });
+          }
           if (!isLoggedIn && verification.paymentId) {
             setPayment({
               id: verification.paymentId,
