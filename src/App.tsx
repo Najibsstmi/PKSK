@@ -186,8 +186,8 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
   { to: "/admin", label: "Admin Panel", shortLabel: "Admin", icon: Users, authOnly: true, adminOnly: true },
 ];
 
-const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/bonus", "/app/pencapaian", "/app/lencana"].includes(item.to));
-const mobileMenuNavItems = navItems.filter((item) => !["/app/pencapaian", "/app/lencana"].includes(item.to));
+const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
+const mobileMenuNavItems = navItems.filter((item) => !["/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
@@ -435,6 +435,18 @@ const pkskPrepCards: Array<{ title: string; text: string; icon: LucideIcon }> = 
   { title: "Buat latihan pelbagai", text: "Gunakan set latihan berbeza supaya cara berfikir lebih fleksibel.", icon: ClipboardList },
   { title: "Kenal pasti kelemahan", text: "Semak rekod latihan untuk melihat bahagian yang perlu diberi perhatian.", icon: Target },
   { title: "Berlatih konsisten", text: "Latihan pendek tetapi kerap lebih mudah dijadikan rutin harian.", icon: CalendarCheck },
+];
+type SimulatorGuideScreen = "simulasi" | "bahagian" | "prestasi";
+type SimulatorGuideStep = {
+  number: string;
+  title: string;
+  caption: string;
+  screen: SimulatorGuideScreen;
+};
+const simulatorGuideSteps: SimulatorGuideStep[] = [
+  { number: "1", title: "Tekan Simulasi", caption: "Buka menu latihan di panel bawah.", screen: "simulasi" },
+  { number: "2", title: "Pilih latihan", caption: "Pilih bahagian, kemudian tekan mula.", screen: "bahagian" },
+  { number: "3", title: "Semak Prestasi", caption: "Lihat markah dan perkembangan terkini.", screen: "prestasi" },
 ];
 const pkskFaqItems = [
   {
@@ -8087,7 +8099,7 @@ function PkskImportantTimeline({ items, now }: { items: Array<{ eventId: PkskInf
 
 function GuidePage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-32 lg:pb-0">
       <PageHeader icon={BookOpen} title="Panduan" text="Kenali bahagian utama PKSK dan pilih simulasi yang sesuai." />
       <section className="grid gap-5 lg:grid-cols-3">
         {pkskSections.map((section) => (
@@ -8105,12 +8117,18 @@ function GuidePage() {
           </article>
         ))}
       </section>
-      <section className="rounded-2xl bg-white p-6 shadow-soft">
-        <h2 className="text-xl font-black">Cara Guna Simulator</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <StepCard number="1" title="Lengkapkan profil" text="Masukkan nama, sekolah dan kelas supaya rekod simulasi tersimpan dengan kemas." />
-          <StepCard number="2" title="Pilih simulasi" text="Cuba simulasi penuh, ulang kaji mengikut bahagian atau cabaran pantas harian." />
-          <StepCard number="3" title="Lihat kemajuan" text="Semak markah, sejarah cubaan dan lencana untuk tahu bahagian yang perlu dikuatkan." />
+      <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase text-ocean-700">Panduan Visual</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950">Cara Guna Simulator</h2>
+          </div>
+          <p className="max-w-sm text-sm font-semibold leading-6 text-slate-500">Ikut gambar ringkas dan tekan bahagian yang ditanda.</p>
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          {simulatorGuideSteps.map((step) => (
+            <GuideStepCard key={step.number} step={step} />
+          ))}
         </div>
       </section>
     </div>
@@ -8267,13 +8285,170 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StepCard({ number, title, text }: { number: string; title: string; text: string }) {
+function GuideStepCard({ step }: { step: SimulatorGuideStep }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-ocean-600 text-sm font-black text-white">{number}</span>
-      <h3 className="mt-4 text-base font-black text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+      <GuideMiniScreen screen={step.screen} />
+      <div className="flex items-start gap-3 p-4">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ocean-600 text-sm font-black text-white">{step.number}</span>
+        <div className="min-w-0">
+          <h3 className="text-base font-black text-slate-950">{step.title}</h3>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{step.caption}</p>
+        </div>
+      </div>
     </article>
+  );
+}
+
+function GuideMiniScreen({ screen }: { screen: SimulatorGuideScreen }) {
+  const activeNav = screen === "prestasi" ? "Prestasi" : "Simulasi";
+
+  return (
+    <div className="bg-gradient-to-br from-ocean-50 via-white to-sun-50 p-4">
+      <div className="mx-auto max-w-[290px] overflow-hidden rounded-3xl border border-white bg-white shadow-soft ring-1 ring-slate-200/70">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-ocean-50 text-ocean-700">
+              <GraduationCap size={16} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[10px] font-black text-slate-950">PKSK Academy</p>
+              <p className="truncate text-[8px] font-bold text-slate-400">oleh CikguSTEM</p>
+            </div>
+          </div>
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-600">
+            <Menu size={14} aria-hidden="true" />
+          </span>
+        </div>
+
+        <div className="min-h-[205px] bg-slate-50 p-3">
+          {screen === "simulasi" && <GuideSimulasiScreen />}
+          {screen === "bahagian" && <GuideBahagianScreen />}
+          {screen === "prestasi" && <GuidePrestasiScreen />}
+        </div>
+
+        <GuideMiniBottomNav active={activeNav} />
+      </div>
+    </div>
+  );
+}
+
+function GuideSimulasiScreen() {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl bg-white p-3 shadow-sm">
+        <p className="text-[9px] font-black uppercase text-ocean-700">Dashboard</p>
+        <h4 className="mt-1 text-sm font-black text-slate-950">Mula latihan</h4>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <span className="rounded-xl bg-ocean-50 px-3 py-2 text-[10px] font-black text-ocean-700">Simulasi</span>
+          <span className="rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-500">Prestasi</span>
+        </div>
+      </div>
+      <div className="rounded-2xl border-2 border-ocean-300 bg-ocean-50 p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full bg-ocean-600 px-3 py-1.5 text-[10px] font-black text-white">
+            <Target size={12} aria-hidden="true" />
+            Tekan sini
+          </span>
+          <ChevronRight size={18} className="text-ocean-700" aria-hidden="true" />
+        </div>
+        <p className="mt-3 text-[11px] font-black text-slate-900">Simulasi</p>
+      </div>
+    </div>
+  );
+}
+
+function GuideBahagianScreen() {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[9px] font-black uppercase text-ocean-700">Simulasi</p>
+          <h4 className="mt-1 text-sm font-black text-slate-950">Pilih bahagian</h4>
+        </div>
+        <span className="rounded-full bg-leaf-50 px-2.5 py-1 text-[9px] font-black text-leaf-700">Aktif</span>
+      </div>
+
+      <GuideChoiceCard icon={HeartHandshake} title="Bahagian A" label="Insaniah" />
+      <GuideChoiceCard icon={Brain} title="Bahagian B" label="Intelek" active />
+      <GuideChoiceCard icon={PenLine} title="Bahagian C" label="Penulisan" />
+
+      <div className="mt-1 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-ocean-600 text-[11px] font-black text-white shadow-sm">
+        <Play size={13} aria-hidden="true" />
+        Mula
+      </div>
+    </div>
+  );
+}
+
+function GuideChoiceCard({ icon: Icon, title, label, active = false }: { icon: LucideIcon; title: string; label: string; active?: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-2xl border p-2.5 ${active ? "border-ocean-300 bg-ocean-50" : "border-slate-200 bg-white"}`}>
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${active ? "bg-ocean-600 text-white" : "bg-slate-100 text-slate-500"}`}>
+        <Icon size={15} aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-black text-slate-950">{title}</p>
+        <p className="truncate text-[9px] font-bold text-slate-500">{label}</p>
+      </div>
+      {active && <CheckCircle2 size={15} className="ml-auto shrink-0 text-ocean-700" aria-hidden="true" />}
+    </div>
+  );
+}
+
+function GuidePrestasiScreen() {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[9px] font-black uppercase text-ocean-700">Prestasi Saya</p>
+        <h4 className="mt-1 text-sm font-black text-slate-950">Semak kemajuan</h4>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-2xl bg-white p-3 shadow-sm">
+          <p className="text-[9px] font-bold text-slate-500">Terbaik</p>
+          <p className="mt-1 text-lg font-black text-ocean-700">85%</p>
+        </div>
+        <div className="rounded-2xl bg-white p-3 shadow-sm">
+          <p className="text-[9px] font-bold text-slate-500">Cubaan</p>
+          <p className="mt-1 text-lg font-black text-leaf-700">12</p>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-ocean-200 bg-white p-3">
+        <div className="flex items-end gap-1.5">
+          {[32, 52, 44, 70, 86].map((height, index) => (
+            <span key={height + index} className="flex-1 rounded-t-lg bg-gradient-to-t from-ocean-600 to-leaf-400" style={{ height }} />
+          ))}
+        </div>
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-ocean-50 px-3 py-1.5 text-[10px] font-black text-ocean-700">
+          <Award size={12} aria-hidden="true" />
+          Tekan Prestasi
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuideMiniBottomNav({ active }: { active: "Simulasi" | "Prestasi" }) {
+  const items: Array<{ label: "Utama" | "Simulasi" | "Prestasi" | "Lencana" | "Panduan"; icon: LucideIcon }> = [
+    { label: "Utama", icon: LayoutDashboard },
+    { label: "Simulasi", icon: Target },
+    { label: "Prestasi", icon: Award },
+    { label: "Lencana", icon: Trophy },
+    { label: "Panduan", icon: BookOpen },
+  ];
+
+  return (
+    <div className="grid grid-cols-5 border-t border-slate-100 bg-white px-2 py-2">
+      {items.map(({ label, icon: Icon }) => {
+        const isActive = label === active;
+        return (
+          <div key={label} className={`mx-auto flex h-12 w-11 flex-col items-center justify-center gap-1 rounded-2xl text-[8px] font-black ${isActive ? "bg-ocean-50 text-ocean-700 ring-2 ring-ocean-200" : "text-slate-500"}`}>
+            <Icon size={13} aria-hidden="true" />
+            <span>{label}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
