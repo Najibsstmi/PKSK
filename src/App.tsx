@@ -2287,8 +2287,8 @@ function LandingPage({
 function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null }) {
   return (
     <div className="relative z-10 -mt-10 w-full max-w-[520px] self-center rounded-2xl border border-ocean-100 bg-white/94 p-4 shadow-[0_18px_42px_rgba(15,23,42,0.16)] backdrop-blur lg:absolute lg:bottom-7 lg:right-8 lg:mt-0 lg:w-[390px] lg:max-w-none">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
             <BookOpen size={22} aria-hidden="true" />
           </span>
@@ -2297,8 +2297,8 @@ function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null })
             <p className="truncate text-sm font-bold text-slate-600">Dikembangkan secara berterusan</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-black leading-none text-slate-950">{formatQuestionCount(counts?.total)}</p>
+        <div className="min-w-[92px] shrink-0 text-right">
+          <p className="whitespace-nowrap text-3xl font-black leading-none text-slate-950 tabular-nums">{formatQuestionCount(counts?.total)}</p>
           <p className="text-xs font-black text-slate-500">jumlah</p>
         </div>
       </div>
