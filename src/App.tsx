@@ -4795,6 +4795,10 @@ function AdminPaymentRequestsPage({
     runAction(request.id, () => expirePaymentRequest(request.id, "Dibatalkan oleh admin kerana pending terlalu lama."), "Rekod pending telah dibatalkan.");
   }
 
+  function canRecheckToyyibPayPayment(request: AdminPaymentRequestRow): boolean {
+    return request.payment_method === "toyyibpay" && request.status !== "paid" && request.status !== "approved";
+  }
+
   const totalCount = requests[0]?.total_count ?? requests.length;
 
   return (
@@ -4849,7 +4853,7 @@ function AdminPaymentRequestsPage({
                     <span className={`rounded-lg px-3 py-2 text-xs font-black ${paymentStatusTone(request.status)}`}>{paymentStatusLabel(request.status)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    {request.status === "pending" && request.payment_method === "toyyibpay" ? (
+                    {canRecheckToyyibPayPayment(request) ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -4859,14 +4863,16 @@ function AdminPaymentRequestsPage({
                         >
                           {busyAction === request.id ? "Menyemak..." : "Semak Online"}
                         </button>
-                        <button
-                          type="button"
-                          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
-                          disabled={busyAction === request.id}
-                          onClick={() => expirePendingPayment(request)}
-                        >
-                          Batalkan
-                        </button>
+                        {request.status === "pending" ? (
+                          <button
+                            type="button"
+                            className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
+                            disabled={busyAction === request.id}
+                            onClick={() => expirePendingPayment(request)}
+                          >
+                            Batalkan
+                          </button>
+                        ) : null}
                       </div>
                     ) : request.status === "pending" ? (
                       <div className="flex flex-wrap gap-2">

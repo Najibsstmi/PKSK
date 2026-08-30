@@ -338,7 +338,7 @@ function getVerificationStatus(transaction: Record<string, unknown> | null): Ver
   if (["3", "failed", "fail", "unsuccessful", "void", "rejected"].includes(status)) {
     return "failed";
   }
-  if (["4", "cancelled", "canceled"].includes(status)) {
+  if (["cancelled", "canceled"].includes(status)) {
     return "cancelled";
   }
 
