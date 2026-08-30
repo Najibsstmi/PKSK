@@ -2294,7 +2294,6 @@ function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null })
           </span>
           <div className="min-w-0">
             <p className="text-xs font-black uppercase text-ocean-700">Bank Soalan Aktif</p>
-            <p className="truncate text-sm font-bold text-slate-600">Dikembangkan secara berterusan</p>
           </div>
         </div>
         <div className="min-w-[92px] shrink-0 text-right">
@@ -2302,6 +2301,7 @@ function QuestionBankHeroCard({ counts }: { counts: QuestionBankCounts | null })
           <p className="text-xs font-black text-slate-500">jumlah</p>
         </div>
       </div>
+      <p className="mt-2 text-sm font-bold leading-5 text-slate-600">Dikembangkan secara berterusan</p>
       <div className="mt-4 grid grid-cols-3 gap-2">
         <QuestionCountPill label="Bahagian A" value={counts?.section_a} />
         <QuestionCountPill label="Bahagian B" value={counts?.section_b} />
