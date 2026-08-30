@@ -74,11 +74,18 @@ export async function createManualQuestion(input: ManualQuestionInput): Promise<
   return data;
 }
 
-export async function uploadQuestionImage(file: File): Promise<string> {
+export type UploadQuestionImageOptions = {
+  folderPrefix?: string;
+  fileName?: string;
+};
+
+export async function uploadQuestionImage(file: File, options: UploadQuestionImageOptions = {}): Promise<string> {
   const client = requireSupabase();
   const extension = file.name.split(".").pop()?.toLowerCase() || "png";
   const safeExtension = ["png", "jpg", "jpeg", "webp", "svg"].includes(extension) ? extension : "png";
-  const path = `manual/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${safeExtension}`;
+  const folderPrefix = sanitizeQuestionAssetFolder(options.folderPrefix || `manual/${new Date().toISOString().slice(0, 10)}`);
+  const safeFileName = options.fileName ? sanitizeQuestionAssetFileName(options.fileName, safeExtension) : `${crypto.randomUUID()}.${safeExtension}`;
+  const path = `${folderPrefix}/${safeFileName}`;
   const { error } = await client.storage.from("question-assets").upload(path, file, {
     cacheControl: "31536000",
     contentType: file.type || "image/png",
@@ -91,6 +98,25 @@ export async function uploadQuestionImage(file: File): Promise<string> {
 
   const { data } = client.storage.from("question-assets").getPublicUrl(path);
   return data.publicUrl;
+}
+
+function sanitizeQuestionAssetFolder(folderPrefix: string): string {
+  const cleaned = folderPrefix
+    .split("/")
+    .map((segment) => segment.trim().replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-"))
+    .filter(Boolean)
+    .join("/");
+
+  return cleaned || `manual/${new Date().toISOString().slice(0, 10)}`;
+}
+
+function sanitizeQuestionAssetFileName(fileName: string, fallbackExtension: string): string {
+  const trimmed = fileName.trim();
+  const extension = trimmed.split(".").pop()?.toLowerCase();
+  const safeExtension = extension && ["png", "jpg", "jpeg", "webp", "svg"].includes(extension) ? extension : fallbackExtension;
+  const baseName = trimmed.replace(/\.[^/.]+$/, "") || crypto.randomUUID();
+  const safeBaseName = baseName.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "") || crypto.randomUUID();
+  return `${safeBaseName}.${safeExtension}`;
 }
 
 export async function updateQuestion(input: ManualQuestionInput & { id: string; is_active?: boolean }): Promise<void> {

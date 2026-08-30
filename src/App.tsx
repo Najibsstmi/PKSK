@@ -50,7 +50,7 @@
   Play,
   type LucideIcon,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { pkskInfoConfig, type PkskInfoEvent, type PkskInfoEventId } from "./data/pkskInfo";
@@ -5046,6 +5046,32 @@ function AdminQuestionsPage({ onMessage }: { onMessage: (message: string | null)
   );
 }
 
+type CsvImageUploadStatus = "queued" | "uploading" | "success" | "failed";
+
+type CsvImageUploadItem = {
+  id: string;
+  file: File;
+  originalName: string;
+  storageFileName: string;
+  previewUrl: string;
+  publicUrl: string;
+  status: CsvImageUploadStatus;
+  error: string | null;
+};
+
+type CsvImageUploadSummary = {
+  selected: number;
+  success: number;
+  failed: number;
+};
+
+type CsvImageMatchSummary = {
+  totalImageReferences: number;
+  matchedCount: number;
+  missingFilenames: string[];
+  usedFilenames: string[];
+};
+
 function CsvImportModal({
   onClose,
   onImported,
@@ -5058,25 +5084,118 @@ function CsvImportModal({
   const [file, setFile] = useState<File | null>(null);
   const [sourceTitle, setSourceTitle] = useState("");
   const [busy, setBusy] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+  const [uploadBatchBusy, setUploadBatchBusy] = useState(false);
+  const [imageUploads, setImageUploads] = useState<CsvImageUploadItem[]>([]);
+  const [uploadSummary, setUploadSummary] = useState<CsvImageUploadSummary>({ selected: 0, success: 0, failed: 0 });
+  const [matchSummary, setMatchSummary] = useState<CsvImageMatchSummary | null>(null);
+  const imageUploadsRef = useRef<CsvImageUploadItem[]>([]);
+  const uploadedMappings = useMemo(() => imageUploads.filter((item) => item.status === "success" && item.publicUrl), [imageUploads]);
+  const uploadedMappingText = useMemo(() => uploadedMappings.map((item) => `${item.originalName},${item.publicUrl}`).join("\n"), [uploadedMappings]);
+  const uploadInProgress = uploadBatchBusy || imageUploads.some((item) => item.status === "queued" || item.status === "uploading");
 
-  async function handleImageUpload(nextFile: File | null) {
-    if (!nextFile) {
+  useEffect(() => {
+    imageUploadsRef.current = imageUploads;
+  }, [imageUploads]);
+
+  useEffect(() => {
+    return () => {
+      imageUploadsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMatchPreview() {
+      if (!file) {
+        setMatchSummary(null);
+        return;
+      }
+
+      try {
+        const csvText = await file.text();
+        const records = parseCsvRecords(csvText);
+        const { summary } = autoMatchCsvImageUrls(records, buildCsvImageUrlMap(imageUploads));
+        if (!cancelled) {
+          setMatchSummary(summary);
+        }
+      } catch {
+        if (!cancelled) {
+          setMatchSummary(null);
+        }
+      }
+    }
+
+    void refreshMatchPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [file, imageUploads]);
+
+  async function handleImageUpload(fileList: FileList | null) {
+    const selectedFiles = fileList ? Array.from(fileList) : [];
+    if (selectedFiles.length === 0) {
       return;
     }
 
-    setUploadingImage(true);
+    imageUploadsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    const supportedFiles = selectedFiles.filter(isSupportedCsvImageFile);
+    const rejectedCount = selectedFiles.length - supportedFiles.length;
+    const usedNames = new Set<string>();
+    const nextUploads = supportedFiles.map((nextFile) => ({
+      id: crypto.randomUUID(),
+      file: nextFile,
+      originalName: nextFile.name,
+      storageFileName: createUniqueCsvAssetFileName(nextFile, usedNames),
+      previewUrl: URL.createObjectURL(nextFile),
+      publicUrl: "",
+      status: "queued" as CsvImageUploadStatus,
+      error: null,
+    }));
+
+    setImageUploads(nextUploads);
+    setUploadSummary({ selected: selectedFiles.length, success: 0, failed: rejectedCount });
+    setMatchSummary(null);
     onMessage(null);
-    try {
-      const publicUrl = await uploadQuestionImage(nextFile);
-      setUploadedImageUrl(publicUrl);
-      onMessage("Gambar berjaya dimuat naik. URL boleh digunakan dalam template CSV.");
-    } catch (error) {
-      onMessage(toMessage(error));
-    } finally {
-      setUploadingImage(false);
+
+    if (nextUploads.length === 0) {
+      onMessage("Tiada gambar yang disokong. Sila pilih PNG, JPG, JPEG, WEBP atau SVG.");
+      return;
     }
+
+    setUploadBatchBusy(true);
+    const folderPrefix = `csv/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}`;
+    let successCount = 0;
+    let failedCount = rejectedCount;
+
+    try {
+      await runLimitedConcurrency(nextUploads, 4, async (item) => {
+        updateCsvUploadItem(item.id, { status: "uploading", error: null });
+        try {
+          const publicUrl = await uploadQuestionImage(item.file, { folderPrefix, fileName: item.storageFileName });
+          successCount += 1;
+          updateCsvUploadItem(item.id, { status: "success", publicUrl });
+        } catch (error) {
+          failedCount += 1;
+          updateCsvUploadItem(item.id, { status: "failed", error: toMessage(error) });
+        } finally {
+          setUploadSummary({ selected: selectedFiles.length, success: successCount, failed: failedCount });
+        }
+      });
+
+      onMessage(`${successCount}/${selectedFiles.length} gambar berjaya dimuat naik${failedCount ? `, ${failedCount} gagal.` : "."}`);
+    } finally {
+      setUploadBatchBusy(false);
+    }
+  }
+
+  function updateCsvUploadItem(id: string, patch: Partial<CsvImageUploadItem>) {
+    setImageUploads((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function handleCsvFileChange(nextFile: File | null) {
+    setFile(nextFile);
+    setMatchSummary(null);
   }
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
@@ -5085,17 +5204,29 @@ function CsvImportModal({
       onMessage("Pilih fail CSV dahulu.");
       return;
     }
+    if (uploadInProgress) {
+      onMessage("Tunggu semua gambar selesai dimuat naik dahulu.");
+      return;
+    }
 
     setBusy(true);
     onMessage(null);
     try {
       const csvText = await file.text();
       const records = parseCsvRecords(csvText);
-      const questions = records.map((record, index) => csvRecordToManualQuestion(record, index + 2));
+      const matchedCsv = autoMatchCsvImageUrls(records, buildCsvImageUrlMap(imageUploads));
+      setMatchSummary(matchedCsv.summary);
+
+      if (matchedCsv.summary.missingFilenames.length > 0) {
+        throw new Error(`${matchedCsv.summary.missingFilenames.slice(0, 6).join(", ")} tidak ditemui dalam uploaded image mapping.`);
+      }
+
+      const questions = matchedCsv.records.map((record, index) => csvRecordToManualQuestion(record, index + 2));
       const importId = await createCsvQuestionImport(file.name, sourceTitle, questions);
 
       await onImported(importId);
-      onMessage(`${questions.length} soalan CSV disimpan sebagai draft review. Semak, approve, kemudian Publish Approved.`);
+      const matchedText = matchedCsv.summary.matchedCount ? ` ${matchedCsv.summary.matchedCount} URL gambar dipadankan.` : "";
+      onMessage(`${questions.length} soalan CSV disimpan sebagai draft review.${matchedText} Semak, approve, kemudian Publish Approved.`);
       onClose();
     } catch (error) {
       onMessage(toMessage(error));
@@ -5104,17 +5235,38 @@ function CsvImportModal({
     }
   }
 
-  async function copyUploadedUrl() {
-    if (!uploadedImageUrl) {
+  async function copyImageUrl(url: string) {
+    if (!url) {
       return;
     }
-    await navigator.clipboard.writeText(uploadedImageUrl);
+    await navigator.clipboard.writeText(url);
     onMessage("URL gambar disalin.");
+  }
+
+  async function copyAllImageUrls() {
+    if (!uploadedMappingText) {
+      return;
+    }
+    await navigator.clipboard.writeText(uploadedMappingText);
+    onMessage("Semua URL mapping disalin.");
+  }
+
+  function downloadImageMappingCsv() {
+    const csvText = [["filename", "url"], ...uploadedMappings.map((item) => [item.originalName, item.publicUrl])].map((row) => row.map(csvEscape).join(",")).join("\r\n");
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "question-image-url-mapping.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
-      <form className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleImport}>
+      <form className="w-full max-w-5xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleImport}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-black">Import CSV</h2>
@@ -5130,7 +5282,7 @@ function CsvImportModal({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-sm font-black text-ocean-900">Template CSV</h3>
-                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">Kolum gambar menggunakan URL. Untuk soalan bergambar, upload gambar dahulu dan letakkan URL dalam `question_image_url`.</p>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">Kolum gambar boleh guna URL penuh atau nama fail seperti `B009.png`. Jika nama fail dipadankan, sistem akan isi URL Supabase automatik.</p>
               </div>
               <button type="button" className="secondary-button bg-white" onClick={downloadCsvTemplate}>
                 <Download size={18} aria-hidden="true" />
@@ -5140,29 +5292,108 @@ function CsvImportModal({
           </section>
 
           <section className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <div className="flex items-center gap-2 text-sm font-black text-slate-700">
-              <ImageIcon size={18} aria-hidden="true" />
-              Upload gambar untuk CSV
-            </div>
-            <input className="field bg-white" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleImageUpload(event.target.files?.[0] ?? null)} />
-            {uploadingImage ? <p className="text-sm font-bold text-ocean-700">Memuat naik gambar...</p> : null}
-            {uploadedImageUrl ? (
-              <div className="grid gap-3">
-                <img src={uploadedImageUrl} alt="" className="max-h-56 rounded-xl border border-slate-200 bg-white object-contain p-2" />
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <input className="field bg-white" value={uploadedImageUrl} readOnly />
-                  <button type="button" className="secondary-button bg-white" onClick={copyUploadedUrl}>
-                    Salin URL
-                  </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-black text-slate-700">
+                  <ImageIcon size={18} aria-hidden="true" />
+                  A. Upload gambar untuk CSV
                 </div>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Pilih banyak gambar serentak. Nama fail akan dikekalkan dalam mapping CSV.</p>
+              </div>
+              {uploadSummary.selected ? (
+                <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-ocean-800 ring-1 ring-ocean-100">
+                  {uploadSummary.success}/{uploadSummary.selected} gambar berjaya dimuat naik
+                </p>
+              ) : null}
+            </div>
+            <input
+              className="field bg-white"
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+              multiple
+              onChange={(event) => handleImageUpload(event.target.files)}
+              disabled={uploadBatchBusy || busy}
+            />
+            {uploadSummary.selected ? (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <SummaryRow label="Gambar dipilih" value={String(uploadSummary.selected)} />
+                <SummaryRow label="Upload berjaya" value={String(uploadSummary.success)} />
+                <SummaryRow label="Upload gagal" value={String(uploadSummary.failed)} />
               </div>
             ) : null}
           </section>
 
-          <Label text="Fail CSV">
-            <input className="field" type="file" accept=".csv,text/csv" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
+          <section className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-800">B. Uploaded Image Mapping</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Mapping ini digunakan untuk auto-match nama fail dalam CSV.</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button type="button" className="secondary-button bg-white" onClick={copyAllImageUrls} disabled={uploadedMappings.length === 0}>
+                  <Copy size={17} aria-hidden="true" />
+                  Salin Semua URL
+                </button>
+                <button type="button" className="secondary-button bg-white" onClick={downloadImageMappingCsv} disabled={uploadedMappings.length === 0}>
+                  <Download size={17} aria-hidden="true" />
+                  Download URL Mapping CSV
+                </button>
+              </div>
+            </div>
+
+            {imageUploads.length === 0 ? (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">Belum ada gambar dimuat naik untuk CSV ini.</p>
+            ) : (
+              <div className="grid max-h-80 gap-3 overflow-y-auto pr-1">
+                {imageUploads.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[84px_1fr_auto] sm:items-center">
+                    <img src={item.previewUrl} alt="" className="h-20 w-full rounded-xl border border-slate-200 bg-white object-contain p-1 sm:w-20" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-black text-slate-900">{item.originalName}</p>
+                        {item.storageFileName !== item.originalName ? <span className="rounded-full bg-white px-2 py-1 text-[11px] font-black text-slate-500">disimpan: {item.storageFileName}</span> : null}
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-black ${csvUploadStatusTone(item.status)}`}>{csvUploadStatusLabel(item.status)}</span>
+                      </div>
+                      {item.publicUrl ? <input className="field mt-2 h-10 bg-white text-xs" value={item.publicUrl} readOnly /> : null}
+                      {item.error ? <p className="mt-2 text-xs font-bold text-coral-600">{item.error}</p> : null}
+                    </div>
+                    <button type="button" className="secondary-button bg-white" onClick={() => copyImageUrl(item.publicUrl)} disabled={!item.publicUrl}>
+                      Salin URL
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <Label text="C. Pilih Fail CSV">
+            <input className="field" type="file" accept=".csv,text/csv" onChange={(event) => handleCsvFileChange(event.target.files?.[0] ?? null)} required />
           </Label>
-          <Label text="Nama sumber">
+
+          <section className="grid gap-3 rounded-2xl border border-ocean-100 bg-ocean-50/60 p-4">
+            <div className="flex items-center gap-2 text-sm font-black text-ocean-900">
+              <RefreshCw size={17} aria-hidden="true" />
+              D. Auto-match image URLs
+            </div>
+            {matchSummary ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <SummaryRow label="Rujukan nama fail" value={String(matchSummary.totalImageReferences)} />
+                  <SummaryRow label="URL dipadankan" value={String(matchSummary.matchedCount)} />
+                  <SummaryRow label="Fail tiada padanan" value={String(matchSummary.missingFilenames.length)} />
+                </div>
+                {matchSummary.missingFilenames.length ? (
+                  <p className="rounded-2xl bg-coral-50 p-3 text-sm font-bold text-coral-700">
+                    {matchSummary.missingFilenames.slice(0, 8).join(", ")} tidak ditemui dalam uploaded image mapping.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm font-semibold leading-6 text-slate-600">Pilih fail CSV selepas upload gambar. Nama fail dalam kolum gambar akan ditukar kepada URL penuh secara automatik.</p>
+            )}
+          </section>
+
+          <Label text="E. Nama sumber">
             <input className="field" value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder={file?.name.replace(/\.(csv|xlsx?)$/i, "") ?? "Contoh: Set Soalan PKSK 2027"} />
           </Label>
 
@@ -5174,9 +5405,9 @@ function CsvImportModal({
             <button type="button" className="secondary-button" onClick={onClose}>
               Batal
             </button>
-            <button type="submit" className="primary-button" disabled={busy}>
+            <button type="submit" className="primary-button" disabled={busy || uploadInProgress}>
               <FileSpreadsheet size={18} aria-hidden="true" />
-              {busy ? "Menyediakan draft..." : "Simpan sebagai Draft Review"}
+              {busy ? "Menyediakan draft..." : "F. Simpan sebagai Draft Review"}
             </button>
           </div>
         </div>
@@ -6411,14 +6642,19 @@ const csvTemplateHeaders = [
   "topic",
   "question_text",
   "question_image_url",
+  "question_image_filename",
   "option_a",
   "option_b",
   "option_c",
   "option_d",
   "option_a_image_url",
+  "option_a_image_filename",
   "option_b_image_url",
+  "option_b_image_filename",
   "option_c_image_url",
+  "option_c_image_filename",
   "option_d_image_url",
+  "option_d_image_filename",
   "correct_option_label",
   "explanation",
   "essay_min_words",
@@ -6434,10 +6670,15 @@ const csvTemplateRows = [
     "Kecerdasan Insaniah",
     "Guru menegur kamu kerana lewat masuk kelas. Apa reaksi kamu?",
     "",
+    "",
     "Marah dan merungut",
     "Rasa malu tapi terima teguran",
     "Tidak peduli",
     "Ketawa sahaja",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -6454,11 +6695,16 @@ const csvTemplateRows = [
     "Matematik",
     "Nombor",
     "Lihat gambar rajah berikut dan pilih jawapan yang betul.",
-    "https://contoh.com/gambar-soalan.png",
+    "",
+    "B009.png",
     "24",
     "36",
     "48",
     "60",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -6475,6 +6721,11 @@ const csvTemplateRows = [
     "Penulisan",
     "Kesihatan diri",
     "Kesihatan diri perlu dijaga sejak kecil. Huraikan langkah-langkah menjaga kesihatan fizikal dan mental sebagai seorang murid.",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -6509,6 +6760,221 @@ function csvEscape(value: string): string {
     return `"${value.replace(/"/g, "\"\"")}"`;
   }
   return value;
+}
+
+const csvImageExtensions = ["png", "jpg", "jpeg", "webp", "svg"];
+
+const csvImageFieldGroups = [
+  {
+    urlKeys: ["question_image_url", "gambar_soalan"],
+    filenameKeys: ["question_image_filename", "gambar_soalan_filename", "nama_fail_gambar_soalan"],
+  },
+  {
+    urlKeys: ["option_a_image_url", "gambar_pilihan_a"],
+    filenameKeys: ["option_a_image_filename", "gambar_pilihan_a_filename", "nama_fail_gambar_pilihan_a"],
+  },
+  {
+    urlKeys: ["option_b_image_url", "gambar_pilihan_b"],
+    filenameKeys: ["option_b_image_filename", "gambar_pilihan_b_filename", "nama_fail_gambar_pilihan_b"],
+  },
+  {
+    urlKeys: ["option_c_image_url", "gambar_pilihan_c"],
+    filenameKeys: ["option_c_image_filename", "gambar_pilihan_c_filename", "nama_fail_gambar_pilihan_c"],
+  },
+  {
+    urlKeys: ["option_d_image_url", "gambar_pilihan_d"],
+    filenameKeys: ["option_d_image_filename", "gambar_pilihan_d_filename", "nama_fail_gambar_pilihan_d"],
+  },
+];
+
+async function runLimitedConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (item) {
+        await worker(item);
+      }
+    }
+  });
+
+  await Promise.all(workers);
+}
+
+function isSupportedCsvImageFile(file: File): boolean {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (csvImageExtensions.includes(extension)) {
+    return true;
+  }
+  return ["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type);
+}
+
+function getCsvImageFileExtension(file: File): string {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (csvImageExtensions.includes(extension)) {
+    return extension;
+  }
+  if (file.type === "image/jpeg") {
+    return "jpg";
+  }
+  if (file.type === "image/webp") {
+    return "webp";
+  }
+  if (file.type === "image/svg+xml") {
+    return "svg";
+  }
+  return "png";
+}
+
+function createUniqueCsvAssetFileName(file: File, usedNames: Set<string>): string {
+  const extension = getCsvImageFileExtension(file);
+  const baseName = file.name.replace(/\.[^/.]+$/, "") || "question-image";
+  const safeBaseName = sanitizeCsvAssetNamePart(baseName) || "question-image";
+  let candidate = `${safeBaseName}.${extension}`;
+  let counter = 2;
+
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${safeBaseName}-${counter}.${extension}`;
+    counter += 1;
+  }
+
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function sanitizeCsvAssetNamePart(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function csvUploadStatusLabel(status: CsvImageUploadStatus): string {
+  if (status === "success") {
+    return "Berjaya";
+  }
+  if (status === "failed") {
+    return "Gagal";
+  }
+  if (status === "uploading") {
+    return "Uploading";
+  }
+  return "Menunggu";
+}
+
+function csvUploadStatusTone(status: CsvImageUploadStatus): string {
+  if (status === "success") {
+    return "bg-leaf-50 text-leaf-600";
+  }
+  if (status === "failed") {
+    return "bg-coral-50 text-coral-600";
+  }
+  if (status === "uploading") {
+    return "bg-ocean-50 text-ocean-700";
+  }
+  return "bg-slate-100 text-slate-500";
+}
+
+function buildCsvImageUrlMap(items: CsvImageUploadItem[]): Map<string, string> {
+  const imageUrlMap = new Map<string, string>();
+
+  items.forEach((item) => {
+    if (item.status !== "success" || !item.publicUrl) {
+      return;
+    }
+
+    const originalKey = normalizeCsvFileNameKey(item.originalName);
+    const storageKey = normalizeCsvFileNameKey(item.storageFileName);
+    if (originalKey && !imageUrlMap.has(originalKey)) {
+      imageUrlMap.set(originalKey, item.publicUrl);
+    }
+    if (storageKey) {
+      imageUrlMap.set(storageKey, item.publicUrl);
+    }
+  });
+
+  return imageUrlMap;
+}
+
+function autoMatchCsvImageUrls(records: Record<string, string>[], imageUrlMap: Map<string, string>): { records: Record<string, string>[]; summary: CsvImageMatchSummary } {
+  let totalImageReferences = 0;
+  let matchedCount = 0;
+  const missingFilenames = new Set<string>();
+  const usedFilenames = new Set<string>();
+
+  const matchedRecords = records.map((record) => {
+    const nextRecord = { ...record };
+
+    csvImageFieldGroups.forEach((group) => {
+      const urlKey = findCsvRecordKey(nextRecord, group.urlKeys) || normalizeCsvHeader(group.urlKeys[0]);
+      const urlValue = getCsvValue(nextRecord, group.urlKeys);
+      const filenameValue = getCsvValue(nextRecord, group.filenameKeys);
+
+      if (urlValue && isFullImageUrl(urlValue)) {
+        return;
+      }
+
+      const candidateValue = urlValue || filenameValue;
+      if (!candidateValue) {
+        return;
+      }
+
+      if (isFullImageUrl(candidateValue)) {
+        nextRecord[urlKey] = candidateValue.trim();
+        return;
+      }
+
+      const fileName = extractCsvImageFileName(candidateValue);
+      if (!fileName) {
+        return;
+      }
+
+      totalImageReferences += 1;
+      const publicUrl = imageUrlMap.get(normalizeCsvFileNameKey(fileName));
+      if (!publicUrl) {
+        missingFilenames.add(fileName);
+        return;
+      }
+
+      matchedCount += 1;
+      usedFilenames.add(fileName);
+      nextRecord[urlKey] = publicUrl;
+    });
+
+    return nextRecord;
+  });
+
+  return {
+    records: matchedRecords,
+    summary: {
+      totalImageReferences,
+      matchedCount,
+      missingFilenames: Array.from(missingFilenames).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      usedFilenames: Array.from(usedFilenames).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    },
+  };
+}
+
+function findCsvRecordKey(record: Record<string, string>, keys: string[]): string | null {
+  for (const key of keys) {
+    const normalizedKey = normalizeCsvHeader(key);
+    if (Object.prototype.hasOwnProperty.call(record, normalizedKey)) {
+      return normalizedKey;
+    }
+  }
+  return null;
+}
+
+function isFullImageUrl(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("data:image/") || normalized.startsWith("blob:");
+}
+
+function extractCsvImageFileName(value: string): string {
+  const withoutQuery = value.trim().split(/[?#]/)[0] || "";
+  const parts = withoutQuery.split(/[\\/]/);
+  return parts[parts.length - 1]?.trim() ?? "";
+}
+
+function normalizeCsvFileNameKey(value: string): string {
+  return extractCsvImageFileName(value).toLowerCase();
 }
 
 function parseCsvRecords(csvText: string): Record<string, string>[] {
