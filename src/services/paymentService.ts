@@ -254,6 +254,10 @@ export async function rejectPaymentRequest(requestId: string, notes?: string): P
   await updatePaymentRequestStatus(requestId, "rejected", notes);
 }
 
+export async function expirePaymentRequest(requestId: string, notes?: string): Promise<void> {
+  await updatePaymentRequestStatus(requestId, "expired", notes);
+}
+
 async function updatePaymentRequestStatus(requestId: string, status: Exclude<PaymentRequestStatus, "pending">, notes?: string): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("admin_update_payment_request", {

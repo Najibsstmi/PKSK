@@ -98,6 +98,7 @@ import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewSer
 import {
   approvePaymentRequest,
   captureReferralCodeFromUrl,
+  expirePaymentRequest,
   fetchAdminPaymentRequests,
   fetchMyLatestPaymentRequest,
   fetchMyPendingPaymentRequest,
@@ -4785,6 +4786,15 @@ function AdminPaymentRequestsPage({
     }
   }
 
+  function expirePendingPayment(request: AdminPaymentRequestRow) {
+    const confirmed = window.confirm("Batalkan rekod pending ini? Rekod akan dialihkan ke status Expired dan tidak dipaparkan lagi dalam filter Pending.");
+    if (!confirmed) {
+      return;
+    }
+
+    runAction(request.id, () => expirePaymentRequest(request.id, "Dibatalkan oleh admin kerana pending terlalu lama."), "Rekod pending telah dibatalkan.");
+  }
+
   const totalCount = requests[0]?.total_count ?? requests.length;
 
   return (
@@ -4840,14 +4850,24 @@ function AdminPaymentRequestsPage({
                   </td>
                   <td className="px-4 py-3">
                     {request.status === "pending" && request.payment_method === "toyyibpay" ? (
-                      <button
-                        type="button"
-                        className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700 hover:bg-ocean-100"
-                        disabled={busyAction === request.id}
-                        onClick={() => verifyToyyibPayPayment(request)}
-                      >
-                        {busyAction === request.id ? "Menyemak..." : "Semak Online"}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-ocean-50 px-3 py-2 text-xs font-black text-ocean-700 hover:bg-ocean-100"
+                          disabled={busyAction === request.id}
+                          onClick={() => verifyToyyibPayPayment(request)}
+                        >
+                          {busyAction === request.id ? "Menyemak..." : "Semak Online"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
+                          disabled={busyAction === request.id}
+                          onClick={() => expirePendingPayment(request)}
+                        >
+                          Batalkan
+                        </button>
+                      </div>
                     ) : request.status === "pending" ? (
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -4868,6 +4888,14 @@ function AdminPaymentRequestsPage({
                           }}
                         >
                           Reject
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
+                          disabled={busyAction === request.id}
+                          onClick={() => expirePendingPayment(request)}
+                        >
+                          Batalkan
                         </button>
                       </div>
                     ) : (
