@@ -38,15 +38,16 @@ export async function downloadPrintSimulationPdf(payload: PrintableSimulationSet
   const generatedDate = formatGeneratedDate(info.generatedAt);
 
   renderCover(writer, info, generatedDate);
-  doc.addPage();
-  startContentPage(writer);
 
   const sectionA = payload.questions.filter((question) => question.section === "A").sort(sortByQuestionOrder);
   const sectionB = payload.questions.filter((question) => question.section === "B").sort(sortByQuestionOrder);
   const sectionC = payload.questions.filter((question) => question.section === "C").sort(sortByQuestionOrder);
 
+  startNewContentPage(writer);
   await renderSection(writer, "Bahagian A", "Kecerdasan Insaniah - 30 soalan objektif", sectionA);
+  startNewContentPage(writer);
   await renderSection(writer, "Bahagian B", "Kecerdasan Intelek - 70 soalan objektif", sectionB);
+  startNewContentPage(writer);
   await renderSection(writer, "Bahagian C", "Artikulasi Penulisan - 1 soalan", sectionC, true);
 
   doc.save(createPdfFileName(info.studentName, info.generatedAt));
@@ -243,6 +244,10 @@ function ensureSpace(writer: PdfWriter, neededHeight: number) {
     return;
   }
 
+  startNewContentPage(writer);
+}
+
+function startNewContentPage(writer: PdfWriter) {
   writer.doc.addPage();
   startContentPage(writer);
 }
