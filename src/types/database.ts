@@ -351,6 +351,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      generate_print_simulation_set: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
       submit_answer: {
         Args: {
           p_attempt_id: string;

@@ -40,6 +40,17 @@ export type AttemptPayload = {
   questions: QuizQuestion[];
 };
 
+export type PrintableSimulationSet = {
+  generated_at: string;
+  total_questions: number;
+  sections: {
+    A: number;
+    B: number;
+    C: number;
+  };
+  questions: QuizQuestion[];
+};
+
 export type CompleteAttemptResult = {
   attempt_id: string;
   correct_answers: number;

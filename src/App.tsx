@@ -31,6 +31,7 @@
   Menu,
   PenLine,
   Plus,
+  Printer,
   QrCode,
   RefreshCw,
   Rocket,
@@ -125,6 +126,7 @@ import {
   fetchActiveAttempt,
   fetchAttemptHistory,
   generateQuiz,
+  generatePrintSimulationSet,
   getAttemptPayload,
   skipAnswer,
   submitAnswer,
@@ -1431,7 +1433,7 @@ function App() {
       );
     }
     if (currentRoute === "/app/simulasi") {
-      return <ModePage isLoggedIn={isLoggedIn} busy={busy} onStartQuiz={handleStartQuiz} onStartEssay={handleStartEssay} onNavigate={navigate} />;
+      return <ModePage isLoggedIn={isLoggedIn} busy={busy} profile={profile} onStartQuiz={handleStartQuiz} onStartEssay={handleStartEssay} onNavigate={navigate} onMessage={setMessage} />;
     }
     if (currentRoute === "/app/quiz") {
       return (
@@ -7427,19 +7429,26 @@ function SummaryPanel({ title, value }: { title: string; value: string }) {
 function ModePage({
   isLoggedIn,
   busy,
+  profile,
   onStartQuiz,
   onStartEssay,
   onNavigate,
+  onMessage,
 }: {
   isLoggedIn: boolean;
   busy: boolean;
+  profile: ProfileRow | null;
   onStartQuiz: (mode: QuizMode, section: PkskSectionCode | null, numberOfQuestions: number) => void;
   onStartEssay: () => void;
   onNavigate: (route: AppRoute) => void;
+  onMessage: (message: string | null) => void;
 }) {
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+
   if (!isLoggedIn) {
     return <LockedState title="Log masuk diperlukan" text="Cipta akaun atau log masuk dahulu untuk simpan cubaan dan mata simulasi." onNavigate={onNavigate} />;
   }
+
   return (
     <div className="space-y-6">
       <PageHeader icon={Target} title="Pilih Simulasi" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
@@ -7448,8 +7457,120 @@ function ModePage({
         <ModeCard title="Bahagian A" text="30 soalan Kecerdasan Insaniah. Skor rasmi 20%." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 30)} />
         <ModeCard title="Bahagian B" text="70 soalan objektif Kecerdasan Intelek. Skor rasmi 70%." icon={Brain} disabled={busy} onClick={() => onStartQuiz("section", "B", 70)} />
         <ModeCard title="Bahagian C" text="1 tajuk karangan Bahasa Melayu, minimum 100 patah perkataan dalam 45 minit." icon={PenLine} disabled={busy} onClick={onStartEssay} />
+        <ModeCard title="Cetak Simulasi PKSK" text="Jana set lengkap Bahagian A, B dan C untuk dimuat turun dan dicetak." icon={Printer} disabled={busy} onClick={() => setPrintModalOpen(true)} />
       </div>
+      {printModalOpen ? <PrintSimulationPdfModal profile={profile} onClose={() => setPrintModalOpen(false)} onMessage={onMessage} /> : null}
     </div>
+  );
+}
+
+function PrintSimulationPdfModal({ profile, onClose, onMessage }: { profile: ProfileRow | null; onClose: () => void; onMessage: (message: string | null) => void }) {
+  const [studentName, setStudentName] = useState(() => profile?.full_name ?? profile?.display_name ?? "");
+  const [school, setSchool] = useState(() => profile?.school ?? "");
+  const [busy, setBusy] = useState(false);
+  const generatedAt = useMemo(() => new Date(), []);
+  const generatedDateText = useMemo(
+    () =>
+      new Intl.DateTimeFormat("ms-MY", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(generatedAt),
+    [generatedAt],
+  );
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!studentName.trim()) {
+      onMessage("Isi nama murid dahulu.");
+      return;
+    }
+    if (!school.trim()) {
+      onMessage("Isi nama sekolah dahulu.");
+      return;
+    }
+
+    setBusy(true);
+    onMessage(null);
+    try {
+      const printableSet = await generatePrintSimulationSet();
+      const { downloadPrintSimulationPdf } = await import("./services/printSimulationPdfService");
+      await downloadPrintSimulationPdf(printableSet, {
+        studentName: studentName.trim(),
+        school: school.trim(),
+        generatedAt,
+      });
+      onMessage("PDF Cetak Simulasi PKSK berjaya dijana dan dimuat turun.");
+      onClose();
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+      <form className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+              <Printer size={24} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-2xl font-black text-slate-950">Cetak Simulasi PKSK</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">Jana PDF lengkap A30, B70 dan C1 untuk download dan print.</p>
+            </div>
+          </div>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose} disabled={busy} aria-label="Tutup">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-4">
+          <div className="grid gap-3 rounded-2xl border border-ocean-100 bg-ocean-50 p-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-black uppercase text-ocean-800">Bahagian A</p>
+              <p className="mt-1 text-xl font-black text-slate-950">30</p>
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase text-ocean-800">Bahagian B</p>
+              <p className="mt-1 text-xl font-black text-slate-950">70</p>
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase text-ocean-800">Bahagian C</p>
+              <p className="mt-1 text-xl font-black text-slate-950">1</p>
+            </div>
+          </div>
+
+          <Label text="Nama murid">
+            <input className="field" value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="Contoh: Najib" required />
+          </Label>
+          <Label text="Sekolah">
+            <input className="field" value={school} onChange={(event) => setSchool(event.target.value)} placeholder="Contoh: SK Seri Murni" required />
+          </Label>
+          <Label text="Tarikh janaan">
+            <input className="field bg-slate-50" value={generatedDateText} readOnly />
+          </Label>
+
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            PDF akan masukkan logo, cover page, header PKSK Academy, nombor halaman, dan rajah soalan jika tersedia.
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>
+              Batal
+            </button>
+            <button type="submit" className="primary-button" disabled={busy}>
+              <Download size={18} aria-hidden="true" />
+              {busy ? "Menjana PDF..." : "Jana & Download PDF"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
   );
 }
 

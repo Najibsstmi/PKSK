@@ -1,6 +1,6 @@
 import { requireSupabase } from "../lib/supabase";
 import type { QuizAttemptRow } from "../types/database";
-import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode } from "../types/quiz";
+import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, PrintableSimulationSet, QuizMode } from "../types/quiz";
 
 export type GenerateQuizInput = {
   mode: QuizMode;
@@ -34,6 +34,17 @@ export async function getAttemptPayload(attemptId: string): Promise<AttemptPaylo
   }
 
   return data as AttemptPayload;
+}
+
+export async function generatePrintSimulationSet(): Promise<PrintableSimulationSet> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("generate_print_simulation_set");
+
+  if (error) {
+    throw new Error(mapSupabaseMessage(error.message));
+  }
+
+  return data as PrintableSimulationSet;
 }
 
 export async function submitAnswer(attemptId: string, questionId: string, optionId: string): Promise<void> {
@@ -132,6 +143,9 @@ export function mapSupabaseMessage(message: string): string {
   }
   if (message.includes("NOT_ENOUGH_SECTION_B_QUESTIONS")) {
     return "Bank soalan Bahagian B belum cukup 70 soalan aktif.";
+  }
+  if (message.includes("NOT_ENOUGH_SECTION_C_QUESTIONS") || message.includes("EMPTY_ESSAY_BANK")) {
+    return "Bank soalan Bahagian C belum cukup 1 soalan aktif.";
   }
 
   return message;
