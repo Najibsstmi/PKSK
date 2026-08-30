@@ -5494,13 +5494,15 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
     }
   }
 
-  const highConfidenceIds = drafts.filter((draft) => !draft.imported_question_id && confidenceLevel(draft.confidence) === "High").map((draft) => draft.id);
+  const isCsvImport = importRow ? isCsvQuestionImport(importRow) : false;
+  const approveReadyIds = drafts
+    .filter((draft) => !draft.imported_question_id && draft.review_status === "pending" && (isCsvImport || confidenceLevel(draft.confidence) === "High"))
+    .map((draft) => draft.id);
   const approvedCount = drafts.filter((draft) => draft.review_status === "approved" && !draft.imported_question_id).length;
   const pendingCount = drafts.filter((draft) => draft.review_status === "pending" && !draft.imported_question_id).length;
   const reviewCount = drafts.filter((draft) => draft.review_status === "needs_review" && !draft.imported_question_id).length;
   const rejectedCount = drafts.filter((draft) => draft.review_status === "rejected" && !draft.imported_question_id).length;
   const importedCount = drafts.filter((draft) => draft.imported_question_id).length;
-  const isCsvImport = importRow ? isCsvQuestionImport(importRow) : false;
 
   return (
     <AdminShell title="Import Review" text="Upload PDF atau CSV, semak draft, kemudian publish soalan yang sudah approved.">
@@ -5557,7 +5559,7 @@ function AdminQuestionImportPage({ onMessage }: { onMessage: (message: string | 
                 >
                   {isCsvImport ? "CSV Draft Siap" : importRow.status === "processing" ? "Sedang Ekstrak..." : "Ekstrak Soalan"}
                 </button>
-                <button type="button" className="secondary-button" disabled={busyAction || highConfidenceIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(highConfidenceIds, "approved"), "Semua draft high confidence diluluskan.")}>
+                <button type="button" className="secondary-button" disabled={busyAction || approveReadyIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(approveReadyIds, "approved"), `${approveReadyIds.length} draft yakin diluluskan.`)}>
                   Approve Draft Yakin
                 </button>
                 <button type="button" className="secondary-button" disabled={busyAction || selectedDraftIds.length === 0} onClick={() => runImportAction(() => setImportDraftStatus(selectedDraftIds, "approved"), "Draft terpilih diluluskan.")}>
