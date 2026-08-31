@@ -278,27 +278,33 @@ export function ZohoSyncPanel({ onMessage }: ZohoSyncPanelProps) {
   );
 }
 
+type PreviewMetric = {
+  label: string;
+  value: number;
+  description?: string;
+};
+
 function PreviewGrid({ preview }: { preview: ZohoBackfillPreview }) {
-  const items = [
-    ["Total Auth Users", preview.total_auth_users],
-    ["With Profile", preview.with_profile],
-    ["Eligible", preview.eligible_users],
-    ["Prospects", preview.prospects],
-    ["Premium", preview.premium],
-    ["Expired", preview.expired],
-    ["Blocked", preview.blocked],
-    ["Invalid Email", preview.invalid_email],
-    ["Admin Excluded", preview.admin_internal_excluded],
-    ["Consent True", preview.marketing_consent_true],
-    ["Consent Missing", preview.marketing_consent_missing ?? preview.marketing_consent_false_or_unknown],
-    ["Consent Declined", preview.marketing_consent_declined ?? 0],
-    ["Unsubscribed", preview.unsubscribed],
+  const items: PreviewMetric[] = [
+    { label: "Total Auth Users", value: preview.total_auth_users },
+    { label: "With Profile", value: preview.with_profile },
+    { label: "Eligible", value: preview.eligible_users },
+    { label: "Prospects", value: preview.prospects },
+    { label: "Premium", value: preview.premium },
+    { label: "Expired", value: preview.expired },
+    { label: "Blocked", value: preview.blocked },
+    { label: "Invalid Email", value: preview.invalid_email },
+    { label: "Admin Excluded", value: preview.admin_internal_excluded },
+    { label: "Consent True", value: preview.marketing_consent_true, description: "Pengguna telah memberi persetujuan menerima marketing." },
+    { label: "Consent Missing", value: preview.marketing_consent_missing ?? preview.marketing_consent_false_or_unknown, description: "Tiada rekod keputusan kerana user daftar sebelum consent diperkenalkan." },
+    { label: "Consent Declined", value: preview.marketing_consent_declined ?? 0, description: "Pengguna telah memilih tidak menerima marketing." },
+    { label: "Unsubscribed", value: preview.unsubscribed, description: "Pengguna pernah subscribe tetapi kemudian berhenti melanggan." },
   ];
 
   return (
     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map(([label, value]) => (
-        <ZohoMiniMetric key={label} label={String(label)} value={`${value}`} />
+      {items.map((item) => (
+        <ZohoMiniMetric key={item.label} label={item.label} value={`${item.value}`} description={item.description} />
       ))}
     </div>
   );
@@ -320,11 +326,12 @@ function ZohoStat({ icon: Icon, label, value, tone }: { icon: LucideIcon; label:
   );
 }
 
-function ZohoMiniMetric({ label, value }: { label: string; value: string }) {
+function ZohoMiniMetric({ label, value, description }: { label: string; value: string; description?: string }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3" title={description}>
       <p className="text-xs font-black uppercase text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+      {description ? <p className="mt-1 text-[11px] font-semibold leading-4 text-slate-500">{description}</p> : null}
     </div>
   );
 }

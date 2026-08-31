@@ -154,6 +154,7 @@ type AppRoute =
   | "/register"
   | "/checkout"
   | "/payment-result"
+  | "/privacy"
   | "/info-pksk"
   | "/app"
   | "/app/simulasi"
@@ -198,7 +199,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const mobileMenuNavItems = navItems.filter((item) => !["/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/marketing", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
-const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
+const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/privacy", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
   "/app/simulasi",
@@ -220,6 +221,7 @@ const validRoutes = new Set<AppRoute>(
     "/register",
     "/checkout",
     "/payment-result",
+    "/privacy",
     "/info-pksk",
     "/app/quiz",
     "/app/essay",
@@ -247,6 +249,8 @@ const legacyRouteMap: Record<string, AppRoute> = {
   "/achievements": "/app/lencana",
   "/bonus": "/app/bonus",
   "/guide": "/app/panduan",
+  "/privacy-notice": "/privacy",
+  "/notis-privasi": "/privacy",
 };
 
 const avatars = ["Cemerlang", "Berani", "Bijak", "Tekun", "Kreatif"];
@@ -257,6 +261,7 @@ const WHATSAPP_SUPPORT_NUMBER = "60197259548";
 const WHATSAPP_SUPPORT_MESSAGE = "Hi, saya perlukan bantuan berkaitan PKSK Academy.";
 const rememberedEmailKey = "pksk-remembered-email";
 const spaRedirectStorageKey = "pksk-spa-redirect";
+const privacyNoticeLastUpdated = "1 September 2026";
 type BonusMaterial = {
   title: string;
   subject: string;
@@ -1319,6 +1324,9 @@ function App() {
     if (currentRoute === "/info-pksk") {
       return <InfoPkskPage onNavigate={navigate} />;
     }
+    if (currentRoute === "/privacy") {
+      return <PrivacyNoticePage onNavigate={navigate} />;
+    }
 
     if (loading) {
       return <LoadingPage />;
@@ -1338,6 +1346,7 @@ function App() {
           onSubmit={handleAuth}
           onPasswordResetRequest={handlePasswordResetRequest}
           onPasswordUpdate={handlePasswordUpdate}
+          onNavigate={navigate}
         />
       );
     }
@@ -1415,6 +1424,7 @@ function App() {
             onSubmit={handleAuth}
             onPasswordResetRequest={handlePasswordResetRequest}
             onPasswordUpdate={handlePasswordUpdate}
+            onNavigate={navigate}
           />
         );
       }
@@ -1587,6 +1597,7 @@ function App() {
       <main className="mx-auto max-w-7xl px-4 pb-28 pt-24 sm:px-6 lg:px-8 lg:pb-16">
         {message ? <MessageBanner message={message} onDismiss={() => setMessage(null)} /> : null}
         {page}
+        <PrivacyFooter currentRoute={currentRoute} onNavigate={navigate} />
       </main>
 
       {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} diamondProfile={diamondProfile} onNavigate={navigate} /> : null}
@@ -1623,7 +1634,7 @@ function LegacyMarketingConsentPrompt({ busy, onDecision }: { busy: boolean; onD
           </div>
         </div>
         <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm font-semibold leading-7 text-slate-600">
-          <p>Nak kami hantarkan tips persediaan PKSK, info terkini dan promosi PKSK Academy terus ke e-mel anda?</p>
+          <p>Nak kami hantarkan tips persediaan PKSK, info penting, latihan percuma dan promosi PKSK Academy terus ke e-mel anda?</p>
           <p className="mt-2">Anda boleh berhenti melanggan pada bila-bila masa.</p>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1638,6 +1649,27 @@ function LegacyMarketingConsentPrompt({ busy, onDecision }: { busy: boolean; onD
         </div>
       </div>
     </section>
+  );
+}
+
+function PrivacyFooter({ currentRoute, onNavigate }: { currentRoute: AppRoute; onNavigate: (route: AppRoute) => void }) {
+  const isPrivacyPage = currentRoute === "/privacy";
+
+  return (
+    <footer className="mt-10 border-t border-slate-200 pt-5 text-sm font-semibold text-slate-500">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>PKSK Academy oleh CikguSTEM</span>
+        <button
+          type="button"
+          className={`w-fit font-black ${isPrivacyPage ? "text-slate-400" : "text-ocean-700 hover:text-ocean-900"}`}
+          onClick={() => onNavigate("/privacy")}
+          disabled={isPrivacyPage}
+          aria-current={isPrivacyPage ? "page" : undefined}
+        >
+          Privacy Notice
+        </button>
+      </div>
+    </footer>
   );
 }
 
@@ -2067,12 +2099,14 @@ function AuthPanel({
   mode,
   busy,
   onMode,
+  onNavigate,
   onPasswordResetRequest,
   onSubmit,
 }: {
   mode: AuthMode;
   busy: boolean;
   onMode: (mode: AuthMode) => void;
+  onNavigate: (route: AppRoute) => void;
   onPasswordResetRequest: (email: string) => void;
   onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
 }) {
@@ -2210,15 +2244,23 @@ function AuthPanel({
           </div>
         ) : null}
         {mode === "register" ? (
-          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
-              checked={marketingConsent}
-              onChange={(event) => setMarketingConsent(event.target.checked)}
-            />
-            <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
-          </label>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
+                checked={marketingConsent}
+                onChange={(event) => setMarketingConsent(event.target.checked)}
+              />
+              <span>Ya, hantarkan saya tips PKSK, info penting, latihan percuma dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+            </label>
+            <div className="mt-3 border-t border-slate-200 pt-3">
+              <button type="button" className="font-black text-ocean-700 hover:text-ocean-900" onClick={() => onNavigate("/privacy")}>
+                Baca Notis Privasi
+              </button>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Dengan mendaftar, anda mengakui bahawa anda telah membaca Notis Privasi PKSK Academy.</p>
+            </div>
+          </div>
         ) : null}
         <button type="submit" disabled={busy} className="primary-button w-full">
           {busy ? "Tunggu..." : mode === "login" ? "Masuk" : "Daftar"}
@@ -2297,6 +2339,7 @@ function AuthPage({
   busy,
   isPasswordRecovery,
   onMode,
+  onNavigate,
   onPasswordResetRequest,
   onPasswordUpdate,
   onSubmit,
@@ -2305,6 +2348,7 @@ function AuthPage({
   busy: boolean;
   isPasswordRecovery: boolean;
   onMode: (mode: AuthMode) => void;
+  onNavigate: (route: AppRoute) => void;
   onPasswordResetRequest: (email: string) => void;
   onPasswordUpdate: (password: string) => void;
   onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
@@ -2314,9 +2358,129 @@ function AuthPage({
       {isPasswordRecovery ? (
         <PasswordRecoveryPanel busy={busy} onSubmit={onPasswordUpdate} />
       ) : (
-        <AuthPanel mode={mode} busy={busy} onMode={onMode} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
+        <AuthPanel mode={mode} busy={busy} onMode={onMode} onNavigate={onNavigate} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
       )}
     </div>
+  );
+}
+
+function PrivacyNoticePage({ onNavigate }: { onNavigate: (route: AppRoute) => void }) {
+  const dataItems = ["nama", "e-mel", "maklumat profil", "sekolah, negeri dan kelas jika diberi", "data penggunaan platform", "rekod latihan dan simulasi", "maklumat pembayaran seperti status, amaun dan rujukan transaksi", "data teknikal yang munasabah seperti peranti, pelayar, log keselamatan dan alamat IP", "status marketing consent"];
+  const purposeItems = ["membuka dan mengurus akaun", "authentication dan keselamatan login", "memberi akses kepada simulator PKSK", "mengurus akses Premium", "memproses dan menyemak pembayaran", "memberi customer support", "menjaga keselamatan sistem", "menganalisis penggunaan platform", "menambah baik kandungan dan perkhidmatan", "menghantar komunikasi penting berkaitan akaun atau perkhidmatan"];
+  const marketingItems = ["tips persediaan PKSK", "info penting dan kemas kini", "bahan pembelajaran", "latihan percuma atau demo", "newsletter", "promosi PKSK Academy"];
+  const rightsItems = ["akses kepada maklumat peribadi yang berkaitan", "membetulkan maklumat yang tidak tepat", "menarik balik marketing consent", "unsubscribe daripada e-mel marketing", "bertanya soalan berkaitan data peribadi"];
+
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-2xl border border-ocean-100 bg-white shadow-soft">
+        <div className="bg-gradient-to-br from-ocean-50 via-white to-sun-50 p-6 sm:p-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-ocean-100 bg-white px-3 py-2 text-xs font-black uppercase text-ocean-700 shadow-sm">
+                <ShieldCheck size={15} aria-hidden="true" />
+                PKSK Academy oleh CikguSTEM
+              </span>
+              <h1 className="mt-5 text-3xl font-black leading-tight text-slate-950 sm:text-4xl">
+                Privacy Notice / Notis Privasi PKSK Academy
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-slate-600">
+                Notis ini menerangkan bagaimana PKSK Academy mengumpul, menggunakan, menyimpan dan melindungi data pengguna platform, termasuk murid, ibu bapa,
+                penjaga dan guru.
+              </p>
+            </div>
+            <div className="w-fit rounded-2xl border border-white bg-white/85 px-4 py-3 text-sm font-black text-slate-700 shadow-sm">
+              Last updated: {privacyNoticeLastUpdated}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <PrivacyNoticeCard icon={Users} title="Pengendali Data">
+          <p>Platform ini dikendalikan oleh PKSK Academy / CikguSTEM. Untuk pertanyaan berkaitan privasi, hubungi kami di pksk@cikgustem.com.</p>
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={ClipboardList} title="Data Yang Dikumpulkan">
+          <PrivacyBulletList items={dataItems} />
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={Target} title="Tujuan Penggunaan">
+          <PrivacyBulletList items={purposeItems} />
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={MailCheck} title="Marketing">
+          <p>Marketing hanya dihantar jika pengguna memilih untuk memberikan persetujuan. Kandungan yang mungkin dihantar termasuk:</p>
+          <PrivacyBulletList items={marketingItems} />
+          <p className="mt-3">Pengguna boleh berhenti melanggan pada bila-bila masa. Kami tidak menganggap semua pengguna automatik bersetuju menerima marketing.</p>
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={HeartHandshake} title="Pihak Ketiga">
+          <p>
+            Data boleh diproses melalui penyedia perkhidmatan yang menyokong operasi platform, termasuk Supabase untuk auth/database, Zoho Campaigns untuk e-mel
+            marketing yang diberi consent, penyedia pembayaran, serta penyedia hosting atau analitik yang digunakan untuk keselamatan dan prestasi laman.
+          </p>
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={CreditCard} title="Pembayaran">
+          <p>
+            Rekod pembayaran seperti amaun, status, tarikh dan rujukan transaksi boleh disimpan untuk mengurus akses Premium dan rekod sokongan. Butiran sensitif
+            pembayaran diproses oleh penyedia pembayaran yang digunakan semasa transaksi.
+          </p>
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={Clock3} title="Data Retention">
+          <p>
+            Data disimpan selagi diperlukan untuk menyediakan perkhidmatan, memenuhi keperluan undang-undang dan rekod transaksi, menjaga keselamatan sistem,
+            menyelesaikan isu sokongan dan menambah baik platform.
+          </p>
+        </PrivacyNoticeCard>
+
+        <PrivacyNoticeCard icon={UserRound} title="Hak Pengguna">
+          <PrivacyBulletList items={rightsItems} />
+          <p className="mt-3">Permintaan boleh dihantar ke pksk@cikgustem.com. Kami mungkin perlu mengesahkan identiti sebelum memproses permintaan tertentu.</p>
+        </PrivacyNoticeCard>
+      </section>
+
+      <section className="rounded-2xl border border-ocean-100 bg-ocean-50 p-5 shadow-soft sm:p-6">
+        <h2 className="text-xl font-black text-slate-950">Komunikasi Penting</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+          Marketing consent hanya mengawal komunikasi promosi atau newsletter. E-mel transactional seperti confirmation e-mel, reset kata laluan, resit bayaran,
+          makluman akaun dan notis penting perkhidmatan boleh terus dihantar apabila perlu untuk operasi platform.
+        </p>
+        <button type="button" className="secondary-button mt-5" onClick={() => onNavigate("/")}>
+          Ke Laman Utama
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function PrivacyNoticeCard({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
+  return (
+    <article className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
+      <div className="flex items-start gap-4">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
+          <Icon size={22} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-xl font-black text-slate-950">{title}</h2>
+          <div className="mt-3 space-y-2 text-sm font-semibold leading-6 text-slate-600">{children}</div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PrivacyBulletList({ items }: { items: string[] }) {
+  return (
+    <ul className="grid gap-2">
+      {items.map((item) => (
+        <li key={item} className="flex gap-2">
+          <CheckCircle2 size={16} className="mt-1 shrink-0 text-ocean-600" aria-hidden="true" />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -3739,6 +3903,7 @@ function PaywallPage({
           toyyibPayBusy={toyyibPayBusy}
           onClose={() => setPaymentMethodOpen(false)}
           onToyyibPay={handleToyyibPay}
+          onNavigate={onNavigate}
           onManualQr={() => {
             setPaymentMethodOpen(false);
             setManualPaymentOpen(true);
@@ -3769,6 +3934,7 @@ function PaymentMethodDialog({
   toyyibPayBusy,
   onClose,
   onToyyibPay,
+  onNavigate,
   onManualQr,
 }: {
   settings: AppSettings;
@@ -3779,6 +3945,7 @@ function PaymentMethodDialog({
   toyyibPayBusy: boolean;
   onClose: () => void;
   onToyyibPay: (customer?: ToyyibPayCustomerInput) => Promise<void>;
+  onNavigate: (route: AppRoute) => void;
   onManualQr: () => void;
 }) {
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
@@ -3907,16 +4074,31 @@ function PaymentMethodDialog({
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
                   Jika e-mel ini sudah pernah didaftarkan, bayaran akan dipautkan kepada akaun tersebut dan kata laluan sedia ada tidak ditukar.
                 </p>
-                <label className="mt-3 flex items-start gap-3 rounded-2xl border border-ocean-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
-                    checked={customerMarketingConsent}
-                    onChange={(event) => setCustomerMarketingConsent(event.target.checked)}
-                    disabled={toyyibPayBusy}
-                  />
-                  <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
-                </label>
+                <div className="mt-3 rounded-2xl border border-ocean-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
+                      checked={customerMarketingConsent}
+                      onChange={(event) => setCustomerMarketingConsent(event.target.checked)}
+                      disabled={toyyibPayBusy}
+                    />
+                    <span>Ya, hantarkan saya tips PKSK, info penting, latihan percuma dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+                  </label>
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <button
+                      type="button"
+                      className="font-black text-ocean-700 hover:text-ocean-900"
+                      onClick={() => {
+                        onClose();
+                        onNavigate("/privacy");
+                      }}
+                    >
+                      Baca Notis Privasi
+                    </button>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Dengan meneruskan pendaftaran akaun, anda mengakui bahawa anda telah membaca Notis Privasi PKSK Academy.</p>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -8344,7 +8526,7 @@ function ProfilePage({
               checked={marketingConsent}
               onChange={(event) => setMarketingConsent(event.target.checked)}
             />
-            <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+            <span>Ya, hantarkan saya tips PKSK, info penting, latihan percuma dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
           </label>
           {profile?.email_marketing_unsubscribed_at ? (
             <p className="rounded-2xl bg-sun-50 px-4 py-3 text-sm font-bold leading-6 text-amber-800">
