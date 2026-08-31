@@ -363,6 +363,13 @@ export type Database = {
         };
         Returns: Json;
       };
+      reveal_attempt_question_answer: {
+        Args: {
+          p_attempt_id: string;
+          p_question_id: string;
+        };
+        Returns: Json;
+      };
       skip_answer: {
         Args: {
           p_attempt_id: string;

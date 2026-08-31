@@ -20,6 +20,9 @@ export type QuizQuestion = {
   options: QuizOption[];
   selected_option_id: string | null;
   answer_status?: "unanswered" | "answered" | "skipped";
+  answer_revealed_at?: string | null;
+  correct_option_id?: string | null;
+  answer_explanation?: string | null;
 };
 
 export type AttemptSummary = {
@@ -49,6 +52,19 @@ export type PrintableSimulationSet = {
     C: number;
   };
   questions: QuizQuestion[];
+};
+
+export type RevealedQuizAnswer = {
+  question_id: string;
+  selected_option_id: string | null;
+  correct_option_id: string;
+  correct_option_text: string | null;
+  correct_option_image_url: string | null;
+  correct_option_order: number | null;
+  is_correct: boolean;
+  answer_status: "answered" | "skipped";
+  answer_revealed_at: string;
+  explanation: string | null;
 };
 
 export type CompleteAttemptResult = {

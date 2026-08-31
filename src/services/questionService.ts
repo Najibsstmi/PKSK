@@ -1,6 +1,6 @@
 import { requireSupabase } from "../lib/supabase";
 import type { QuizAttemptRow } from "../types/database";
-import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, PrintableSimulationSet, QuizMode } from "../types/quiz";
+import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, PrintableSimulationSet, QuizMode, RevealedQuizAnswer } from "../types/quiz";
 
 export type GenerateQuizInput = {
   mode: QuizMode;
@@ -58,6 +58,20 @@ export async function submitAnswer(attemptId: string, questionId: string, option
   if (error) {
     throw new Error(mapSupabaseMessage(error.message));
   }
+}
+
+export async function revealAnswer(attemptId: string, questionId: string): Promise<RevealedQuizAnswer> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("reveal_attempt_question_answer", {
+    p_attempt_id: attemptId,
+    p_question_id: questionId,
+  });
+
+  if (error) {
+    throw new Error(mapSupabaseMessage(error.message));
+  }
+
+  return data as RevealedQuizAnswer;
 }
 
 export async function skipAnswer(attemptId: string, questionId: string): Promise<void> {
@@ -137,6 +151,18 @@ export function mapSupabaseMessage(message: string): string {
   }
   if (message.includes("INVALID_ANSWER")) {
     return "Jawapan tidak dapat disimpan. Cuba semula.";
+  }
+  if (message.includes("ANSWER_REQUIRED")) {
+    return "Pilih jawapan atau skip dahulu sebelum semak jawapan.";
+  }
+  if (message.includes("ANSWER_ALREADY_REVEALED")) {
+    return "Jawapan sudah direveal. Pilihan untuk soalan ini telah dikunci.";
+  }
+  if (message.includes("ATTEMPT_QUESTION_NOT_FOUND")) {
+    return "Soalan ini tidak ditemui dalam cubaan aktif.";
+  }
+  if (message.includes("CORRECT_OPTION_NOT_FOUND")) {
+    return "Jawapan betul belum ditetapkan untuk soalan ini.";
   }
   if (message.includes("NOT_ENOUGH_SECTION_A_QUESTIONS")) {
     return "Bank soalan Bahagian A belum cukup 30 soalan aktif.";

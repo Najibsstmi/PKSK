@@ -128,6 +128,7 @@ import {
   generateQuiz,
   generatePrintSimulationSet,
   getAttemptPayload,
+  revealAnswer,
   skipAnswer,
   submitAnswer,
 } from "./services/questionService";
@@ -139,7 +140,7 @@ import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
 import type { DraftOption, DraftReviewStatus, ImportedQuestionDraft, ManualQuestionInput, QuestionDifficulty, QuestionImportRow, QuestionImportStatus, QuestionType } from "./types/imports";
 import type { AdminPaymentRequestRow, PaymentRequest, ToyyibPayCustomerInput } from "./types/payment";
-import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion } from "./types/quiz";
+import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion, RevealedQuizAnswer } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
 
 type AppRoute =
@@ -1446,6 +1447,7 @@ function App() {
           onComplete={handleCompleteAttempt}
           onNavigate={navigate}
           onStartEssay={handleStartEssay}
+          onMessage={setMessage}
         />
       );
     }
@@ -7583,25 +7585,38 @@ function QuizPage({
   onComplete,
   onNavigate,
   onStartEssay,
+  onMessage,
 }: {
   payload: AttemptPayload | null;
   result: CompleteAttemptResult | null;
   busy: boolean;
-  onAnswer: (questionId: string, optionId: string) => void;
+  onAnswer: (questionId: string, optionId: string) => Promise<void> | void;
   onSkip: (questionId: string) => Promise<boolean>;
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
+  onMessage: (message: string | null) => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [answeringQuestionId, setAnsweringQuestionId] = useState<string | null>(null);
   const [skippingQuestionId, setSkippingQuestionId] = useState<string | null>(null);
+  const [revealingQuestionId, setRevealingQuestionId] = useState<string | null>(null);
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<string, RevealedQuizAnswer>>({});
   const [remainingSeconds, setRemainingSeconds] = useState(() => objectiveRemainingSeconds(payload));
   const objectiveAttemptId = payload?.attempt.id ?? null;
   const objectiveStartedAt = payload?.attempt.started_at ?? null;
+  const payloadRef = useRef(payload);
+
+  useEffect(() => {
+    payloadRef.current = payload;
+  }, [payload]);
 
   useEffect(() => {
     setIndex(0);
+    setAnsweringQuestionId(null);
     setSkippingQuestionId(null);
+    setRevealingQuestionId(null);
+    setRevealedAnswers(extractRevealedAnswers(payloadRef.current));
     setRemainingSeconds(objectiveStartedAt ? objectiveRemainingSecondsFromStart(objectiveStartedAt) : 0);
   }, [objectiveAttemptId, objectiveStartedAt]);
 
@@ -7651,6 +7666,10 @@ function QuizPage({
         : "Skor rasmi Bahagian B: 70%";
   const currentStatus = getQuestionStatus(current);
   const currentReady = currentStatus !== "unanswered";
+  const currentReveal = revealedAnswers[current.id] ?? null;
+  const answerRevealed = Boolean(currentReveal);
+  const answerBusy = answeringQuestionId === current.id;
+  const revealBusy = revealingQuestionId === current.id;
 
   function handleNext() {
     if (!currentReady) {
@@ -7666,8 +7685,38 @@ function QuizPage({
     onComplete();
   }
 
+  async function handleSelectOption(optionId: string) {
+    if (!current || answerRevealed || answeringQuestionId) {
+      return;
+    }
+
+    setAnsweringQuestionId(current.id);
+    try {
+      await onAnswer(current.id, optionId);
+    } finally {
+      setAnsweringQuestionId(null);
+    }
+  }
+
+  async function handleRevealCurrent() {
+    if (!payload || !currentReady || answerRevealed || revealingQuestionId || answeringQuestionId) {
+      return;
+    }
+
+    setRevealingQuestionId(current.id);
+    onMessage(null);
+    try {
+      const revealed = await revealAnswer(payload.attempt.id, current.id);
+      setRevealedAnswers((currentAnswers) => ({ ...currentAnswers, [current.id]: revealed }));
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setRevealingQuestionId(null);
+    }
+  }
+
   async function handleSkipCurrent() {
-    if (!current || skippingQuestionId) {
+    if (!current || skippingQuestionId || answerRevealed) {
       return;
     }
 
@@ -7708,15 +7757,23 @@ function QuizPage({
             <button
               key={option.id}
               type="button"
-              onClick={() => onAnswer(current.id, option.id)}
-              className={`rounded-2xl border p-4 text-left text-sm font-bold transition ${
-                current.selected_option_id === option.id ? "border-amber-400 bg-sun-50 text-slate-950" : "border-slate-200 bg-white hover:border-ocean-200"
-              }`}
+              onClick={() => void handleSelectOption(option.id)}
+              disabled={busy || answerBusy || answerRevealed}
+              className={`rounded-2xl border p-4 text-left text-sm font-bold transition disabled:cursor-not-allowed ${quizOptionClass(option.id, current.selected_option_id, currentReveal)}`}
             >
               <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
+              {currentReveal?.correct_option_id === option.id ? <span className="mt-3 inline-flex rounded-full bg-leaf-100 px-3 py-1 text-xs font-black text-leaf-700">Jawapan betul</span> : null}
+              {currentReveal?.selected_option_id === option.id && !currentReveal.is_correct ? <span className="mt-3 inline-flex rounded-full bg-coral-100 px-3 py-1 text-xs font-black text-coral-700">Jawapan anda</span> : null}
             </button>
           ))}
         </div>
+        <RevealAnswerButton
+          disabled={busy || !currentReady || Boolean(answeringQuestionId)}
+          loading={revealBusy}
+          revealedAnswer={currentReveal}
+          answerLabel={currentReveal ? getOptionAnswerSummary(current, currentReveal.correct_option_id) : null}
+          onReveal={handleRevealCurrent}
+        />
         <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
@@ -7725,7 +7782,7 @@ function QuizPage({
             <button
               type="button"
               className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50"
-              disabled={busy || Boolean(skippingQuestionId)}
+              disabled={busy || Boolean(skippingQuestionId) || answerRevealed}
               onClick={handleSkipCurrent}
             >
               {skippingQuestionId === current.id ? "Menyimpan Skip..." : "Skip Soalan Ini"}
@@ -7814,6 +7871,47 @@ function QuestionImage({ src }: { src: string }) {
   );
 }
 
+function RevealAnswerButton({
+  disabled,
+  loading,
+  revealedAnswer,
+  answerLabel,
+  onReveal,
+}: {
+  disabled: boolean;
+  loading: boolean;
+  revealedAnswer: RevealedQuizAnswer | null;
+  answerLabel: string | null;
+  onReveal: () => void;
+}) {
+  const revealed = Boolean(revealedAnswer);
+  const correct = revealedAnswer?.is_correct ?? false;
+  const tone = revealed ? (correct ? "border-leaf-200 bg-leaf-50 text-leaf-800" : "border-coral-200 bg-coral-50 text-coral-700") : "border-ocean-100 bg-ocean-50 text-ocean-800";
+  const knobTone = revealed ? (correct ? "bg-leaf-600 text-white" : "bg-coral-600 text-white") : "bg-white text-ocean-700";
+  const title = revealed ? (correct ? "Betul" : "Salah") : disabled ? "Jawab atau skip dahulu" : "Klik untuk semak jawapan";
+  const body = revealed ? `Jawapan: ${answerLabel ?? "Tidak ditemui"}` : "Jawapan akan direveal di sini selepas disemak.";
+
+  return (
+    <div className="mt-5">
+      <button
+        type="button"
+        className={`relative w-full overflow-hidden rounded-2xl border px-4 py-3 text-left shadow-sm transition ${tone} disabled:cursor-not-allowed disabled:opacity-65`}
+        disabled={disabled || loading || revealed}
+        onClick={onReveal}
+      >
+        <span className={`absolute top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl shadow-sm transition-all duration-300 ${revealed ? "right-3" : "left-3"} ${knobTone}`}>
+          {loading ? <RefreshCw size={18} className="animate-spin" aria-hidden="true" /> : revealed && correct ? <CheckCircle2 size={18} aria-hidden="true" /> : revealed ? <X size={18} aria-hidden="true" /> : <ChevronRight size={18} aria-hidden="true" />}
+        </span>
+        <span className={`block min-h-10 ${revealed ? "pl-0 pr-14" : "pl-14 pr-0"}`}>
+          <span className="block text-xs font-black uppercase">{loading ? "Sedang semak..." : title}</span>
+          <span className="mt-1 block text-sm font-black leading-5 text-slate-950">{loading ? "Tunggu sebentar." : body}</span>
+        </span>
+      </button>
+      {revealedAnswer?.explanation ? <p className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-600">{revealedAnswer.explanation}</p> : null}
+    </div>
+  );
+}
+
 function OptionContent({ text, imageUrl }: { text: string | null; imageUrl: string | null }) {
   return (
     <span className="block">
@@ -7832,6 +7930,65 @@ function getQuestionStatus(question: QuizQuestion): "unanswered" | "answered" | 
     return question.answer_status;
   }
   return question.selected_option_id ? "answered" : "unanswered";
+}
+
+function extractRevealedAnswers(payload: AttemptPayload | null): Record<string, RevealedQuizAnswer> {
+  if (!payload) {
+    return {};
+  }
+
+  return payload.questions.reduce<Record<string, RevealedQuizAnswer>>((answers, question) => {
+    if (!question.answer_revealed_at || !question.correct_option_id) {
+      return answers;
+    }
+
+    const correctOption = question.options.find((option) => option.id === question.correct_option_id) ?? null;
+    answers[question.id] = {
+      question_id: question.id,
+      selected_option_id: question.selected_option_id,
+      correct_option_id: question.correct_option_id,
+      correct_option_text: correctOption?.option_text ?? null,
+      correct_option_image_url: correctOption?.option_image_url ?? null,
+      correct_option_order: correctOption?.option_order ?? null,
+      is_correct: question.selected_option_id === question.correct_option_id,
+      answer_status: getQuestionStatus(question) === "skipped" ? "skipped" : "answered",
+      answer_revealed_at: question.answer_revealed_at,
+      explanation: question.answer_explanation ?? null,
+    };
+    return answers;
+  }, {});
+}
+
+function quizOptionClass(optionId: string, selectedOptionId: string | null, revealedAnswer: RevealedQuizAnswer | null): string {
+  if (revealedAnswer?.correct_option_id === optionId) {
+    return "border-leaf-300 bg-leaf-50 text-leaf-900 ring-1 ring-leaf-200";
+  }
+  if (revealedAnswer?.selected_option_id === optionId) {
+    return "border-coral-300 bg-coral-50 text-coral-800 ring-1 ring-coral-200";
+  }
+  if (revealedAnswer) {
+    return "border-slate-200 bg-slate-50 text-slate-500 opacity-80";
+  }
+  if (selectedOptionId === optionId) {
+    return "border-amber-400 bg-sun-50 text-slate-950";
+  }
+  return "border-slate-200 bg-white hover:border-ocean-200";
+}
+
+function getOptionAnswerSummary(question: QuizQuestion, correctOptionId: string): string {
+  const orderedOptions = [...question.options].sort((first, second) => first.option_order - second.option_order);
+  const optionIndex = orderedOptions.findIndex((option) => option.id === correctOptionId);
+  const option = optionIndex >= 0 ? orderedOptions[optionIndex] : null;
+  const label = optionIndex >= 0 ? optionLabels[optionIndex] ?? String(optionIndex + 1) : "";
+  const text = option?.option_text?.trim();
+
+  if (text) {
+    return `${label}. ${text}`;
+  }
+  if (!option) {
+    return "Jawapan tidak ditemui";
+  }
+  return `${label}. Lihat rajah jawapan`;
 }
 
 function getQuestionStatusAfterSkip(question: QuizQuestion, skippedQuestionId: string): "unanswered" | "answered" | "skipped" {
