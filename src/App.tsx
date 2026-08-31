@@ -2108,7 +2108,7 @@ function AuthPanel({
               checked={marketingConsent}
               onChange={(event) => setMarketingConsent(event.target.checked)}
             />
-            <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+            <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
           </label>
         ) : null}
         <button type="submit" disabled={busy} className="primary-button w-full">
@@ -3806,7 +3806,7 @@ function PaymentMethodDialog({
                     onChange={(event) => setCustomerMarketingConsent(event.target.checked)}
                     disabled={toyyibPayBusy}
                   />
-                  <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+                  <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
                 </label>
               </div>
             ) : null}
@@ -8234,7 +8234,7 @@ function ProfilePage({
               checked={marketingConsent}
               onChange={(event) => setMarketingConsent(event.target.checked)}
             />
-            <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+            <span>Saya mahu menerima tips PKSK, info terkini dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
           </label>
           {profile?.email_marketing_unsubscribed_at ? (
             <p className="rounded-2xl bg-sun-50 px-4 py-3 text-sm font-bold leading-6 text-amber-800">
