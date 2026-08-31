@@ -23,6 +23,8 @@ export type ProfileRow = {
   marketing_consent_at: string | null;
   marketing_consent_source: string | null;
   marketing_consent_revoked_at: string | null;
+  marketing_consent_decided_at: string | null;
+  marketing_consent_decision_source: string | null;
   email_marketing_unsubscribed_at: string | null;
   email_marketing_unsubscribe_source: string | null;
   zoho_last_synced_at: string | null;
@@ -254,6 +256,8 @@ export type Database = {
           marketing_consent_at?: string | null;
           marketing_consent_source?: string | null;
           marketing_consent_revoked_at?: string | null;
+          marketing_consent_decided_at?: string | null;
+          marketing_consent_decision_source?: string | null;
           email_marketing_unsubscribed_at?: string | null;
           email_marketing_unsubscribe_source?: string | null;
           zoho_last_synced_at?: string | null;
@@ -443,6 +447,13 @@ export type Database = {
           p_answers: Json;
         };
         Returns: Json;
+      };
+      record_marketing_consent_decision: {
+        Args: {
+          p_consent: boolean;
+          p_source?: string;
+        };
+        Returns: ProfileRow;
       };
       admin_get_kpis: {
         Args: Record<string, never>;

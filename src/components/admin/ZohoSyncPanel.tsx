@@ -290,7 +290,8 @@ function PreviewGrid({ preview }: { preview: ZohoBackfillPreview }) {
     ["Invalid Email", preview.invalid_email],
     ["Admin Excluded", preview.admin_internal_excluded],
     ["Consent True", preview.marketing_consent_true],
-    ["Consent Missing", preview.marketing_consent_false_or_unknown],
+    ["Consent Missing", preview.marketing_consent_missing ?? preview.marketing_consent_false_or_unknown],
+    ["Consent Declined", preview.marketing_consent_declined ?? 0],
     ["Unsubscribed", preview.unsubscribed],
   ];
 

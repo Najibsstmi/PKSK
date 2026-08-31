@@ -19,6 +19,8 @@ export type ZohoBackfillPreview = {
   deleted_users: number;
   admin_internal_excluded: number;
   marketing_consent_true: number;
+  marketing_consent_missing: number;
+  marketing_consent_declined: number;
   marketing_consent_false_or_unknown: number;
   unsubscribed: number;
   not_confirmed_for_marketing: number;

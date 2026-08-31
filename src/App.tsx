@@ -111,7 +111,7 @@ import {
   rememberStoredReferralAttribution,
   ToyyibPayService,
 } from "./services/paymentService";
-import { fetchProfile, saveProfile, type ProfileInput } from "./services/profileService";
+import { fetchProfile, saveMarketingConsentDecision, saveProfile, type ProfileInput } from "./services/profileService";
 import { trackPremiumPurchase } from "./utils/metaPixel";
 import {
   createCsvQuestionImport,
@@ -579,6 +579,51 @@ function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
   };
 }
 
+type MarketingConsentStatus = "true" | "missing" | "declined" | "unsubscribed";
+
+function getMarketingConsentStatus(profile: ProfileRow | null): MarketingConsentStatus {
+  if (!profile) {
+    return "missing";
+  }
+  if (profile.email_marketing_unsubscribed_at) {
+    return "unsubscribed";
+  }
+  if (profile.marketing_consent) {
+    return "true";
+  }
+  if (!profile.marketing_consent_decided_at && !profile.marketing_consent_at && !profile.marketing_consent_revoked_at) {
+    return "missing";
+  }
+  return "declined";
+}
+
+function formatMarketingConsentStatus(status: MarketingConsentStatus, currentSelection?: boolean): string {
+  if (status === "unsubscribed") {
+    return "Unsubscribed";
+  }
+  if (currentSelection) {
+    return "Setuju";
+  }
+  if (status === "missing") {
+    return "Belum buat pilihan";
+  }
+  return "Tidak setuju";
+}
+
+function shouldPromptForLegacyMarketingConsent({
+  isLoggedIn,
+  loading,
+  profile,
+  access,
+}: {
+  isLoggedIn: boolean;
+  loading: boolean;
+  profile: ProfileRow | null;
+  access: ReturnType<typeof useAccess>;
+}): boolean {
+  return isLoggedIn && !loading && Boolean(profile) && !access.isAdmin && !access.isBlocked && getMarketingConsentStatus(profile) === "missing";
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -608,12 +653,19 @@ function App() {
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isInstalledApp, setIsInstalledApp] = useState(false);
   const [autoOpenPayment, setAutoOpenPayment] = useState(false);
+  const [marketingConsentPromptBusy, setMarketingConsentPromptBusy] = useState(false);
 
   const isLoggedIn = Boolean(session?.user);
   const access = useAccess(session, profile, accessStatus);
   const profileReady = Boolean(profile?.display_name && profile?.school && profile?.state && profile?.class_name);
   const earnedBadgeCount = badges.filter((badge) => badge.earned).length;
   const performance = useMemo(() => calculatePerformance(profile, attempts, earnedBadgeCount), [attempts, earnedBadgeCount, profile]);
+  const shouldShowMarketingConsentPrompt = shouldPromptForLegacyMarketingConsent({
+    isLoggedIn,
+    loading,
+    profile,
+    access,
+  });
   const canShowSocialProofNotification =
     isSupabaseConfigured && !loading && currentRoute === "/" && (!isLoggedIn || (Boolean(accessStatus) && !access.isPremium && !access.isBlocked));
   const { currentItem, dismissCurrentItem } = useSocialProofNotifications(canShowSocialProofNotification);
@@ -850,7 +902,7 @@ function App() {
             data: {
               display_name: displayName,
               marketing_consent: marketingConsent,
-              marketing_consent_source: marketingConsent ? "signup" : null,
+              marketing_consent_source: "signup",
             },
           },
         });
@@ -867,6 +919,7 @@ function App() {
             class_name: "",
             avatar: avatars[0],
             marketing_consent: marketingConsent,
+            marketing_consent_source: "signup",
           });
           setProfile(nextProfile);
           navigate("/premium");
@@ -902,6 +955,25 @@ function App() {
       setMessage(toMessage(error));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleLegacyMarketingConsentDecision(consent: boolean) {
+    if (!session?.user) {
+      return;
+    }
+
+    setMarketingConsentPromptBusy(true);
+    setMessage(null);
+    try {
+      const nextProfile = await saveMarketingConsentDecision(consent);
+      setProfile(nextProfile);
+      setAccessStatus(accessStatusFromProfile(nextProfile));
+      setMessage(consent ? "Terima kasih. Anda akan menerima tips dan info PKSK melalui e-mel." : "Pilihan anda sudah disimpan. Kami tidak akan masukkan e-mel ini ke senarai marketing.");
+    } catch (error) {
+      setMessage(toMessage(error));
+    } finally {
+      setMarketingConsentPromptBusy(false);
     }
   }
 
@@ -1528,7 +1600,44 @@ function App() {
       {canShowSocialProofNotification ? (
         <SocialProofNotification item={currentItem} onDismiss={dismissCurrentItem} onOpenPremium={openPaywall} />
       ) : null}
+      {shouldShowMarketingConsentPrompt ? (
+        <LegacyMarketingConsentPrompt busy={marketingConsentPromptBusy} onDecision={handleLegacyMarketingConsentDecision} />
+      ) : null}
     </div>
+  );
+}
+
+function LegacyMarketingConsentPrompt({ busy, onDecision }: { busy: boolean; onDecision: (consent: boolean) => void }) {
+  return (
+    <section className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-slate-950/45 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="legacy-marketing-consent-title">
+      <div className="w-full max-w-lg rounded-3xl border border-ocean-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-6">
+        <div className="flex items-start gap-4">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ocean-50 text-ocean-700 shadow-sm">
+            <MailCheck size={24} aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase text-ocean-700">PKSK Academy</p>
+            <h2 id="legacy-marketing-consent-title" className="mt-1 text-2xl font-black leading-tight text-slate-950">
+              Dapatkan Info & Tips PKSK
+            </h2>
+          </div>
+        </div>
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm font-semibold leading-7 text-slate-600">
+          <p>Nak kami hantarkan tips persediaan PKSK, info terkini dan promosi PKSK Academy terus ke e-mel anda?</p>
+          <p className="mt-2">Anda boleh berhenti melanggan pada bila-bila masa.</p>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <button type="button" className="primary-button justify-center" onClick={() => onDecision(true)} disabled={busy}>
+            <CheckCircle2 size={18} aria-hidden="true" />
+            {busy ? "Menyimpan..." : "Ya, saya mahu"}
+          </button>
+          <button type="button" className="secondary-button justify-center" onClick={() => onDecision(false)} disabled={busy}>
+            <X size={18} aria-hidden="true" />
+            Tidak, terima kasih
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -8168,6 +8277,7 @@ function ProfilePage({
   const [className, setClassName] = useState(profile?.class_name ?? "");
   const [avatar, setAvatar] = useState(profile?.avatar ?? avatars[0]);
   const [marketingConsent, setMarketingConsent] = useState(Boolean(profile?.marketing_consent));
+  const consentStatus = getMarketingConsentStatus(profile);
 
   useEffect(() => {
     setFullName(profile?.full_name ?? "");
@@ -8254,7 +8364,7 @@ function ProfilePage({
           <SummaryRow label="Sekolah" value={school || "Belum diisi"} />
           <SummaryRow label="Negeri" value={state || "Belum diisi"} />
           <SummaryRow label="Kelas" value={className || "Belum diisi"} />
-          <SummaryRow label="Email Marketing" value={marketingConsent ? "Setuju" : "Tidak setuju"} />
+          <SummaryRow label="Email Marketing" value={formatMarketingConsentStatus(consentStatus, marketingConsent)} />
           <SummaryRow label="Mata" value={`${profile?.xp ?? 0}`} />
         </div>
       </section>

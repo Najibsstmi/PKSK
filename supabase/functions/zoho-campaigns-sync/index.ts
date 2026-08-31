@@ -348,6 +348,13 @@ async function processQueue(serviceClient: SupabaseClient, batchSize: number): P
         continue;
       }
 
+      const emailCompatibilityIssue = getZohoEmailCompatibilityIssue(state.email);
+      if (emailCompatibilityIssue) {
+        await markQueueSkipped(serviceClient, item, state, emailCompatibilityIssue);
+        result.skipped += 1;
+        continue;
+      }
+
       if (state.desired_segment === "blocked" || state.is_blocked) {
         await unsubscribeContact(config, token, state);
         await markQueueSucceeded(serviceClient, item, state, { action: "unsubscribed_blocked" }, "blocked_unsubscribed");
@@ -613,6 +620,16 @@ function buildContactInfo(state: DesiredContactState, fieldMapping: ZohoFieldMap
     [fieldMapping["PKSK Source"]?.displayName ?? "PKSK Source"]: state.source || "PKSK Academy",
     [fieldMapping["Last Synced At"]?.displayName ?? "Last Synced At"]: lastSyncedAt,
   };
+}
+
+function getZohoEmailCompatibilityIssue(email: string | null): string | null {
+  const cleanEmail = cleanString(email).toLowerCase();
+  const [localPart] = cleanEmail.split("@");
+  if (localPart.includes("+")) {
+    return "ZOHO_PLUS_EMAIL_UNSUPPORTED";
+  }
+
+  return null;
 }
 
 function buildFieldMapping(fields: ZohoField[]): ZohoFieldMapping {
@@ -925,7 +942,17 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function formatZohoDateTime(date: Date): string {
-  return date.toISOString().slice(0, 19).replace("T", " ");
+  const month = padTwoDigits(date.getUTCMonth() + 1);
+  const day = padTwoDigits(date.getUTCDate());
+  const year = date.getUTCFullYear();
+  const hours = padTwoDigits(date.getUTCHours());
+  const minutes = padTwoDigits(date.getUTCMinutes());
+  const seconds = padTwoDigits(date.getUTCSeconds());
+  return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+}
+
+function padTwoDigits(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function delay(ms: number): Promise<void> {
