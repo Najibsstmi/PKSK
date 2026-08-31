@@ -92,6 +92,7 @@ import {
   updateQuestion,
   updateQuestionStatus,
   uploadQuestionImage,
+  verifyUserEmail,
 } from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
@@ -4294,7 +4295,7 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
           <input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama, e-mel atau sekolah" />
           <select className="field" value={filter} onChange={(event) => setFilter(event.target.value)}>
-            {["all", "premium", "free", "expired", "blocked", "admin"].map((item) => (
+            {["all", "premium", "free", "expired", "blocked", "admin", "unverified"].map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -4310,7 +4311,7 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
               <tr>
-                {["Name", "Email", "School", "State", "Role", "Subscription", "Plan", "Ends", "Last Login", "Actions"].map((header) => (
+                {["Name", "Email", "Email Status", "School", "State", "Role", "Subscription", "Plan", "Ends", "Last Login", "Actions"].map((header) => (
                   <th key={header} className="px-4 py-3">
                     {header}
                   </th>
@@ -4322,6 +4323,9 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
                 <tr key={user.id} className="align-top">
                   <td className="px-4 py-3 font-bold text-slate-900">{user.display_name || user.full_name || "User"}</td>
                   <td className="px-4 py-3 text-slate-600">{user.email}</td>
+                  <td className="px-4 py-3">
+                    <EmailVerificationBadge verifiedAt={user.email_confirmed_at} />
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{user.school || "-"}</td>
                   <td className="px-4 py-3 text-slate-600">{user.state || "-"}</td>
                   <td className="px-4 py-3 text-slate-600">{roleLabel(user.role)}</td>
@@ -4338,7 +4342,7 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
               ))}
               {users.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={10}>
+                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={11}>
                     Tiada pengguna ditemui.
                   </td>
                 </tr>
@@ -4373,9 +4377,15 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
                 <p className="mt-1 text-slate-600">
                   {subscriptionLabel(selectedUser.subscription_status)} / {selectedUser.subscription_plan ?? "no plan"}
                 </p>
+                <div className="mt-3">
+                  <EmailVerificationBadge verifiedAt={selectedUser.email_confirmed_at} />
+                </div>
               </div>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <button disabled={busyAction || Boolean(selectedUser.email_confirmed_at)} className="secondary-button border-leaf-100 bg-leaf-50 text-leaf-700" onClick={() => runAction(() => verifyUserEmail(selectedUser.id), "Email pengguna sudah disahkan.")}>
+                Sahkan Email
+              </button>
               <button disabled={busyAction} className="primary-button" onClick={() => runAction(() => grantPremium(selectedUser.id, plan), "Premium diberikan.")}>
                 Grant Premium
               </button>
@@ -9306,6 +9316,24 @@ function subscriptionLabel(status: ProfileRow["subscription_status"]): string {
   };
 
   return labels[status];
+}
+
+function EmailVerificationBadge({ verifiedAt }: { verifiedAt: string | null }) {
+  if (verifiedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-leaf-50 px-2.5 py-1 text-xs font-black text-leaf-700 ring-1 ring-leaf-100">
+        <CheckCircle2 size={13} aria-hidden="true" />
+        Verified
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-sun-50 px-2.5 py-1 text-xs font-black text-amber-700 ring-1 ring-amber-100">
+      <Clock3 size={13} aria-hidden="true" />
+      Belum sah
+    </span>
+  );
 }
 
 function formatShortDate(value: string | null): string {

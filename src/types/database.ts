@@ -437,6 +437,12 @@ export type Database = {
         };
         Returns: Json;
       };
+      admin_verify_user_email: {
+        Args: {
+          target_user_id: string;
+        };
+        Returns: Json;
+      };
       admin_grant_premium: {
         Args: {
           target_user_id: string;

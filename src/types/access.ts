@@ -59,6 +59,7 @@ export type AdminUserRow = Pick<
   | "is_blocked"
 > & {
   email: string;
+  email_confirmed_at: string | null;
   total_count: number;
 };
 

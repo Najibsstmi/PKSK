@@ -156,6 +156,17 @@ export async function grantPremium(targetUserId: string, plan: SubscriptionPlan)
   }
 }
 
+export async function verifyUserEmail(targetUserId: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc("admin_verify_user_email", {
+    target_user_id: targetUserId,
+  });
+
+  if (error) {
+    throw new Error(mapAdminMessage(error.message));
+  }
+}
+
 export async function extendPremium(targetUserId: string, plan: SubscriptionPlan): Promise<void> {
   const client = requireSupabase();
   const { error } = await client.rpc("admin_extend_premium", {
