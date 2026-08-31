@@ -199,6 +199,8 @@ async function prepareCheckoutAccount(customer: ToyyibPayCustomerInput): Promise
       data: {
         display_name: displayName,
         full_name: displayName,
+        marketing_consent: customer.marketingConsent === true,
+        marketing_consent_source: customer.marketingConsent ? "checkout" : null,
       },
     },
   });

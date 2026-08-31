@@ -80,4 +80,5 @@ export type ToyyibPayCustomerInput = {
   email: string;
   phone: string;
   password: string;
+  marketingConsent?: boolean;
 };

@@ -27,6 +27,7 @@
   Lightbulb,
   LockKeyhole,
   LogOut,
+  MailCheck,
   MessageCircle,
   Menu,
   PenLine,
@@ -60,6 +61,7 @@ import { useAccess } from "./hooks/useAccess";
 import { useSocialProofNotifications } from "./hooks/useSocialProofNotifications";
 import premiumHeroImage from "./assets/pksk-premium-hero.png";
 import { EssayAiPage } from "./components/EssayAiPage";
+import { ZohoSyncPanel } from "./components/admin/ZohoSyncPanel";
 import { SocialProofNotification } from "./components/SocialProofNotification";
 import { SocialProofUserCard } from "./components/SocialProofUserCard";
 import { fetchAccessStatus, fetchAppSettings, recordLastLogin } from "./services/accessService";
@@ -169,6 +171,7 @@ type AppRoute =
   | "/admin/subscriptions"
   | "/admin/payment-requests"
   | "/admin/agents"
+  | "/admin/marketing"
   | "/admin/questions"
   | "/admin/questions/import"
   | "/admin/questions/import-history"
@@ -194,7 +197,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
 
 const bottomNavItems = navItems.filter((item) => ["/app", "/app/simulasi", "/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
 const mobileMenuNavItems = navItems.filter((item) => !["/app/pencapaian", "/app/lencana", "/app/panduan"].includes(item.to));
-const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
+const adminRoutes: AppRoute[] = ["/admin", "/admin/users", "/admin/subscriptions", "/admin/payment-requests", "/admin/agents", "/admin/marketing", "/admin/questions", "/admin/questions/import", "/admin/questions/import-history", "/admin/settings"];
 const publicRoutes = new Set<AppRoute>(["/", "/preview", "/premium", "/login", "/register", "/checkout", "/payment-result", "/info-pksk"]);
 const premiumRoutes = new Set<AppRoute>([
   "/app",
@@ -225,6 +228,7 @@ const validRoutes = new Set<AppRoute>(
     "/admin/subscriptions",
     "/admin/payment-requests",
     "/admin/agents",
+    "/admin/marketing",
     "/admin/questions",
     "/admin/questions/import",
     "/admin/questions/import-history",
@@ -827,7 +831,7 @@ function App() {
     navigate("/");
   }
 
-  async function handleAuth(email: string, password: string, displayName: string, rememberMe = false) {
+  async function handleAuth(email: string, password: string, displayName: string, rememberMe = false, marketingConsent = false) {
     if (!supabase) {
       setMessage("Sistem simulasi belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
@@ -845,6 +849,8 @@ function App() {
             emailRedirectTo: window.location.origin,
             data: {
               display_name: displayName,
+              marketing_consent: marketingConsent,
+              marketing_consent_source: marketingConsent ? "signup" : null,
             },
           },
         });
@@ -860,6 +866,7 @@ function App() {
             state: "",
             class_name: "",
             avatar: avatars[0],
+            marketing_consent: marketingConsent,
           });
           setProfile(nextProfile);
           navigate("/premium");
@@ -1362,6 +1369,13 @@ function App() {
       }
       if (currentRoute === "/admin/agents") {
         return <AdminDiamondPartnersPage onMessage={setMessage} />;
+      }
+      if (currentRoute === "/admin/marketing") {
+        return (
+          <AdminShell title="Marketing / Zoho Sync" text="Pantau sync contact PKSK Academy ke Zoho Campaigns tanpa ganggu signup dan bayaran.">
+            <ZohoSyncPanel onMessage={setMessage} />
+          </AdminShell>
+        );
       }
       if (currentRoute === "/admin/settings") {
         return <AdminSettingsPage settings={appSettings} />;
@@ -1951,23 +1965,26 @@ function AuthPanel({
   busy: boolean;
   onMode: (mode: AuthMode) => void;
   onPasswordResetRequest: (email: string) => void;
-  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
 }) {
   const [email, setEmail] = useState(() => window.localStorage.getItem(rememberedEmailKey) ?? "");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [rememberMe, setRememberMe] = useState(() => Boolean(window.localStorage.getItem(rememberedEmailKey)));
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [isResetRequestOpen, setIsResetRequestOpen] = useState(false);
 
   useEffect(() => {
     if (mode === "register") {
       setIsResetRequestOpen(false);
+    } else {
+      setMarketingConsent(false);
     }
   }, [mode]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit(email, password, displayName || email.split("@")[0], rememberMe);
+    onSubmit(email, password, displayName || email.split("@")[0], rememberMe, mode === "register" ? marketingConsent : false);
   }
 
   function handleResetRequest(event: FormEvent<HTMLFormElement>) {
@@ -2083,6 +2100,17 @@ function AuthPanel({
             </button>
           </div>
         ) : null}
+        {mode === "register" ? (
+          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
+              checked={marketingConsent}
+              onChange={(event) => setMarketingConsent(event.target.checked)}
+            />
+            <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+          </label>
+        ) : null}
         <button type="submit" disabled={busy} className="primary-button w-full">
           {busy ? "Tunggu..." : mode === "login" ? "Masuk" : "Daftar"}
         </button>
@@ -2170,7 +2198,7 @@ function AuthPage({
   onMode: (mode: AuthMode) => void;
   onPasswordResetRequest: (email: string) => void;
   onPasswordUpdate: (password: string) => void;
-  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
 }) {
   return (
     <div className="mx-auto max-w-md">
@@ -3649,6 +3677,7 @@ function PaymentMethodDialog({
   const [customerEmail, setCustomerEmail] = useState(userEmail);
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerPassword, setCustomerPassword] = useState("");
+  const [customerMarketingConsent, setCustomerMarketingConsent] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
 
   function handleToyyibPayClick() {
@@ -3680,6 +3709,7 @@ function PaymentMethodDialog({
       email,
       phone,
       password: isLoggedIn ? "authenticated-checkout" : password,
+      marketingConsent: !isLoggedIn && customerMarketingConsent,
     });
   }
 
@@ -3768,6 +3798,16 @@ function PaymentMethodDialog({
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
                   Jika e-mel ini sudah pernah didaftarkan, bayaran akan dipautkan kepada akaun tersebut dan kata laluan sedia ada tidak ditukar.
                 </p>
+                <label className="mt-3 flex items-start gap-3 rounded-2xl border border-ocean-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
+                    checked={customerMarketingConsent}
+                    onChange={(event) => setCustomerMarketingConsent(event.target.checked)}
+                    disabled={toyyibPayBusy}
+                  />
+                  <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+                </label>
               </div>
             ) : null}
           </div>
@@ -4151,6 +4191,7 @@ function AdminNav() {
     { to: "/admin/subscriptions", label: "Subscriptions" },
     { to: "/admin/payment-requests", label: "Payment Requests" },
     { to: "/admin/agents", label: "Diamond Partners" },
+    { to: "/admin/marketing", label: "Marketing / Zoho Sync" },
     { to: "/admin/questions", label: "Question Bank" },
     { to: "/admin/questions/import-history", label: "Import History" },
     { to: "/admin/settings", label: "System Settings" },
@@ -4246,6 +4287,7 @@ function AdminDashboardPage({ onNavigate, onMessage }: { onNavigate: (route: App
         <ModeCard title="Manage Users" text="Cari pengguna, buka akses premium dan block akaun." icon={Users} onClick={() => onNavigate("/admin/users")} />
         <ModeCard title="Payment Requests" text="Semak bayaran QR DuitNow dan approve Premium." icon={MessageCircle} onClick={() => onNavigate("/admin/payment-requests")} />
         <ModeCard title="Diamond Partners" text="Approve permohonan, semak komisen dan tanda payout manual." icon={Gem} onClick={() => onNavigate("/admin/agents")} />
+        <ModeCard title="Marketing / Zoho Sync" text="Sync contact, preview backfill dan proses queue Zoho Campaigns." icon={MailCheck} onClick={() => onNavigate("/admin/marketing")} />
         <ModeCard title="Question Bank" text="Semak soalan aktif dan status bank soalan." icon={BookOpen} onClick={() => onNavigate("/admin/questions")} />
         <ModeCard title="System Settings" text="Semak had preview percuma dan pelan subscription." icon={ShieldCheck} onClick={() => onNavigate("/admin/settings")} />
       </section>
@@ -8125,6 +8167,7 @@ function ProfilePage({
   const [state, setState] = useState(profile?.state ?? "");
   const [className, setClassName] = useState(profile?.class_name ?? "");
   const [avatar, setAvatar] = useState(profile?.avatar ?? avatars[0]);
+  const [marketingConsent, setMarketingConsent] = useState(Boolean(profile?.marketing_consent));
 
   useEffect(() => {
     setFullName(profile?.full_name ?? "");
@@ -8133,11 +8176,12 @@ function ProfilePage({
     setState(profile?.state ?? "");
     setClassName(profile?.class_name ?? "");
     setAvatar(profile?.avatar ?? avatars[0]);
+    setMarketingConsent(Boolean(profile?.marketing_consent));
   }, [profile]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSave({ full_name: fullName, display_name: displayName, school, state, class_name: className, avatar });
+    onSave({ full_name: fullName, display_name: displayName, school, state, class_name: className, avatar, marketing_consent: marketingConsent });
   }
 
   return (
@@ -8183,6 +8227,20 @@ function ProfilePage({
               ))}
             </div>
           </Label>
+          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
+              checked={marketingConsent}
+              onChange={(event) => setMarketingConsent(event.target.checked)}
+            />
+            <span>Saya bersetuju menerima maklumat, kemas kini dan promosi berkaitan PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+          </label>
+          {profile?.email_marketing_unsubscribed_at ? (
+            <p className="rounded-2xl bg-sun-50 px-4 py-3 text-sm font-bold leading-6 text-amber-800">
+              E-mel ini pernah unsubscribe di Zoho. Sync biasa tidak akan subscribe semula secara paksa.
+            </p>
+          ) : null}
           <button type="submit" className="primary-button" disabled={busy}>
             <Save size={18} aria-hidden="true" />
             {busy ? "Menyimpan..." : "Simpan Profil"}
@@ -8196,6 +8254,7 @@ function ProfilePage({
           <SummaryRow label="Sekolah" value={school || "Belum diisi"} />
           <SummaryRow label="Negeri" value={state || "Belum diisi"} />
           <SummaryRow label="Kelas" value={className || "Belum diisi"} />
+          <SummaryRow label="Email Marketing" value={marketingConsent ? "Setuju" : "Tidak setuju"} />
           <SummaryRow label="Mata" value={`${profile?.xp ?? 0}`} />
         </div>
       </section>

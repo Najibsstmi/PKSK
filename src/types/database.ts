@@ -19,6 +19,16 @@ export type ProfileRow = {
   access_granted_by: string | null;
   last_login_at: string | null;
   is_blocked: boolean;
+  marketing_consent: boolean;
+  marketing_consent_at: string | null;
+  marketing_consent_source: string | null;
+  marketing_consent_revoked_at: string | null;
+  email_marketing_unsubscribed_at: string | null;
+  email_marketing_unsubscribe_source: string | null;
+  zoho_last_synced_at: string | null;
+  zoho_last_sync_status: string | null;
+  zoho_last_sync_error: string | null;
+  zoho_contact_status: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -240,6 +250,16 @@ export type Database = {
           access_granted_by?: string | null;
           last_login_at?: string | null;
           is_blocked?: boolean;
+          marketing_consent?: boolean;
+          marketing_consent_at?: string | null;
+          marketing_consent_source?: string | null;
+          marketing_consent_revoked_at?: string | null;
+          email_marketing_unsubscribed_at?: string | null;
+          email_marketing_unsubscribe_source?: string | null;
+          zoho_last_synced_at?: string | null;
+          zoho_last_sync_status?: string | null;
+          zoho_last_sync_error?: string | null;
+          zoho_contact_status?: string | null;
         };
         Update: Partial<Omit<ProfileRow, "id" | "created_at">>;
         Relationships: [];
@@ -441,6 +461,31 @@ export type Database = {
         Args: {
           target_user_id: string;
         };
+        Returns: Json;
+      };
+      admin_zoho_backfill_preview: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_zoho_get_dashboard: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      admin_zoho_enqueue_backfill: {
+        Args: {
+          p_limit?: number;
+        };
+        Returns: Json;
+      };
+      admin_zoho_enqueue_single_user: {
+        Args: {
+          p_email?: string | null;
+          p_user_id?: string | null;
+        };
+        Returns: Json;
+      };
+      admin_zoho_retry_failed: {
+        Args: Record<string, never>;
         Returns: Json;
       };
       admin_grant_premium: {
