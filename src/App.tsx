@@ -7804,16 +7804,16 @@ function ModePage({
 
   return (
     <div className="space-y-6">
-      <section className="simulation-stage relative overflow-hidden rounded-2xl p-6 text-white shadow-soft sm:p-8">
+      <section className="simulation-stage relative overflow-hidden rounded-2xl p-4 text-white shadow-soft sm:p-8">
         <div className="simulation-stage__beam" aria-hidden="true" />
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-black uppercase text-cyan-50 ring-1 ring-white/20">
               <Target size={15} aria-hidden="true" />
               Studio Simulasi
             </span>
-            <h1 className="mt-4 text-3xl font-black leading-tight text-white sm:text-4xl">Pilih Simulasi</h1>
-            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-cyan-50/90 sm:text-base">
+            <h1 className="mt-3 text-2xl font-black leading-tight text-white sm:mt-4 sm:text-4xl">Pilih Simulasi</h1>
+            <p className="mt-2 max-w-2xl text-[13px] font-semibold leading-6 text-cyan-50/90 sm:mt-3 sm:text-base">
               Setiap kad direka semula dengan warna berbeza, grafik bergerak dan maklumat pantas supaya calon terus nampak mod yang sesuai.
             </p>
           </div>
@@ -7826,7 +7826,7 @@ function ModePage({
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-3" aria-label="Pilihan simulasi PKSK">
+      <section className="simulation-choice-grid grid" aria-label="Pilihan simulasi PKSK">
         <SimulationModeCard
           title="Simulasi PKSK Penuh"
           eyebrow="Set Lengkap"
@@ -7835,6 +7835,7 @@ function ModePage({
           imageSrc="/assets/simulation-full-ai.png"
           tone="galaxy"
           actionLabel={busy ? "Menyediakan..." : "Mula Simulasi Penuh"}
+          mobileActionLabel={busy ? "Sedia..." : "Mula"}
           featured
           disabled={busy}
           metrics={[
@@ -7852,6 +7853,7 @@ function ModePage({
           imageSrc="/assets/simulation-section-a-ai.png"
           tone="emerald"
           actionLabel={busy ? "Menyediakan..." : "Pilih Bahagian A"}
+          mobileActionLabel={busy ? "Sedia..." : "Pilih A"}
           disabled={busy}
           metrics={[
             { icon: ClipboardList, label: "Jumlah", value: "30 soalan" },
@@ -7867,6 +7869,7 @@ function ModePage({
           imageSrc="/assets/simulation-section-b-ai.png"
           tone="sapphire"
           actionLabel={busy ? "Menyediakan..." : "Pilih Bahagian B"}
+          mobileActionLabel={busy ? "Sedia..." : "Pilih B"}
           disabled={busy}
           metrics={[
             { icon: ClipboardList, label: "Jumlah", value: "70 soalan" },
@@ -7882,6 +7885,7 @@ function ModePage({
           imageSrc="/assets/simulation-section-c-ai.png"
           tone="violet"
           actionLabel={busy ? "Menyediakan..." : "Buka Studio Penulisan"}
+          mobileActionLabel={busy ? "Sedia..." : "Tulis"}
           disabled={busy}
           metrics={[
             { icon: BookOpen, label: "Tugasan", value: "1 tajuk" },
@@ -7897,6 +7901,7 @@ function ModePage({
           imageSrc="/assets/simulation-print-ai.png"
           tone="paper"
           actionLabel={busy ? "Menyediakan..." : "Jana PDF"}
+          mobileActionLabel={busy ? "Sedia..." : "PDF"}
           disabled={busy}
           metrics={[
             { icon: Download, label: "Format", value: "PDF" },
@@ -7918,6 +7923,7 @@ function SimulationModeCard({
   imageSrc,
   tone,
   actionLabel,
+  mobileActionLabel,
   metrics,
   disabled = false,
   featured = false,
@@ -7930,6 +7936,7 @@ function SimulationModeCard({
   imageSrc: string;
   tone: SimulationCardTone;
   actionLabel: string;
+  mobileActionLabel?: string;
   metrics: SimulationModeMetric[];
   disabled?: boolean;
   featured?: boolean;
@@ -7940,28 +7947,28 @@ function SimulationModeCard({
       type="button"
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      className={`simulation-choice simulation-choice--${tone} group relative min-h-[330px] overflow-hidden rounded-2xl border p-5 text-left text-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed sm:p-6 ${
+      className={`simulation-choice simulation-choice--${tone} group relative min-h-[176px] overflow-hidden rounded-xl border p-2.5 text-left text-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed sm:min-h-[230px] sm:rounded-2xl sm:p-4 lg:min-h-[330px] lg:p-6 ${
         featured ? "lg:col-span-2" : ""
       }`}
       aria-label={actionLabel}
     >
       <img src={imageSrc} alt="" className="simulation-choice__image" aria-hidden="true" />
       <div className="simulation-choice__noise" aria-hidden="true" />
-      <div className="relative z-10 flex h-full min-w-0 flex-col">
-        <div className="flex items-start justify-between gap-4">
-          <span className="inline-flex max-w-full items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase text-white ring-1 ring-white/20">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.86)]" aria-hidden="true" />
+      <div className="simulation-choice__content relative z-10 flex h-full min-w-0 flex-col">
+        <div className="simulation-choice__top flex items-start justify-between gap-4">
+          <span className="simulation-choice__eyebrow inline-flex max-w-full items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase text-white ring-1 ring-white/20">
+            <span className="simulation-choice__dot h-2 w-2 shrink-0 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.86)]" aria-hidden="true" />
             {eyebrow}
           </span>
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 backdrop-blur">
+          <span className="simulation-choice__corner-icon grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 backdrop-blur">
             <Icon size={24} strokeWidth={2.4} aria-hidden="true" />
           </span>
         </div>
 
-        <div className={`mt-6 grid flex-1 gap-5 ${featured ? "lg:grid-cols-[1fr_220px] lg:items-center" : ""}`}>
-          <div className="min-w-0">
-            <h2 className="text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h2>
-            <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-white/80">{text}</p>
+        <div className={`simulation-choice__body mt-6 grid flex-1 gap-5 ${featured ? "lg:grid-cols-[1fr_220px] lg:items-center" : ""}`}>
+          <div className="simulation-choice__copy min-w-0">
+            <h2 className="simulation-choice__title text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h2>
+            <p className="simulation-choice__description mt-3 max-w-xl text-sm font-semibold leading-6 text-white/80">{text}</p>
           </div>
 
           <div className="simulation-orbit mx-auto" aria-hidden="true">
@@ -7976,7 +7983,7 @@ function SimulationModeCard({
           </div>
         </div>
 
-        <div className={`mt-6 grid gap-2 ${metrics.length > 2 ? "sm:grid-cols-3" : "grid-cols-2"}`}>
+        <div className={`simulation-choice__metrics mt-6 grid gap-2 ${metrics.length > 2 ? "sm:grid-cols-3" : "grid-cols-2"}`}>
           {metrics.map((metric) => {
             const MetricIcon = metric.icon;
             return (
@@ -7991,8 +7998,9 @@ function SimulationModeCard({
           })}
         </div>
 
-        <span className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition group-hover:scale-[1.02] group-disabled:scale-100">
-          {actionLabel}
+        <span className="simulation-choice__cta mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition group-hover:scale-[1.02] group-disabled:scale-100">
+          <span className="simulation-choice__cta-label simulation-choice__cta-label--full">{actionLabel}</span>
+          <span className="simulation-choice__cta-label simulation-choice__cta-label--short">{mobileActionLabel ?? actionLabel}</span>
           {!disabled ? <ChevronRight size={18} className="simulation-choice__arrow" aria-hidden="true" /> : null}
         </span>
       </div>
