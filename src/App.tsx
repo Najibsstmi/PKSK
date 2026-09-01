@@ -7771,6 +7771,14 @@ function SummaryPanel({ title, value }: { title: string; value: string }) {
   );
 }
 
+type SimulationCardTone = "galaxy" | "emerald" | "sapphire" | "sunrise" | "violet" | "paper";
+
+type SimulationModeMetric = {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+};
+
 function ModePage({
   isLoggedIn,
   busy,
@@ -7796,16 +7804,199 @@ function ModePage({
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Target} title="Pilih Simulasi" text="Setiap cubaan akan menyusun soalan dan pilihan jawapan secara rawak." />
-      <div className="grid gap-5 lg:grid-cols-3">
-        <ModeCard title="Simulasi PKSK Penuh" text="Bahagian A 30 soalan, Bahagian B 70 soalan dalam 90 minit, kemudian Bahagian C." icon={ShieldCheck} disabled={busy} onClick={() => onStartQuiz("full", null, 100)} />
-        <ModeCard title="Bahagian A" text="30 soalan Kecerdasan Insaniah. Skor rasmi 20%." icon={HeartHandshake} disabled={busy} onClick={() => onStartQuiz("section", "A", 30)} />
-        <ModeCard title="Bahagian B" text="70 soalan objektif Kecerdasan Intelek. Skor rasmi 70%." icon={Brain} disabled={busy} onClick={() => onStartQuiz("section", "B", 70)} />
-        <ModeCard title="Bahagian C" text="1 tajuk karangan Bahasa Melayu, minimum 100 patah perkataan dalam 45 minit." icon={PenLine} disabled={busy} onClick={onStartEssay} />
-        <ModeCard title="Cetak Simulasi PKSK" text="Jana set lengkap Bahagian A, B dan C untuk dimuat turun dan dicetak." icon={Printer} disabled={busy} onClick={() => setPrintModalOpen(true)} />
-      </div>
+      <section className="simulation-stage relative overflow-hidden rounded-2xl p-6 text-white shadow-soft sm:p-8">
+        <div className="simulation-stage__beam" aria-hidden="true" />
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-3xl">
+            <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-black uppercase text-cyan-50 ring-1 ring-white/20">
+              <Target size={15} aria-hidden="true" />
+              Studio Simulasi
+            </span>
+            <h1 className="mt-4 text-3xl font-black leading-tight text-white sm:text-4xl">Pilih Simulasi</h1>
+            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-cyan-50/90 sm:text-base">
+              Setiap kad direka semula dengan warna berbeza, grafik bergerak dan maklumat pantas supaya calon terus nampak mod yang sesuai.
+            </p>
+          </div>
+          <div className="simulation-stage__radar" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <Sparkles size={34} />
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-3" aria-label="Pilihan simulasi PKSK">
+        <SimulationModeCard
+          title="Simulasi PKSK Penuh"
+          eyebrow="Set Lengkap"
+          text="Bahagian A 30 soalan, Bahagian B 70 soalan dalam 90 minit, kemudian sambung Bahagian C."
+          icon={ShieldCheck}
+          imageSrc="/assets/simulation-full-ai.png"
+          tone="galaxy"
+          actionLabel={busy ? "Menyediakan..." : "Mula Simulasi Penuh"}
+          featured
+          disabled={busy}
+          metrics={[
+            { icon: ClipboardList, label: "Objektif", value: "100 soalan" },
+            { icon: Clock3, label: "Masa", value: "90 minit" },
+            { icon: PenLine, label: "Akhir", value: "Bahagian C" },
+          ]}
+          onClick={() => onStartQuiz("full", null, 100)}
+        />
+        <SimulationModeCard
+          title="Bahagian A"
+          eyebrow="Insaniah"
+          text="Latih nilai diri, sikap, minat, kepimpinan dan pilihan respons dalam situasi harian."
+          icon={HeartHandshake}
+          imageSrc="/assets/simulation-section-a-ai.png"
+          tone="emerald"
+          actionLabel={busy ? "Menyediakan..." : "Pilih Bahagian A"}
+          disabled={busy}
+          metrics={[
+            { icon: ClipboardList, label: "Jumlah", value: "30 soalan" },
+            { icon: Target, label: "Skor", value: "20%" },
+          ]}
+          onClick={() => onStartQuiz("section", "A", 30)}
+        />
+        <SimulationModeCard
+          title="Bahagian B"
+          eyebrow="Intelek"
+          text="Kuatkan logik, penaakulan, kefahaman dan penyelesaian masalah secara objektif."
+          icon={Brain}
+          imageSrc="/assets/simulation-section-b-ai.png"
+          tone="sapphire"
+          actionLabel={busy ? "Menyediakan..." : "Pilih Bahagian B"}
+          disabled={busy}
+          metrics={[
+            { icon: ClipboardList, label: "Jumlah", value: "70 soalan" },
+            { icon: Target, label: "Skor", value: "70%" },
+          ]}
+          onClick={() => onStartQuiz("section", "B", 70)}
+        />
+        <SimulationModeCard
+          title="Bahagian C"
+          eyebrow="Penulisan"
+          text="Masuk studio karangan Bahasa Melayu dengan timer, autosave dan ruang menulis yang selesa."
+          icon={PenLine}
+          imageSrc="/assets/simulation-section-c-ai.png"
+          tone="violet"
+          actionLabel={busy ? "Menyediakan..." : "Buka Studio Penulisan"}
+          disabled={busy}
+          metrics={[
+            { icon: BookOpen, label: "Tugasan", value: "1 tajuk" },
+            { icon: Clock3, label: "Masa", value: "45 minit" },
+          ]}
+          onClick={onStartEssay}
+        />
+        <SimulationModeCard
+          title="Cetak Simulasi PKSK"
+          eyebrow="PDF Cetak"
+          text="Jana set lengkap Bahagian A, B dan C untuk dimuat turun, dicetak dan dijawab offline."
+          icon={Printer}
+          imageSrc="/assets/simulation-print-ai.png"
+          tone="paper"
+          actionLabel={busy ? "Menyediakan..." : "Jana PDF"}
+          disabled={busy}
+          metrics={[
+            { icon: Download, label: "Format", value: "PDF" },
+            { icon: ClipboardList, label: "Set", value: "A+B+C" },
+          ]}
+          onClick={() => setPrintModalOpen(true)}
+        />
+      </section>
       {printModalOpen ? <PrintSimulationPdfModal profile={profile} onClose={() => setPrintModalOpen(false)} onMessage={onMessage} /> : null}
     </div>
+  );
+}
+
+function SimulationModeCard({
+  title,
+  eyebrow,
+  text,
+  icon: Icon,
+  imageSrc,
+  tone,
+  actionLabel,
+  metrics,
+  disabled = false,
+  featured = false,
+  onClick,
+}: {
+  title: string;
+  eyebrow: string;
+  text: string;
+  icon: LucideIcon;
+  imageSrc: string;
+  tone: SimulationCardTone;
+  actionLabel: string;
+  metrics: SimulationModeMetric[];
+  disabled?: boolean;
+  featured?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      className={`simulation-choice simulation-choice--${tone} group relative min-h-[330px] overflow-hidden rounded-2xl border p-5 text-left text-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed sm:p-6 ${
+        featured ? "lg:col-span-2" : ""
+      }`}
+      aria-label={actionLabel}
+    >
+      <img src={imageSrc} alt="" className="simulation-choice__image" aria-hidden="true" />
+      <div className="simulation-choice__noise" aria-hidden="true" />
+      <div className="relative z-10 flex h-full min-w-0 flex-col">
+        <div className="flex items-start justify-between gap-4">
+          <span className="inline-flex max-w-full items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-[11px] font-black uppercase text-white ring-1 ring-white/20">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.86)]" aria-hidden="true" />
+            {eyebrow}
+          </span>
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20 backdrop-blur">
+            <Icon size={24} strokeWidth={2.4} aria-hidden="true" />
+          </span>
+        </div>
+
+        <div className={`mt-6 grid flex-1 gap-5 ${featured ? "lg:grid-cols-[1fr_220px] lg:items-center" : ""}`}>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h2>
+            <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-white/80">{text}</p>
+          </div>
+
+          <div className="simulation-orbit mx-auto" aria-hidden="true">
+            <span className="simulation-orbit__ring simulation-orbit__ring--outer" />
+            <span className="simulation-orbit__ring simulation-orbit__ring--inner" />
+            <span className="simulation-orbit__spark simulation-orbit__spark--one" />
+            <span className="simulation-orbit__spark simulation-orbit__spark--two" />
+            <span className="simulation-orbit__spark simulation-orbit__spark--three" />
+            <span className="simulation-orbit__icon">
+              <Icon size={42} strokeWidth={2.2} />
+            </span>
+          </div>
+        </div>
+
+        <div className={`mt-6 grid gap-2 ${metrics.length > 2 ? "sm:grid-cols-3" : "grid-cols-2"}`}>
+          {metrics.map((metric) => {
+            const MetricIcon = metric.icon;
+            return (
+              <span key={`${title}-${metric.label}`} className="simulation-choice__metric min-w-0 rounded-xl px-3 py-3">
+                <span className="flex items-center gap-2 text-[11px] font-black uppercase text-white/60">
+                  <MetricIcon size={14} aria-hidden="true" />
+                  {metric.label}
+                </span>
+                <span className="mt-1 block text-sm font-black leading-tight text-white">{metric.value}</span>
+              </span>
+            );
+          })}
+        </div>
+
+        <span className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition group-hover:scale-[1.02] group-disabled:scale-100">
+          {actionLabel}
+          {!disabled ? <ChevronRight size={18} className="simulation-choice__arrow" aria-hidden="true" /> : null}
+        </span>
+      </div>
+    </button>
   );
 }
 
