@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ClipboardList, Clock3, MailCheck, Play, RefreshCw, Search, Send, ShieldCheck, XCircle, Zap, type LucideIcon } from "lucide-react";
+import { CheckCircle2, ClipboardList, MailCheck, Play, RefreshCw, Search, Send, ShieldCheck, XCircle, Zap, type LucideIcon } from "lucide-react";
 import {
   fetchZohoDashboard,
   previewZohoBackfill,
@@ -86,7 +86,7 @@ export function ZohoSyncPanel({ onMessage }: ZohoSyncPanelProps) {
     void runAction("preview", async () => {
       const result = await previewZohoBackfill();
       setPreview(result);
-      return `Preview backfill siap: ${result.eligible_users} contact eligible untuk marketing.`;
+      return `Preview backfill siap: ${getPreviewCount(result, "prospects_eligible", "eligible_users")} prospect eligible untuk marketing.`;
     });
   }
 
@@ -96,7 +96,7 @@ export function ZohoSyncPanel({ onMessage }: ZohoSyncPanelProps) {
       return;
     }
 
-    const confirmed = window.confirm(`Run backfill dan proses maksimum ${batchSize} contact sekarang? Operasi ini akan menulis ke Zoho untuk contact yang ada consent marketing sahaja.`);
+    const confirmed = window.confirm(`Run backfill dan proses maksimum ${batchSize} prospect eligible sekarang? Operasi ini hanya enqueue prospect dengan consent marketing yang sah.`);
     if (!confirmed) {
       return;
     }
@@ -120,7 +120,7 @@ export function ZohoSyncPanel({ onMessage }: ZohoSyncPanelProps) {
     void runAction("retry", async () => {
       const result = await retryFailedZohoSync(batchSize);
       setLastProcess(result.processed ?? null);
-      return `Retry failed selesai. Reset ${result.retry?.count ?? 0}; ${processSummary(result.processed)}.`;
+      return `Retry failed selesai. Retried ${result.retry?.retried ?? result.retry?.count ?? 0}; skipped ${result.retry?.skipped ?? 0}; duplicates ${result.retry?.duplicates ?? 0}; ${processSummary(result.processed)}.`;
     });
   }
 
@@ -143,7 +143,8 @@ export function ZohoSyncPanel({ onMessage }: ZohoSyncPanelProps) {
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-4">
         <ZohoStat icon={connectionStatus === "connected" ? CheckCircle2 : XCircle} label="Connection" value={statusLabel} tone={connectionStatus === "connected" ? "bg-leaf-50 text-leaf-700" : connectionStatus === "failed" ? "bg-coral-50 text-coral-600" : "bg-slate-100 text-slate-600"} />
-        <ZohoStat icon={Clock3} label="Last Success" value={formatShortDate(dashboard?.last_successful_sync)} tone="bg-ocean-50 text-ocean-700" />
+        <ZohoStat icon={MailCheck} label="Prospects Eligible" value={`${getPreviewCount(dashboard?.preview, "prospects_eligible", "eligible_users")}`} tone="bg-ocean-50 text-ocean-700" />
+        <ZohoStat icon={ShieldCheck} label="Premium Excluded" value={`${getPreviewCount(dashboard?.preview, "premium_excluded", "premium")}`} tone="bg-leaf-50 text-leaf-700" />
         <ZohoStat icon={ClipboardList} label="Pending Queue" value={`${dashboard?.queue_pending ?? 0}`} tone="bg-sun-50 text-amber-700" />
         <ZohoStat icon={XCircle} label="Failed Queue" value={`${dashboard?.queue_failed ?? 0}`} tone="bg-coral-50 text-coral-600" />
       </section>
@@ -286,19 +287,18 @@ type PreviewMetric = {
 
 function PreviewGrid({ preview }: { preview: ZohoBackfillPreview }) {
   const items: PreviewMetric[] = [
+    { label: "Total Prospects", value: getPreviewCount(preview, "total_prospects", "prospects") },
+    { label: "Prospects With Consent", value: getPreviewCount(preview, "prospects_with_consent", "marketing_consent_true"), description: "Prospect sahaja yang telah memberi consent marketing." },
+    { label: "Prospects Eligible", value: getPreviewCount(preview, "prospects_eligible", "eligible_users"), description: "Prospect + consent true + email valid + bukan blocked/unsubscribed/admin." },
+    { label: "Premium Excluded", value: getPreviewCount(preview, "premium_excluded", "premium"), description: "Premium tidak dimasukkan ke workflow Prospect to Premium." },
+    { label: "Consent Missing", value: getPreviewCount(preview, "consent_missing", "marketing_consent_missing"), description: "Prospect tanpa rekod keputusan consent." },
+    { label: "Consent Declined", value: getPreviewCount(preview, "consent_declined", "marketing_consent_declined"), description: "Prospect yang memilih tidak menerima marketing." },
+    { label: "Unsubscribed", value: preview.unsubscribed, description: "Prospect yang sudah unsubscribe." },
+    { label: "Blocked", value: getPreviewCount(preview, "blocked_users", "blocked") },
+    { label: "Invalid Email", value: preview.invalid_email },
+    { label: "Admin Excluded", value: getPreviewCount(preview, "admin_excluded", "admin_internal_excluded") },
     { label: "Total Auth Users", value: preview.total_auth_users },
     { label: "With Profile", value: preview.with_profile },
-    { label: "Eligible", value: preview.eligible_users },
-    { label: "Prospects", value: preview.prospects },
-    { label: "Premium", value: preview.premium },
-    { label: "Expired", value: preview.expired },
-    { label: "Blocked", value: preview.blocked },
-    { label: "Invalid Email", value: preview.invalid_email },
-    { label: "Admin Excluded", value: preview.admin_internal_excluded },
-    { label: "Consent True", value: preview.marketing_consent_true, description: "Pengguna telah memberi persetujuan menerima marketing." },
-    { label: "Consent Missing", value: preview.marketing_consent_missing ?? preview.marketing_consent_false_or_unknown, description: "Tiada rekod keputusan kerana user daftar sebelum consent diperkenalkan." },
-    { label: "Consent Declined", value: preview.marketing_consent_declined ?? 0, description: "Pengguna telah memilih tidak menerima marketing." },
-    { label: "Unsubscribed", value: preview.unsubscribed, description: "Pengguna pernah subscribe tetapi kemudian berhenti melanggan." },
   ];
 
   return (
@@ -308,6 +308,13 @@ function PreviewGrid({ preview }: { preview: ZohoBackfillPreview }) {
       ))}
     </div>
   );
+}
+
+function getPreviewCount(preview: ZohoBackfillPreview | null | undefined, primary: keyof ZohoBackfillPreview, fallback?: keyof ZohoBackfillPreview): number {
+  if (!preview) {
+    return 0;
+  }
+  return Number(preview[primary] ?? (fallback ? preview[fallback] : 0) ?? 0);
 }
 
 function ZohoStat({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: string }) {

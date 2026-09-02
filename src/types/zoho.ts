@@ -10,18 +10,26 @@ export type ZohoBackfillPreview = {
   total_auth_users: number;
   with_profile: number;
   missing_profile: number;
+  total_prospects?: number;
+  prospects_with_consent?: number;
+  prospects_eligible?: number;
   eligible_users: number;
   prospects: number;
+  premium_excluded?: number;
   premium: number;
   expired: number;
   blocked: number;
+  blocked_users?: number;
   invalid_email: number;
   deleted_users: number;
   admin_internal_excluded: number;
+  admin_excluded?: number;
   marketing_consent_true: number;
   marketing_consent_missing: number;
   marketing_consent_declined: number;
   marketing_consent_false_or_unknown: number;
+  consent_missing?: number;
+  consent_declined?: number;
   unsubscribed: number;
   not_confirmed_for_marketing: number;
 };
@@ -79,6 +87,10 @@ export type ZohoRetryResult = {
   retry?: {
     ok: boolean;
     count: number;
+    evaluated?: number;
+    retried?: number;
+    skipped?: number;
+    duplicates?: number;
   };
   processed?: ZohoProcessResult;
 };

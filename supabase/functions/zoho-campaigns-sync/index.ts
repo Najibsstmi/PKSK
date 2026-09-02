@@ -63,6 +63,7 @@ type DesiredContactState = {
   is_premium: boolean;
   is_blocked: boolean;
   marketing_consent: boolean;
+  marketing_consent_status?: string | null;
   email_marketing_unsubscribed_at: string | null;
   marketing_eligible: boolean;
   desired_segment: "prospect" | "premium" | "expired" | "blocked" | "skipped";
@@ -342,8 +343,15 @@ async function processQueue(serviceClient: SupabaseClient, batchSize: number): P
     result.processed += 1;
     try {
       const state = await fetchDesiredState(serviceClient, item);
+      if (state.syncable && (state.desired_segment === "blocked" || state.is_blocked)) {
+        await unsubscribeContact(config, token, state);
+        await markQueueSucceeded(serviceClient, item, state, { action: "unsubscribed_blocked" }, "blocked_unsubscribed");
+        result.synced += 1;
+        continue;
+      }
+
       if (!state.syncable) {
-        await markQueueSkipped(serviceClient, item, state, state.skip_reason ?? "SKIPPED");
+        await markQueueSkipped(serviceClient, item, state, getProspectSkipReason(state));
         result.skipped += 1;
         continue;
       }
@@ -355,16 +363,26 @@ async function processQueue(serviceClient: SupabaseClient, batchSize: number): P
         continue;
       }
 
-      if (state.desired_segment === "blocked" || state.is_blocked) {
-        await unsubscribeContact(config, token, state);
-        await markQueueSucceeded(serviceClient, item, state, { action: "unsubscribed_blocked" }, "blocked_unsubscribed");
-        result.synced += 1;
-        continue;
-      }
-
       if (await isUnsubscribedInZoho(config, token, state.email ?? "")) {
         await markUserUnsubscribed(serviceClient, state.user_id, "zoho");
         await markQueueSkipped(serviceClient, item, state, "ZOHO_UNSUBSCRIBED");
+        result.skipped += 1;
+        continue;
+      }
+
+      if (!isProspectMarketingEligible(state)) {
+        if (isPremiumStatusUpdate(state, item)) {
+          const existsInProspectList = await isActiveInZohoList(config, token, state.email ?? "");
+          if (existsInProspectList) {
+            const response = await upsertZohoContact(config, token, state, fieldMapping);
+            await markQueueSucceeded(serviceClient, item, state, response, "premium_updated");
+            result.synced += 1;
+            await delay(140);
+            continue;
+          }
+        }
+
+        await markQueueSkipped(serviceClient, item, state, getProspectSkipReason(state));
         result.skipped += 1;
         continue;
       }
@@ -508,14 +526,14 @@ async function fetchSubscriberCount(config: ZohoConfig, token: ZohoToken, status
   return Number.isFinite(count) ? count : null;
 }
 
-async function fetchUnsubscribedContacts(config: ZohoConfig, token: ZohoToken, fromIndex: number): Promise<Record<string, unknown>[]> {
+async function fetchListSubscribers(config: ZohoConfig, token: ZohoToken, status: "active" | "unsub", fromIndex: number): Promise<Record<string, unknown>[]> {
   const payload = await fetchZohoJson(config, token, "/api/v1.1/getlistsubscribers", {
     resfmt: "JSON",
     listkey: config.listKey,
     sort: "desc",
     fromindex: String(fromIndex),
     range: "200",
-    status: "unsub",
+    status,
   });
 
   return readZohoArray(payload, ["list_of_details", "response.list_of_details"]);
@@ -528,8 +546,27 @@ async function isUnsubscribedInZoho(config: ZohoConfig, token: ZohoToken, email:
   }
 
   for (let fromIndex = 1; fromIndex <= 1001; fromIndex += 200) {
-    const contacts = await fetchUnsubscribedContacts(config, token, fromIndex);
-    if (contacts.some((contact) => cleanString(contact.contact_email ?? contact["Contact Email"]).toLowerCase() === targetEmail)) {
+    const contacts = await fetchListSubscribers(config, token, "unsub", fromIndex);
+    if (contacts.some((contact) => getZohoContactEmail(contact) === targetEmail)) {
+      return true;
+    }
+    if (contacts.length < 200) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+async function isActiveInZohoList(config: ZohoConfig, token: ZohoToken, email: string): Promise<boolean> {
+  const targetEmail = email.trim().toLowerCase();
+  if (!targetEmail) {
+    return false;
+  }
+
+  for (let fromIndex = 1; fromIndex <= 1001; fromIndex += 200) {
+    const contacts = await fetchListSubscribers(config, token, "active", fromIndex);
+    if (contacts.some((contact) => getZohoContactEmail(contact) === targetEmail)) {
       return true;
     }
     if (contacts.length < 200) {
@@ -608,13 +645,15 @@ async function postZohoForm(config: ZohoConfig, token: ZohoToken, path: string, 
 
 function buildContactInfo(state: DesiredContactState, fieldMapping: ZohoFieldMapping): Record<string, string> {
   const lastSyncedAt = formatZohoDateTime(new Date());
+  const subscriptionStatus = state.desired_segment === "prospect" ? "prospect" : state.desired_segment === "premium" ? "premium" : state.subscription_status;
+  const subscriptionPlan = state.desired_segment === "prospect" ? "prospect" : state.desired_segment === "premium" ? "premium" : state.subscription_plan ?? "";
   return {
     [fieldMapping["Contact Email"]?.displayName ?? "Contact Email"]: state.email ?? "",
     [fieldMapping["First Name"]?.displayName ?? "First Name"]: state.first_name ?? state.display_name ?? "",
     [fieldMapping["Last Name"]?.displayName ?? "Last Name"]: state.last_name ?? "",
     [fieldMapping["Supabase User ID"]?.displayName ?? "Supabase User ID"]: state.user_id,
-    [fieldMapping["Subscription Status"]?.displayName ?? "Subscription Status"]: state.subscription_status,
-    [fieldMapping["Subscription Plan"]?.displayName ?? "Subscription Plan"]: state.subscription_plan ?? "",
+    [fieldMapping["Subscription Status"]?.displayName ?? "Subscription Status"]: subscriptionStatus,
+    [fieldMapping["Subscription Plan"]?.displayName ?? "Subscription Plan"]: subscriptionPlan,
     [fieldMapping["Is Premium"]?.displayName ?? "Is Premium"]: state.is_premium ? "true" : "false",
     [fieldMapping["Is Blocked"]?.displayName ?? "Is Blocked"]: state.is_blocked ? "true" : "false",
     [fieldMapping["PKSK Source"]?.displayName ?? "PKSK Source"]: state.source || "PKSK Academy",
@@ -630,6 +669,47 @@ function getZohoEmailCompatibilityIssue(email: string | null): string | null {
   }
 
   return null;
+}
+
+function isProspectMarketingEligible(state: DesiredContactState): boolean {
+  return Boolean(
+    state.syncable &&
+      state.marketing_eligible &&
+      state.desired_segment === "prospect" &&
+      state.subscription_status === "prospect" &&
+      state.subscription_plan === "prospect" &&
+      !state.is_premium &&
+      !state.is_blocked,
+  );
+}
+
+function isPremiumStatusUpdate(state: DesiredContactState, item: QueueItem): boolean {
+  return Boolean(
+    state.syncable &&
+      state.desired_segment === "premium" &&
+      state.subscription_status === "premium" &&
+      state.subscription_plan === "premium" &&
+      state.is_premium &&
+      !state.is_blocked &&
+      ["subscription_changed", "manual_resync"].includes(item.event_type),
+  );
+}
+
+function getProspectSkipReason(state: DesiredContactState): string {
+  if (state.desired_segment === "premium" || state.is_premium) {
+    return "NO_LONGER_PROSPECT";
+  }
+  if (state.desired_segment === "expired") {
+    return "EXPIRED_NOT_PROSPECT";
+  }
+  if (state.skip_reason) {
+    return state.skip_reason;
+  }
+  return "NOT_ELIGIBLE_FOR_PROSPECT_MARKETING";
+}
+
+function getZohoContactEmail(contact: Record<string, unknown>): string {
+  return cleanString(contact.contact_email ?? contact["Contact Email"] ?? contact.email ?? contact.Email ?? contact.EMAIL).toLowerCase();
 }
 
 function buildFieldMapping(fields: ZohoField[]): ZohoFieldMapping {
