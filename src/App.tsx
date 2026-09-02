@@ -678,7 +678,9 @@ function App() {
     isSupabaseConfigured && !loading && currentRoute === "/" && (!isLoggedIn || (Boolean(accessStatus) && !access.isPremium && !access.isBlocked));
   const { currentItem, dismissCurrentItem } = useSocialProofNotifications(canShowSocialProofNotification);
   const isAuthRoute = currentRoute === "/login" || currentRoute === "/register";
-  const shouldShowInstallAppButton = !publicRoutes.has(currentRoute);
+  const isSimulationChoiceRoute = currentRoute === "/app/simulasi";
+  const shouldShowFloatingHelpers = !isAuthRoute && !isSimulationChoiceRoute;
+  const shouldShowInstallAppButton = shouldShowFloatingHelpers && !publicRoutes.has(currentRoute);
 
   useEffect(() => {
     const urlReferralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? null;
@@ -1719,7 +1721,7 @@ function App() {
           onCloseHelp={() => setShowInstallHelp(false)}
         />
       ) : null}
-      {!isAuthRoute ? <WhatsAppSupportButton /> : null}
+      {shouldShowFloatingHelpers ? <WhatsAppSupportButton /> : null}
       {canShowSocialProofNotification ? (
         <SocialProofNotification item={currentItem} onDismiss={dismissCurrentItem} onOpenPremium={openPaywall} />
       ) : null}
@@ -2660,6 +2662,9 @@ function LandingPage({
   onShowPaywall: () => void;
 }) {
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const originalPremiumPrice = 199;
+  const originalPremiumPriceLabel = formatCurrency(originalPremiumPrice, settings.payment_currency);
+  const premiumDiscountPercent = Math.max(0, Math.round(((originalPremiumPrice - settings.payment_price) / originalPremiumPrice) * 100));
   const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
     { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Simulasi seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
     { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
@@ -2696,10 +2701,25 @@ function LandingPage({
               <Play size={16} fill="currentColor" aria-hidden="true" />
               Daftar Percuma & Cuba Simulasi
             </button>
-            <button type="button" className="hero-preview-cta" onClick={onShowPaywall}>
-              <Crown size={17} aria-hidden="true" />
-              Premium {priceLabel}
-            </button>
+            <div className="hero-premium-deal">
+              {premiumDiscountPercent > 0 ? (
+                <span className="hero-discount-ribbon">
+                  <Sparkles size={13} aria-hidden="true" />
+                  Jimat {premiumDiscountPercent}% dari <span className="hero-original-price-cut">{originalPremiumPriceLabel}</span>
+                </span>
+              ) : null}
+              <button type="button" className="hero-premium-deal-cta" onClick={onShowPaywall}>
+                <span className="hero-premium-deal-shine" aria-hidden="true" />
+                <span className="hero-premium-deal-icon">
+                  <Crown size={18} aria-hidden="true" />
+                </span>
+                <span className="hero-premium-deal-copy">
+                  <span>Premium {priceLabel}</span>
+                  <small>Sekali bayar</small>
+                </span>
+                <ChevronRight size={17} aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <div className="landing-trust-line">
             <Users size={17} aria-hidden="true" />
@@ -7987,6 +8007,7 @@ function ModePage({
       <section className="simulation-choice-grid grid" aria-label="Pilihan simulasi PKSK">
         <SimulationModeCard
           title="Simulasi PKSK Penuh"
+          compactTitle="Simulasi Penuh"
           eyebrow="Set Lengkap"
           text="Bahagian A 30 soalan, Bahagian B 70 soalan dalam 90 minit, kemudian sambung Bahagian C."
           icon={ShieldCheck}
@@ -8005,6 +8026,7 @@ function ModePage({
         />
         <SimulationModeCard
           title="Bahagian A"
+          compactTitle="Bahagian A"
           eyebrow="Insaniah"
           text="Latih nilai diri, sikap, minat, kepimpinan dan pilihan respons dalam situasi harian."
           icon={HeartHandshake}
@@ -8021,6 +8043,7 @@ function ModePage({
         />
         <SimulationModeCard
           title="Bahagian B"
+          compactTitle="Bahagian B"
           eyebrow="Intelek"
           text="Kuatkan logik, penaakulan, kefahaman dan penyelesaian masalah secara objektif."
           icon={Brain}
@@ -8037,6 +8060,7 @@ function ModePage({
         />
         <SimulationModeCard
           title="Bahagian C"
+          compactTitle="Bahagian C"
           eyebrow="Penulisan"
           text="Masuk studio karangan Bahasa Melayu dengan timer, autosave dan ruang menulis yang selesa."
           icon={PenLine}
@@ -8053,6 +8077,7 @@ function ModePage({
         />
         <SimulationModeCard
           title="Cetak Simulasi PKSK"
+          compactTitle="Cetak PDF"
           eyebrow="PDF Cetak"
           text="Jana set lengkap Bahagian A, B dan C untuk dimuat turun, dicetak dan dijawab offline."
           icon={Printer}
@@ -8075,6 +8100,7 @@ function ModePage({
 
 function SimulationModeCard({
   title,
+  compactTitle,
   eyebrow,
   text,
   icon: Icon,
@@ -8088,6 +8114,7 @@ function SimulationModeCard({
   onClick,
 }: {
   title: string;
+  compactTitle?: string;
   eyebrow: string;
   text: string;
   icon: LucideIcon;
@@ -8105,7 +8132,7 @@ function SimulationModeCard({
       type="button"
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      className={`simulation-choice simulation-choice--${tone} group relative min-h-[176px] overflow-hidden rounded-xl border p-2.5 text-left text-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed sm:min-h-[230px] sm:rounded-2xl sm:p-4 lg:min-h-[330px] lg:p-6 ${
+      className={`simulation-choice simulation-choice--${tone} group relative aspect-square min-h-0 overflow-hidden rounded-2xl border p-2 text-left text-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed md:aspect-auto md:min-h-[190px] md:p-4 lg:min-h-[260px] lg:p-5 ${
         featured ? "lg:col-span-2" : ""
       }`}
       aria-label={actionLabel}
@@ -8125,7 +8152,10 @@ function SimulationModeCard({
 
         <div className={`simulation-choice__body mt-6 grid flex-1 gap-5 ${featured ? "lg:grid-cols-[1fr_220px] lg:items-center" : ""}`}>
           <div className="simulation-choice__copy min-w-0">
-            <h2 className="simulation-choice__title text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h2>
+            <h2 className="simulation-choice__title text-2xl font-black leading-tight text-white sm:text-3xl">
+              <span className="simulation-choice__title-full">{title}</span>
+              <span className="simulation-choice__title-short">{compactTitle ?? title}</span>
+            </h2>
             <p className="simulation-choice__description mt-3 max-w-xl text-sm font-semibold leading-6 text-white/80">{text}</p>
           </div>
 
@@ -8156,7 +8186,7 @@ function SimulationModeCard({
           })}
         </div>
 
-        <span className="simulation-choice__cta mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition group-hover:scale-[1.02] group-disabled:scale-100">
+        <span className="simulation-choice__cta mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.22)] transition group-hover:scale-[1.02] group-disabled:scale-100">
           <span className="simulation-choice__cta-label simulation-choice__cta-label--full">{actionLabel}</span>
           <span className="simulation-choice__cta-label simulation-choice__cta-label--short">{mobileActionLabel ?? actionLabel}</span>
           {!disabled ? <ChevronRight size={18} className="simulation-choice__arrow" aria-hidden="true" /> : null}
