@@ -494,15 +494,13 @@ async function fetchListDetails(config: ZohoConfig, token: ZohoToken): Promise<R
     fromindex: "1",
     range: "1",
   });
-  const status = zohoStatus(payload);
-  const code = zohoCode(payload);
 
-  if (status !== "success" && code !== "0") {
+  if (!isZohoSuccess(payload)) {
     throw new SafeError("ZOHO_LIST_CHECK_FAILED", safeZohoMessage(payload, { status: 200, statusText: "OK" } as Response));
   }
 
   return {
-    status,
+    status: zohoStatus(payload),
     listDetails: summarizeZohoValue(readNested(payload, ["list_details", "response.list_details", "listdetails", "response.listdetails"])),
     contactStats: summarizeZohoValue(readNested(payload, ["contact_stats", "response.contact_stats", "contactstats", "response.contactstats"])),
   };
@@ -579,23 +577,64 @@ async function isActiveInZohoList(config: ZohoConfig, token: ZohoToken, email: s
 
 async function upsertZohoContact(config: ZohoConfig, token: ZohoToken, state: DesiredContactState, fieldMapping: ZohoFieldMapping): Promise<Record<string, unknown>> {
   const contactInfo = buildContactInfo(state, fieldMapping);
-  const payload = await postZohoForm(config, token, "/api/v1.1/json/listsubscribe", {
+  const subscribePayload = await postZohoForm(config, token, "/api/v1.1/json/listsubscribe", {
     resfmt: "JSON",
     listkey: config.listKey,
     contactinfo: JSON.stringify(contactInfo),
     source: state.source || "PKSK Academy",
   });
 
-  const status = zohoStatus(payload);
-  const code = zohoCode(payload);
-  if (status !== "success" && code !== "0") {
-    throw new SafeError("ZOHO_CONTACT_UPSERT_FAILED", safeZohoMessage(payload, { status: 200, statusText: "OK" } as Response), isRetryableZohoCode(code), {
-      code,
-      response: redactZohoPayload(payload),
+  const subscribeCode = zohoCode(subscribePayload);
+  if (!isZohoSuccess(subscribePayload)) {
+    throw new SafeError("ZOHO_CONTACT_UPSERT_FAILED", safeZohoMessage(subscribePayload, { status: 200, statusText: "OK" } as Response), isRetryableZohoCode(subscribeCode), {
+      code: subscribeCode,
+      response: redactZohoPayload(subscribePayload),
     });
   }
 
-  return redactZohoPayload(payload);
+  if (await isActiveInZohoList(config, token, state.email ?? "")) {
+    return {
+      subscribe: redactZohoPayload(subscribePayload),
+      listMembership: {
+        active: true,
+        method: "listsubscribe",
+      },
+    };
+  }
+
+  const addPayload = await addContactToExistingList(config, token, state);
+  const addCode = zohoCode(addPayload);
+  if (!isZohoSuccess(addPayload)) {
+    throw new SafeError("ZOHO_LIST_ADD_FAILED", safeZohoMessage(addPayload, { status: 200, statusText: "OK" } as Response), isRetryableZohoCode(addCode), {
+      code: addCode,
+      subscribe: redactZohoPayload(subscribePayload),
+      response: redactZohoPayload(addPayload),
+    });
+  }
+
+  if (!(await isActiveInZohoList(config, token, state.email ?? ""))) {
+    throw new SafeError("ZOHO_LIST_MEMBERSHIP_NOT_CONFIRMED", "Zoho accepted the contact update but the contact is not active in the pksk academy list.", false, {
+      subscribe: redactZohoPayload(subscribePayload),
+      addToList: redactZohoPayload(addPayload),
+    });
+  }
+
+  return {
+    subscribe: redactZohoPayload(subscribePayload),
+    addToList: redactZohoPayload(addPayload),
+    listMembership: {
+      active: true,
+      method: "addlistsubscribersinbulk",
+    },
+  };
+}
+
+async function addContactToExistingList(config: ZohoConfig, token: ZohoToken, state: DesiredContactState): Promise<Record<string, unknown>> {
+  return postZohoForm(config, token, "/api/v1.1/addlistsubscribersinbulk", {
+    resfmt: "JSON",
+    listkey: config.listKey,
+    emailids: state.email ?? "",
+  });
 }
 
 async function unsubscribeContact(config: ZohoConfig, token: ZohoToken, state: DesiredContactState): Promise<Record<string, unknown>> {
@@ -920,6 +959,14 @@ function zohoStatus(payload: Record<string, unknown>): string {
 
 function zohoCode(payload: Record<string, unknown>): string {
   return cleanString(readNested(payload, ["code", "response.code"]));
+}
+
+function isZohoSuccess(payload: Record<string, unknown>): boolean {
+  const code = zohoCode(payload);
+  if (code) {
+    return code === "0";
+  }
+  return zohoStatus(payload) === "success";
 }
 
 function buildZohoUrl(baseUrl: string, path: string, params: Record<string, string>): string {
