@@ -178,6 +178,7 @@ type AppRoute =
   | "/admin/questions/import-history"
   | "/admin/settings";
 type AuthMode = "login" | "register";
+type PostAuthIntent = "free_preview" | null;
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -632,6 +633,7 @@ function shouldPromptForLegacyMarketingConsent({
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [postAuthIntent, setPostAuthIntent] = useState<PostAuthIntent>(null);
   const [currentRoute, setCurrentRoute] = useState<AppRoute>(() => getCurrentRoute());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -659,6 +661,7 @@ function App() {
   const [isInstalledApp, setIsInstalledApp] = useState(false);
   const [autoOpenPayment, setAutoOpenPayment] = useState(false);
   const [marketingConsentPromptBusy, setMarketingConsentPromptBusy] = useState(false);
+  const [pendingConsentPreviewSection, setPendingConsentPreviewSection] = useState<"A" | "B" | null>(null);
 
   const isLoggedIn = Boolean(session?.user);
   const access = useAccess(session, profile, accessStatus);
@@ -674,6 +677,8 @@ function App() {
   const canShowSocialProofNotification =
     isSupabaseConfigured && !loading && currentRoute === "/" && (!isLoggedIn || (Boolean(accessStatus) && !access.isPremium && !access.isBlocked));
   const { currentItem, dismissCurrentItem } = useSocialProofNotifications(canShowSocialProofNotification);
+  const isAuthRoute = currentRoute === "/login" || currentRoute === "/register";
+  const shouldShowInstallAppButton = !publicRoutes.has(currentRoute);
 
   useEffect(() => {
     const urlReferralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? null;
@@ -721,6 +726,8 @@ function App() {
         setActivePayload(null);
         setActiveEssayPayload(null);
         setEssayResult(null);
+        setPostAuthIntent(null);
+        setPendingConsentPreviewSection(null);
         setIsPasswordRecovery(false);
         window.localStorage.removeItem("pksk-active-attempt");
         window.localStorage.removeItem("pksk-active-essay");
@@ -767,6 +774,13 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!loading && !isLoggedIn && currentRoute === "/preview") {
+      setAuthMode("register");
+      setPostAuthIntent("free_preview");
+    }
+  }, [currentRoute, isLoggedIn, loading]);
 
   const refreshData = useCallback(async (userId = session?.user.id) => {
     if (!userId) {
@@ -834,13 +848,28 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  function openAuth(mode: AuthMode) {
+  function openAuth(mode: AuthMode, intent: PostAuthIntent = null) {
     setIsPasswordRecovery(false);
     setAuthMode(mode);
+    setPostAuthIntent(intent);
+    if (intent !== "free_preview") {
+      setPendingConsentPreviewSection(null);
+    }
     navigate(mode === "login" ? "/login" : "/register");
   }
 
+  function openFreePreviewSignup() {
+    setIsPasswordRecovery(false);
+    setAuthMode("register");
+    setPostAuthIntent("free_preview");
+    setPendingConsentPreviewSection(null);
+    navigate("/register");
+    setMessage("Daftar akaun percuma dahulu untuk membuka preview PKSK.");
+  }
+
   const openPaywall = useCallback(() => {
+    setPostAuthIntent(null);
+    setPendingConsentPreviewSection(null);
     setAutoOpenPayment(true);
     navigate("/premium");
   }, [navigate]);
@@ -888,17 +917,23 @@ function App() {
     navigate("/");
   }
 
-  async function handleAuth(email: string, password: string, displayName: string, rememberMe = false, marketingConsent = false) {
+  async function handleAuth(email: string, password: string, displayName: string, rememberMe = false, marketingConsent = false, formMode: AuthMode = authMode) {
     if (!supabase) {
       setMessage("Sistem simulasi belum bersedia. Sila cuba semula selepas tetapan selesai.");
       return;
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const shouldOpenFreePreview = postAuthIntent === "free_preview" || (formMode === "register" && (currentRoute === "/register" || currentRoute === "/preview"));
+    if (formMode === "register" && !marketingConsent) {
+      setMessage("Untuk akaun percuma, sila setuju dengan Notis Privasi dan terima tips/promosi PKSK melalui e-mel.");
+      return;
+    }
+
     setBusy(true);
     setMessage(null);
     try {
-      if (authMode === "register") {
+      if (formMode === "register") {
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
@@ -927,9 +962,16 @@ function App() {
             marketing_consent_source: "signup",
           });
           setProfile(nextProfile);
-          navigate("/premium");
+          if (shouldOpenFreePreview) {
+            setPostAuthIntent(null);
+            await prepareGuestPreview("A");
+            setMessage("Akaun percuma aktif. Preview PKSK sudah dibuka.");
+          } else {
+            navigate("/premium");
+          }
         } else {
-          setMessage("Akaun berjaya didaftarkan. Sila semak e-mel jika pengesahan diperlukan, kemudian log masuk.");
+          setPostAuthIntent(shouldOpenFreePreview ? "free_preview" : null);
+          setMessage("Akaun berjaya didaftarkan. Sila log masuk untuk mula menggunakan PKSK Academy.");
           setAuthMode("login");
         }
       } else {
@@ -943,10 +985,30 @@ function App() {
           window.localStorage.removeItem(rememberedEmailKey);
         }
         const nextStatus = await fetchAccessStatus().catch(() => null);
+        let nextProfile: ProfileRow | null = null;
         if (data.user?.id) {
           await refreshData(data.user.id).catch(() => undefined);
+          nextProfile = await fetchProfile(data.user.id).catch(() => null);
+          if (nextProfile) {
+            setProfile(nextProfile);
+          }
         }
-        if (nextStatus?.is_blocked || nextStatus?.is_expired) {
+        if (shouldOpenFreePreview) {
+          if (nextStatus?.is_blocked) {
+            setPostAuthIntent(null);
+            setMessage("Akaun ini sedang disemak. Sila hubungi pentadbir untuk bantuan.");
+            navigate("/premium");
+            return;
+          }
+          if (!nextStatus?.is_admin && getMarketingConsentStatus(nextProfile) !== "true") {
+            setPendingConsentPreviewSection("A");
+            setPostAuthIntent("free_preview");
+            setMessage("Sila setuju dengan Notis Privasi dan tips/promosi e-mel untuk membuka preview percuma.");
+            return;
+          }
+          setPostAuthIntent(null);
+          await prepareGuestPreview("A");
+        } else if (nextStatus?.is_blocked || nextStatus?.is_expired) {
           navigate("/premium");
         } else if (nextStatus?.is_admin && !nextStatus?.is_premium) {
           navigate("/admin");
@@ -971,9 +1033,21 @@ function App() {
     setMarketingConsentPromptBusy(true);
     setMessage(null);
     try {
+      const previewSection = pendingConsentPreviewSection;
       const nextProfile = await saveMarketingConsentDecision(consent);
       setProfile(nextProfile);
       setAccessStatus(accessStatusFromProfile(nextProfile));
+      setPendingConsentPreviewSection(null);
+      if (previewSection) {
+        if (consent) {
+          setPostAuthIntent(null);
+          await prepareGuestPreview(previewSection);
+          setMessage("Terima kasih. Preview percuma PKSK sudah dibuka.");
+        } else {
+          setMessage("Preview percuma memerlukan persetujuan Notis Privasi dan tips/promosi e-mel.");
+        }
+        return;
+      }
       setMessage(consent ? "Terima kasih. Anda akan menerima tips dan info PKSK melalui e-mel." : "Pilihan anda sudah disimpan. Kami tidak akan masukkan e-mel ini ke senarai marketing.");
     } catch (error) {
       setMessage(toMessage(error));
@@ -1249,28 +1323,47 @@ function App() {
   }
 
   async function handleStartGuestPreview(section: "A" | "B") {
+    if (!isLoggedIn) {
+      openFreePreviewSignup();
+      return;
+    }
+    if (access.isBlocked) {
+      setMessage("Akaun ini sedang disemak. Sila hubungi pentadbir untuk bantuan.");
+      return;
+    }
+    if (!access.isAdmin && getMarketingConsentStatus(profile) !== "true") {
+      setPendingConsentPreviewSection(section);
+      setPostAuthIntent("free_preview");
+      setMessage("Sila setuju dengan Notis Privasi dan tips/promosi e-mel untuk membuka preview percuma.");
+      return;
+    }
+
     setBusy(true);
     setMessage(null);
-    setGuestResult(null);
-    setGuestAnswers({});
-    setGuestSkipped({});
     try {
-      const [sectionAPayload, sectionBPayload] = await Promise.all([
-        fetchGuestPreview("A", freePreviewLimits.A),
-        fetchGuestPreview("B", freePreviewLimits.B),
-      ]);
-      const payload: GuestPreviewPayload = {
-        section,
-        limit: freePreviewLimits.A + freePreviewLimits.B,
-        questions: [...sectionAPayload.questions, ...sectionBPayload.questions],
-      };
-      setGuestPayload(payload);
-      navigate("/preview");
+      await prepareGuestPreview(section);
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function prepareGuestPreview(section: "A" | "B") {
+    setGuestResult(null);
+    setGuestAnswers({});
+    setGuestSkipped({});
+    const [sectionAPayload, sectionBPayload] = await Promise.all([
+      fetchGuestPreview("A", freePreviewLimits.A),
+      fetchGuestPreview("B", freePreviewLimits.B),
+    ]);
+    const payload: GuestPreviewPayload = {
+      section,
+      limit: freePreviewLimits.A + freePreviewLimits.B,
+      questions: [...sectionAPayload.questions, ...sectionBPayload.questions],
+    };
+    setGuestPayload(payload);
+    navigate("/preview");
   }
 
   function handleGuestAnswer(questionId: string, optionId: string) {
@@ -1339,7 +1432,8 @@ function App() {
     if (currentRoute === "/login" || currentRoute === "/register") {
       return (
         <AuthPage
-          mode={authMode}
+          mode={currentRoute === "/register" && postAuthIntent !== "free_preview" ? "register" : authMode}
+          intent={postAuthIntent ?? (currentRoute === "/register" ? "free_preview" : null)}
           busy={busy}
           isPasswordRecovery={isPasswordRecovery}
           onMode={openAuth}
@@ -1365,6 +1459,21 @@ function App() {
       );
     }
     if (currentRoute === "/preview") {
+      if (!isLoggedIn) {
+        return (
+          <AuthPage
+            mode={postAuthIntent === "free_preview" ? authMode : "register"}
+            intent="free_preview"
+            busy={busy}
+            isPasswordRecovery={false}
+            onMode={openAuth}
+            onSubmit={handleAuth}
+            onPasswordResetRequest={handlePasswordResetRequest}
+            onPasswordUpdate={handlePasswordUpdate}
+            onNavigate={navigate}
+          />
+        );
+      }
       return (
         <GuestPreviewPage
           payload={guestPayload}
@@ -1377,7 +1486,6 @@ function App() {
           onComplete={handleCompleteGuestPreview}
           onNavigate={navigate}
           onShowPaywall={openPaywall}
-          onAuthMode={openAuth}
           onStartGuestPreview={handleStartGuestPreview}
         />
       );
@@ -1589,6 +1697,8 @@ function App() {
         profile={profile}
         diamondProfile={diamondProfile}
         onNavigate={navigate}
+        onStartFreePreview={() => handleStartGuestPreview("A")}
+        onLogin={() => openAuth("login")}
         onPremiumCheckout={openPaywall}
         onMenu={() => setIsMenuOpen((current) => !current)}
         onSignOut={handleSignOut}
@@ -1601,24 +1711,34 @@ function App() {
       </main>
 
       {!publicRoutes.has(currentRoute) ? <BottomNav currentRoute={currentRoute} isLoggedIn={isLoggedIn} access={access} diamondProfile={diamondProfile} onNavigate={navigate} /> : null}
-      <InstallAppButton
-        showHelp={showInstallHelp}
-        isInstalled={isInstalledApp}
-        onInstall={handleInstallApp}
-        onCloseHelp={() => setShowInstallHelp(false)}
-      />
-      <WhatsAppSupportButton />
+      {shouldShowInstallAppButton ? (
+        <InstallAppButton
+          showHelp={showInstallHelp}
+          isInstalled={isInstalledApp}
+          onInstall={handleInstallApp}
+          onCloseHelp={() => setShowInstallHelp(false)}
+        />
+      ) : null}
+      {!isAuthRoute ? <WhatsAppSupportButton /> : null}
       {canShowSocialProofNotification ? (
         <SocialProofNotification item={currentItem} onDismiss={dismissCurrentItem} onOpenPremium={openPaywall} />
       ) : null}
-      {shouldShowMarketingConsentPrompt ? (
-        <LegacyMarketingConsentPrompt busy={marketingConsentPromptBusy} onDecision={handleLegacyMarketingConsentDecision} />
+      {shouldShowMarketingConsentPrompt || pendingConsentPreviewSection ? (
+        <LegacyMarketingConsentPrompt busy={marketingConsentPromptBusy} requireConsentForPreview={Boolean(pendingConsentPreviewSection)} onDecision={handleLegacyMarketingConsentDecision} />
       ) : null}
     </div>
   );
 }
 
-function LegacyMarketingConsentPrompt({ busy, onDecision }: { busy: boolean; onDecision: (consent: boolean) => void }) {
+function LegacyMarketingConsentPrompt({
+  busy,
+  requireConsentForPreview = false,
+  onDecision,
+}: {
+  busy: boolean;
+  requireConsentForPreview?: boolean;
+  onDecision: (consent: boolean) => void;
+}) {
   return (
     <section className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-slate-950/45 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="legacy-marketing-consent-title">
       <div className="w-full max-w-lg rounded-3xl border border-ocean-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-6">
@@ -1629,22 +1749,26 @@ function LegacyMarketingConsentPrompt({ busy, onDecision }: { busy: boolean; onD
           <div>
             <p className="text-xs font-black uppercase text-ocean-700">PKSK Academy</p>
             <h2 id="legacy-marketing-consent-title" className="mt-1 text-2xl font-black leading-tight text-slate-950">
-              Dapatkan Info & Tips PKSK
+              {requireConsentForPreview ? "Setuju Untuk Cuba Percuma" : "Dapatkan Info & Tips PKSK"}
             </h2>
           </div>
         </div>
         <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm font-semibold leading-7 text-slate-600">
-          <p>Nak kami hantarkan tips persediaan PKSK, info penting, latihan percuma dan promosi PKSK Academy terus ke e-mel anda?</p>
+          <p>
+            {requireConsentForPreview
+              ? "Untuk membuka preview percuma, anda perlu setuju dengan Notis Privasi dan menerima tips, latihan percuma serta promosi PKSK Academy melalui e-mel."
+              : "Nak kami hantarkan tips persediaan PKSK, info penting, latihan percuma dan promosi PKSK Academy terus ke e-mel anda?"}
+          </p>
           <p className="mt-2">Anda boleh berhenti melanggan pada bila-bila masa.</p>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <button type="button" className="primary-button justify-center" onClick={() => onDecision(true)} disabled={busy}>
             <CheckCircle2 size={18} aria-hidden="true" />
-            {busy ? "Menyimpan..." : "Ya, saya mahu"}
+            {busy ? "Menyimpan..." : requireConsentForPreview ? "Setuju & Buka Preview" : "Ya, saya mahu"}
           </button>
           <button type="button" className="secondary-button justify-center" onClick={() => onDecision(false)} disabled={busy}>
             <X size={18} aria-hidden="true" />
-            Tidak, terima kasih
+            {requireConsentForPreview ? "Batal" : "Tidak, terima kasih"}
           </button>
         </div>
       </div>
@@ -1681,6 +1805,8 @@ function TopBar({
   profile,
   diamondProfile,
   onNavigate,
+  onStartFreePreview,
+  onLogin,
   onPremiumCheckout,
   onMenu,
   onSignOut,
@@ -1692,6 +1818,8 @@ function TopBar({
   profile: ProfileRow | null;
   diamondProfile: DiamondProfile | null;
   onNavigate: (route: AppRoute) => void;
+  onStartFreePreview: () => void;
+  onLogin: () => void;
   onPremiumCheckout: () => void;
   onMenu: () => void;
   onSignOut: () => void;
@@ -1704,23 +1832,26 @@ function TopBar({
       ? [{ to: "/app", label: "Buka PKSK Academy", tone: "primary" }]
       : [{ to: "/premium", label: "Dapatkan Premium", tone: "primary" }]
     : [
-        { to: "/preview", label: "Cuba Percuma" },
-        { to: "/premium", label: "Dapatkan Premium", tone: "primary" },
+        { to: "/register", label: "Daftar Percuma", tone: "primary" },
+        { to: "/premium", label: "Premium RM49" },
       ];
-  const visibleMarketingLinks = isPremiumPage ? [] : marketingLinks;
+  const visibleMarketingLinks = isPublicShell ? [] : isPremiumPage ? [] : marketingLinks;
   const visibleMobileMarketingLinks =
-    isPremiumPage || currentRoute === "/" ? marketingLinks.filter((item) => item.to !== "/premium") : visibleMarketingLinks;
+    isPremiumPage ? [] : marketingLinks.filter((item) => !(currentRoute === "/register" && item.to === "/register"));
   const showMobileLogin = isPublicShell && !isLoggedIn && currentRoute !== "/login";
   const renderMarketingButton = (item: { to: AppRoute; label: string; tone?: "primary" | "secondary" }, compact = false) => {
-    const isPremiumCta = item.to === "/premium" || item.tone === "primary";
+    const isSignupCta = item.to === "/register";
+    const isPremiumCta = item.to === "/premium";
 
     return (
       <button
         key={item.to}
         type="button"
-        onClick={() => (item.to === "/premium" ? onPremiumCheckout() : onNavigate(item.to))}
+        onClick={() => (isSignupCta ? onStartFreePreview() : item.to === "/premium" ? onPremiumCheckout() : onNavigate(item.to))}
         className={
-          isPremiumCta
+          isSignupCta
+            ? `topbar-free-button ${compact ? "min-h-12 w-full" : "h-11"}`
+            : isPremiumCta
             ? `topbar-premium-button ${compact ? "min-h-12 w-full" : "h-11"}`
             : `secondary-button ${compact ? "min-h-12 w-full" : "h-11"} px-4 py-0`
         }
@@ -1839,10 +1970,20 @@ function TopBar({
                 </button>
               )
             ) : (
-              <button type="button" onClick={() => onNavigate("/login")} className="topbar-login-button">
-                <UserRound size={17} aria-hidden="true" />
-                Log Masuk
-              </button>
+              <>
+                {currentRoute !== "/register" ? (
+                  <button type="button" onClick={onStartFreePreview} className="topbar-free-button">
+                    <Sparkles size={17} aria-hidden="true" />
+                    Daftar Percuma
+                  </button>
+                ) : null}
+                {currentRoute !== "/login" ? (
+                  <button type="button" onClick={onLogin} className="topbar-login-button">
+                    <UserRound size={17} aria-hidden="true" />
+                    Log Masuk
+                  </button>
+                ) : null}
+              </>
             )
           ) : isLoggedIn ? (
             <>
@@ -1921,7 +2062,7 @@ function TopBar({
                   );
                 })}
             {showMobileLogin ? (
-              <button type="button" onClick={() => onNavigate("/login")} className="topbar-login-button h-12 w-full rounded-xl">
+              <button type="button" onClick={onLogin} className="topbar-login-button h-12 w-full rounded-xl">
                 <UserRound size={17} aria-hidden="true" />
                 Log Masuk
               </button>
@@ -2097,6 +2238,7 @@ function WhatsAppSupportButton() {
 
 function AuthPanel({
   mode,
+  intent,
   busy,
   onMode,
   onNavigate,
@@ -2104,11 +2246,12 @@ function AuthPanel({
   onSubmit,
 }: {
   mode: AuthMode;
+  intent?: PostAuthIntent;
   busy: boolean;
-  onMode: (mode: AuthMode) => void;
+  onMode: (mode: AuthMode, intent?: PostAuthIntent) => void;
   onNavigate: (route: AppRoute) => void;
   onPasswordResetRequest: (email: string) => void;
-  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean, mode?: AuthMode) => void;
 }) {
   const [email, setEmail] = useState(() => window.localStorage.getItem(rememberedEmailKey) ?? "");
   const [password, setPassword] = useState("");
@@ -2116,6 +2259,19 @@ function AuthPanel({
   const [rememberMe, setRememberMe] = useState(() => Boolean(window.localStorage.getItem(rememberedEmailKey)));
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [isResetRequestOpen, setIsResetRequestOpen] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const isFreePreviewIntent = intent === "free_preview";
+  const title = mode === "login" ? (isFreePreviewIntent ? "Log Masuk & Cuba Percuma" : "Log Masuk") : isFreePreviewIntent ? "Daftar Percuma" : "Daftar Akaun";
+  const subtitle =
+    mode === "login"
+      ? isFreePreviewIntent
+        ? "Masuk ke akaun sedia ada untuk buka preview percuma PKSK."
+        : "Sambung simulasi tanpa perlu isi e-mel berulang kali."
+      : isFreePreviewIntent
+        ? "Cipta akaun ringkas untuk buka preview PKSK dan simpan peluang naik taraf."
+        : "Cipta akaun untuk simpan rekod simulasi sendiri.";
+  const switchLabel = mode === "login" ? "Daftar Percuma" : "Sudah ada akaun? Log Masuk";
+  const submitLabel = mode === "login" ? "Masuk" : isFreePreviewIntent ? "Daftar & Cuba Percuma" : "Daftar";
 
   useEffect(() => {
     if (mode === "register") {
@@ -2123,11 +2279,17 @@ function AuthPanel({
     } else {
       setMarketingConsent(false);
     }
+    setFormError(null);
   }, [mode]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit(email, password, displayName || email.split("@")[0], rememberMe, mode === "register" ? marketingConsent : false);
+    if (mode === "register" && !marketingConsent) {
+      setFormError("Sila setuju dengan Notis Privasi dan promosi e-mel untuk membuka akaun percuma.");
+      return;
+    }
+    setFormError(null);
+    onSubmit(email, password, displayName || email.split("@")[0], rememberMe, mode === "register" ? marketingConsent : false, mode);
   }
 
   function handleResetRequest(event: FormEvent<HTMLFormElement>) {
@@ -2174,17 +2336,15 @@ function AuthPanel({
       <BrandMark />
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-black">{mode === "login" ? "Log Masuk" : "Daftar Akaun"}</h2>
-          <p className="text-sm leading-6 text-slate-500">
-            {mode === "login" ? "Sambung simulasi tanpa perlu isi e-mel berulang kali." : "Cipta akaun untuk simpan rekod simulasi sendiri."}
-          </p>
+          <h2 className="text-xl font-black">{title}</h2>
+          <p className="text-sm leading-6 text-slate-500">{subtitle}</p>
         </div>
         <button
           type="button"
-          onClick={() => onMode(mode === "login" ? "register" : "login")}
+          onClick={() => onMode(mode === "login" ? "register" : "login", intent ?? null)}
           className="inline-flex min-h-14 min-w-[112px] shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-slate-100 px-4 py-2 text-center text-sm font-bold leading-tight text-slate-700 transition hover:bg-ocean-50 hover:text-ocean-700"
         >
-          {mode === "login" ? "Daftar Akaun" : "Log Masuk"}
+          {switchLabel}
         </button>
       </div>
       <form className="grid gap-4" onSubmit={handleSubmit}>
@@ -2251,19 +2411,21 @@ function AuthPanel({
                 className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-ocean-600"
                 checked={marketingConsent}
                 onChange={(event) => setMarketingConsent(event.target.checked)}
+                required
               />
-              <span>Ya, hantarkan saya tips PKSK, info penting, latihan percuma dan promosi PKSK Academy melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
+              <span>Saya bersetuju dengan Notis Privasi PKSK Academy dan mahu menerima tips, latihan percuma serta promosi melalui e-mel. Saya boleh berhenti melanggan pada bila-bila masa.</span>
             </label>
             <div className="mt-3 border-t border-slate-200 pt-3">
               <button type="button" className="font-black text-ocean-700 hover:text-ocean-900" onClick={() => onNavigate("/privacy")}>
                 Baca Notis Privasi
               </button>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Dengan mendaftar, anda mengakui bahawa anda telah membaca Notis Privasi PKSK Academy.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Akaun percuma digunakan untuk membuka preview dan menghantar tips persediaan PKSK yang berkaitan.</p>
             </div>
           </div>
         ) : null}
+        {formError ? <p className="rounded-xl bg-coral-50 px-4 py-3 text-sm font-bold text-coral-600">{formError}</p> : null}
         <button type="submit" disabled={busy} className="primary-button w-full">
-          {busy ? "Tunggu..." : mode === "login" ? "Masuk" : "Daftar"}
+          {busy ? "Tunggu..." : submitLabel}
         </button>
       </form>
     </section>
@@ -2336,6 +2498,7 @@ function PasswordRecoveryPanel({ busy, onSubmit }: { busy: boolean; onSubmit: (p
 
 function AuthPage({
   mode,
+  intent,
   busy,
   isPasswordRecovery,
   onMode,
@@ -2345,20 +2508,21 @@ function AuthPage({
   onSubmit,
 }: {
   mode: AuthMode;
+  intent?: PostAuthIntent;
   busy: boolean;
   isPasswordRecovery: boolean;
-  onMode: (mode: AuthMode) => void;
+  onMode: (mode: AuthMode, intent?: PostAuthIntent) => void;
   onNavigate: (route: AppRoute) => void;
   onPasswordResetRequest: (email: string) => void;
   onPasswordUpdate: (password: string) => void;
-  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean) => void;
+  onSubmit: (email: string, password: string, displayName: string, rememberMe?: boolean, marketingConsent?: boolean, mode?: AuthMode) => void;
 }) {
   return (
     <div className="mx-auto max-w-md">
       {isPasswordRecovery ? (
         <PasswordRecoveryPanel busy={busy} onSubmit={onPasswordUpdate} />
       ) : (
-        <AuthPanel mode={mode} busy={busy} onMode={onMode} onNavigate={onNavigate} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
+        <AuthPanel mode={mode} intent={intent} busy={busy} onMode={onMode} onNavigate={onNavigate} onPasswordResetRequest={onPasswordResetRequest} onSubmit={onSubmit} />
       )}
     </div>
   );
@@ -2524,18 +2688,17 @@ function LandingPage({
               Persediaan PKSK bermula di sini.
             </h1>
             <p className="max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-              Simulasi sebenar, soalan rawak, analisis prestasi dan persediaan berstruktur untuk bantu anak anda lebih yakin dan bersedia.
+              Daftar akaun percuma, cuba soalan PKSK pilihan dan terima tips persediaan melalui e-mel sebelum naik taraf ke Premium.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
-              <span className="hero-popular-badge">Paling Popular</span>
-              <Crown size={18} aria-hidden="true" />
-              Dapatkan Premium {priceLabel}
-            </button>
-            <button type="button" className="hero-preview-cta" onClick={() => onStartGuestPreview("A")}>
+            <button type="button" className="hero-free-cta" onClick={() => onStartGuestPreview("A")}>
               <Play size={16} fill="currentColor" aria-hidden="true" />
-              Cuba Percuma
+              Daftar Percuma & Cuba Simulasi
+            </button>
+            <button type="button" className="hero-preview-cta" onClick={onShowPaywall}>
+              <Crown size={17} aria-hidden="true" />
+              Premium {priceLabel}
             </button>
           </div>
           <div className="landing-trust-line">
@@ -2665,11 +2828,11 @@ function PremiumRouteGate({
       <p className="mt-5 text-sm font-black uppercase text-ocean-700">PKSK Academy oleh CikguSTEM</p>
       <h1 className="mt-2 text-3xl font-black text-slate-950">Akses Premium diperlukan</h1>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-        Halaman ini ialah sebahagian daripada aplikasi premium. Sila pilih preview percuma, log masuk atau dapatkan akses Premium.
+        Halaman ini ialah sebahagian daripada aplikasi premium. Daftar percuma untuk cuba preview dahulu, atau log masuk jika sudah ada akaun.
       </p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-          Cuba Percuma
+          Daftar Percuma
         </button>
         <button type="button" className="secondary-button" onClick={() => onAuth("login")}>
           Log Masuk
@@ -2746,7 +2909,7 @@ function Dashboard({
               <p className="break-words text-base leading-7 text-slate-600 sm:text-lg">
                 {isLoggedIn
                   ? "Jalankan simulasi rawak, Studio Penulisan Bahagian C dan rekod pencapaian dalam satu tempat."
-                  : "Terus cuba soalan contoh tanpa daftar akaun. Akses penuh boleh dibuka apabila bersedia."}
+                  : "Daftar akaun percuma untuk buka preview PKSK. Akses penuh boleh dibuka apabila bersedia."}
               </p>
             </div>
             {isLoggedIn && access.isPremium ? (
@@ -2789,7 +2952,7 @@ function Dashboard({
               ) : (
                 <>
                   <button type="button" onClick={() => onStartGuestPreview("A")} className="primary-button">
-                    Cuba Percuma
+                    Daftar Percuma
                   </button>
                   <button type="button" onClick={() => onAuthMode("login")} className="secondary-button">
                     Log Masuk
@@ -3287,10 +3450,10 @@ function FreePreviewSection({
         <p className="mt-5 text-sm font-black uppercase text-ocean-700">Preview Percuma</p>
         <h2 className="mt-2 text-2xl font-black text-slate-950">Cuba PKSK Percuma</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Cuba pengalaman PKSK Academy tanpa daftar akaun. Sebahagian soalan dibuka dahulu, selebihnya boleh diakses melalui Premium.
+          Daftar akaun percuma untuk buka soalan preview, simpan minat anda dan terima tips persediaan PKSK melalui e-mel.
         </p>
         <button type="button" className="secondary-button mt-5 w-full border-ocean-200 text-ocean-800" onClick={() => onStartGuestPreview("A")}>
-          Cuba Percuma
+          Daftar Percuma & Buka Preview
         </button>
       </article>
       <article className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-6 shadow-[0_24px_54px_rgba(180,83,9,0.14)]">
@@ -3420,7 +3583,6 @@ function GuestPreviewPage({
   onComplete,
   onNavigate,
   onShowPaywall,
-  onAuthMode,
   onStartGuestPreview,
 }: {
   payload: GuestPreviewPayload | null;
@@ -3433,7 +3595,6 @@ function GuestPreviewPage({
   onComplete: () => void;
   onNavigate: (route: AppRoute) => void;
   onShowPaywall: () => void;
-  onAuthMode: (mode: AuthMode) => void;
   onStartGuestPreview: (section: "A" | "B") => void;
 }) {
   const [index, setIndex] = useState(0);
@@ -3464,10 +3625,10 @@ function GuestPreviewPage({
           <Sparkles size={26} aria-hidden="true" />
         </div>
         <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Cuba pengalaman simulasi percuma dahulu. Tiada akaun diperlukan.</p>
+        <p className="mx-auto mt-2 max-w-xl text-slate-600">Daftar atau log masuk untuk membuka preview percuma PKSK.</p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-            Cuba Percuma
+            Daftar Percuma
           </button>
           <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
             Kembali
@@ -3597,13 +3758,10 @@ function GuestPreviewPage({
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <button type="button" className="primary-button" onClick={onShowPaywall}>
-              Daftar & Dapatkan Premium
+              Dapatkan Premium
             </button>
             <button type="button" className="secondary-button" onClick={() => onStartGuestPreview("A")}>
               Cuba Semula
-            </button>
-            <button type="button" className="secondary-button" onClick={() => onAuthMode("login")}>
-              Sudah ada akaun? Log Masuk
             </button>
           </div>
         </section>
@@ -3888,7 +4046,7 @@ function PaywallPage({
       <section className="rounded-2xl bg-white p-6 shadow-soft">
         <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview percuma boleh digunakan tanpa e-mel dan kata laluan." />
+          <FaqItem title="Perlu daftar untuk cuba percuma?" text="Ya. Daftar akaun percuma dahulu, setuju dengan Notis Privasi dan terima tips/promosi e-mel untuk membuka preview." />
           <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih Bayaran Online untuk pengaktifan automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
           <FaqItem title="Bagaimana Premium diaktifkan?" text="Bayaran online mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
         </div>
