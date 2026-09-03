@@ -770,7 +770,7 @@ function App() {
     }
   }, [currentRoute, isLoggedIn, loading]);
 
-  const refreshData = useCallback(async (userId = session?.user.id) => {
+  const refreshData = useCallback(async (userId = session?.user.id, options: { silent?: boolean } = {}) => {
     if (!userId) {
       return;
     }
@@ -816,7 +816,9 @@ function App() {
         }
       }
     } catch (error) {
-      setMessage(toMessage(error));
+      if (!options.silent) {
+        setMessage(toMessage(error));
+      }
     }
   }, [session?.user.id]);
 
@@ -1302,7 +1304,7 @@ function App() {
       setResult(completed);
       setActivePayload(null);
       window.localStorage.removeItem("pksk-active-attempt");
-      await refreshData(session.user.id);
+      await refreshData(session.user.id, { silent: true });
     } catch (error) {
       setMessage(toMessage(error));
     } finally {
