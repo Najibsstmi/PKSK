@@ -98,7 +98,6 @@ import {
 } from "./services/adminService";
 import { fetchBadgesWithProgress, calculatePerformance } from "./services/achievementService";
 import { autosaveEssayResponse, fetchActiveEssayAttempt, getEssayAttemptPayload, startEssayAttempt, submitEssayResponse } from "./services/essayService";
-import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
 import {
   approvePaymentRequest,
   captureReferralCodeFromUrl,
@@ -128,6 +127,7 @@ import {
   completeAttempt,
   fetchActiveAttempt,
   fetchAttemptHistory,
+  generateFreePreviewQuiz,
   generateQuiz,
   generatePrintSimulationSet,
   getAttemptPayload,
@@ -137,7 +137,7 @@ import {
 } from "./services/questionService";
 import { fetchQuestionBankCounts } from "./services/questionStatsService";
 import type { AdminDiamondPartnerDetail, AdminDiamondPartnerRow, AgentCommissionSummary, AgentStatus, DiamondApplicationInput, DiamondDashboard, DiamondProfile } from "./types/agent";
-import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestPreviewPayload, GuestPreviewResult, QuestionBankCounts, SubscriptionPlan } from "./types/access";
+import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, QuestionBankCounts, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
@@ -356,8 +356,8 @@ const bonusMaterials: BonusMaterial[] = [
   },
 ];
 const defaultAppSettings: AppSettings = {
-  free_preview_section_a_limit: 15,
-  free_preview_section_b_limit: 20,
+  free_preview_section_a_limit: 5,
+  free_preview_section_b_limit: 10,
   free_preview_section_c_enabled: false,
   payment_provider: "manual_qr_plus_toyyibpay",
   payment_price: 49,
@@ -369,16 +369,6 @@ const defaultAppSettings: AppSettings = {
   payment_account_number: "551146529325",
   payment_qr_image_url: "/assets/duitnow-qr-pesona-store.png",
 };
-const freePreviewLimits = {
-  A: 15,
-  B: 20,
-} as const;
-const fullPreviewTotals = {
-  A: 30,
-  B: 70,
-  C: 1,
-} as const;
-const freePreviewDurationSeconds = 90 * 60;
 const databaseSetupMessage = "Sistem akses premium sedang disiapkan. Sila cuba semula sebentar lagi.";
 const pkskInfoQuickLinks = [
   { id: "apa-itu-pksk", label: "Apa Itu PKSK" },
@@ -652,10 +642,6 @@ function App() {
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
   const [activeEssayPayload, setActiveEssayPayload] = useState<EssayAttemptPayload | null>(null);
   const [essayResult, setEssayResult] = useState<EssaySubmitResult | null>(null);
-  const [guestPayload, setGuestPayload] = useState<GuestPreviewPayload | null>(null);
-  const [guestResult, setGuestResult] = useState<GuestPreviewResult | null>(null);
-  const [guestAnswers, setGuestAnswers] = useState<Record<string, string>>({});
-  const [guestSkipped, setGuestSkipped] = useState<Record<string, boolean>>({});
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isInstalledApp, setIsInstalledApp] = useState(false);
@@ -1352,67 +1338,13 @@ function App() {
   }
 
   async function prepareGuestPreview(section: "A" | "B") {
-    setGuestResult(null);
-    setGuestAnswers({});
-    setGuestSkipped({});
-    const [sectionAPayload, sectionBPayload] = await Promise.all([
-      fetchGuestPreview("A", freePreviewLimits.A),
-      fetchGuestPreview("B", freePreviewLimits.B),
-    ]);
-    const payload: GuestPreviewPayload = {
-      section,
-      limit: freePreviewLimits.A + freePreviewLimits.B,
-      questions: [...sectionAPayload.questions, ...sectionBPayload.questions],
-    };
-    setGuestPayload(payload);
+    void section;
+    setResult(null);
+    const attemptId = await generateFreePreviewQuiz();
+    const payload = await getAttemptPayload(attemptId);
+    setActivePayload(payload);
+    window.localStorage.setItem("pksk-active-attempt", attemptId);
     navigate("/preview");
-  }
-
-  function handleGuestAnswer(questionId: string, optionId: string) {
-    setGuestAnswers((current) => ({
-      ...current,
-      [questionId]: optionId,
-    }));
-    setGuestSkipped((current) => {
-      const nextSkipped = { ...current };
-      delete nextSkipped[questionId];
-      return nextSkipped;
-    });
-  }
-
-  function handleGuestSkip(questionId: string) {
-    setGuestSkipped((current) => ({
-      ...current,
-      [questionId]: true,
-    }));
-    setGuestAnswers((current) => {
-      const nextAnswers = { ...current };
-      delete nextAnswers[questionId];
-      return nextAnswers;
-    });
-  }
-
-  async function handleCompleteGuestPreview() {
-    if (!guestPayload) {
-      return;
-    }
-
-    setBusy(true);
-    setMessage(null);
-    try {
-      const answers = guestPayload.questions
-        .map((question) => ({
-          question_id: question.id,
-          selected_option_id: guestAnswers[question.id],
-        }))
-        .filter((answer) => Boolean(answer.selected_option_id));
-      const previewResult = await scoreGuestPreview(answers);
-      setGuestResult(previewResult);
-    } catch (error) {
-      setMessage(toMessage(error));
-    } finally {
-      setBusy(false);
-    }
   }
 
   const page = (() => {
@@ -1477,18 +1409,19 @@ function App() {
         );
       }
       return (
-        <GuestPreviewPage
-          payload={guestPayload}
-          answers={guestAnswers}
-          skipped={guestSkipped}
-          result={guestResult}
+        <QuizPage
+          payload={activePayload}
+          result={result}
           busy={busy}
-          onAnswer={handleGuestAnswer}
-          onSkip={handleGuestSkip}
-          onComplete={handleCompleteGuestPreview}
+          onAnswer={handleAnswer}
+          onSkip={handleSkipAnswer}
+          onComplete={handleCompleteAttempt}
           onNavigate={navigate}
+          onStartEssay={openPaywall}
+          onMessage={setMessage}
+          isFreePreview
           onShowPaywall={openPaywall}
-          onStartGuestPreview={handleStartGuestPreview}
+          onRestartPreview={() => handleStartGuestPreview("A")}
         />
       );
     }
@@ -3589,298 +3522,6 @@ function PaymentPendingBanner({ payment }: { payment: PaymentRequest }) {
         <span className="w-fit rounded-xl bg-white px-4 py-2 text-sm font-black text-amber-700">{isToyyibPay ? "Dalam proses" : "Pending"}</span>
       </div>
     </section>
-  );
-}
-
-function GuestPreviewPage({
-  payload,
-  answers,
-  skipped,
-  result,
-  busy,
-  onAnswer,
-  onSkip,
-  onComplete,
-  onNavigate,
-  onShowPaywall,
-  onStartGuestPreview,
-}: {
-  payload: GuestPreviewPayload | null;
-  answers: Record<string, string>;
-  skipped: Record<string, boolean>;
-  result: GuestPreviewResult | null;
-  busy: boolean;
-  onAnswer: (questionId: string, optionId: string) => void;
-  onSkip: (questionId: string) => void;
-  onComplete: () => void;
-  onNavigate: (route: AppRoute) => void;
-  onShowPaywall: () => void;
-  onStartGuestPreview: (section: "A" | "B") => void;
-}) {
-  const [index, setIndex] = useState(0);
-  const [remainingSeconds, setRemainingSeconds] = useState(freePreviewDurationSeconds);
-  const payloadKey = payload?.questions.map((question) => question.id).join("|") ?? "empty";
-
-  useEffect(() => {
-    setIndex(0);
-    setRemainingSeconds(freePreviewDurationSeconds);
-  }, [payloadKey]);
-
-  useEffect(() => {
-    if (!payload || result) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setRemainingSeconds((current) => Math.max(0, current - 1));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [payload, result]);
-
-  if (!payload) {
-    return (
-      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ocean-50 text-ocean-700">
-          <Sparkles size={26} aria-hidden="true" />
-        </div>
-        <h1 className="mt-5 text-2xl font-black">Preview Percuma PKSK</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Daftar atau log masuk untuk membuka preview percuma PKSK.</p>
-        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-          <button type="button" className="primary-button" onClick={() => onStartGuestPreview("A")}>
-            Daftar Percuma
-          </button>
-          <button type="button" className="secondary-button" onClick={() => onNavigate("/")}>
-            Kembali
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  const orderedQuestions = [...payload.questions].sort((first, second) => {
-    const sectionOrder = sectionSortOrder(first.section) - sectionSortOrder(second.section);
-    return sectionOrder !== 0 ? sectionOrder : first.question_order - second.question_order;
-  });
-  const current = orderedQuestions[index] ?? orderedQuestions[0];
-  const sectionAQuestions = orderedQuestions.filter((question) => question.section === "A");
-  const sectionBQuestions = orderedQuestions.filter((question) => question.section === "B");
-  const questionIndexById = new Map(orderedQuestions.map((question, questionIndex) => [question.id, questionIndex]));
-  const getPreviewStatus = (question: QuizQuestion): "unanswered" | "answered" | "skipped" => {
-    if (answers[question.id]) {
-      return "answered";
-    }
-    if (skipped[question.id]) {
-      return "skipped";
-    }
-    return "unanswered";
-  };
-  const answered = orderedQuestions.filter((question) => getPreviewStatus(question) === "answered").length;
-  const skippedCount = orderedQuestions.filter((question) => getPreviewStatus(question) === "skipped").length;
-  const completed = answered + skippedCount;
-  const unanswered = orderedQuestions.length - completed;
-  const allComplete = orderedQuestions.length > 0 && unanswered === 0;
-  const currentReady = current ? getPreviewStatus(current) !== "unanswered" : false;
-  const timerTone = remainingSeconds <= 300 ? "bg-coral-50 text-coral-600" : "bg-ocean-50 text-ocean-700";
-
-  function handleNextPreview() {
-    if (!currentReady) {
-      return;
-    }
-    if (index < orderedQuestions.length - 1) {
-      setIndex((currentIndex) => currentIndex + 1);
-      return;
-    }
-    onComplete();
-  }
-
-  function handleSkipPreview() {
-    if (!current) {
-      return;
-    }
-    onSkip(current.id);
-    if (index < orderedQuestions.length - 1) {
-      setIndex((currentIndex) => currentIndex + 1);
-    }
-  }
-
-  function renderPreviewGroup(title: string, total: number, startNumber: number, questions: QuizQuestion[]) {
-    const completedInGroup = questions.filter((question) => getPreviewStatus(question) !== "unanswered").length;
-    return (
-      <div key={title}>
-        <div className="mb-2 flex items-center justify-between text-xs font-black uppercase text-slate-500">
-          <span>{title}</span>
-          <span>{completedInGroup}/{questions.length} dibuka</span>
-        </div>
-        <div className="grid grid-cols-5 gap-2">
-          {Array.from({ length: total }, (_, itemIndex) => {
-            const question = questions[itemIndex];
-            const number = startNumber + itemIndex;
-            if (!question) {
-              return (
-                <button
-                  key={`${title}-locked-${number}`}
-                  type="button"
-                  disabled
-                  aria-label={`Soalan ${number} dikunci dalam versi percuma`}
-                  className="grid h-10 cursor-not-allowed place-items-center rounded-xl bg-slate-50 text-slate-300"
-                >
-                  <LockKeyhole size={15} aria-hidden="true" />
-                </button>
-              );
-            }
-            const questionIndex = questionIndexById.get(question.id) ?? 0;
-            const status = getPreviewStatus(question);
-            return (
-              <button
-                key={question.id}
-                type="button"
-                onClick={() => setIndex(questionIndex)}
-                className={`grid h-10 place-items-center rounded-xl text-sm font-black transition ${questionStatusClass(status, questionIndex === index, false)}`}
-              >
-                {number}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  if (!current) {
-    return (
-      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
-        <h1 className="text-2xl font-black">Preview belum tersedia</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-600">Bank soalan percuma belum mempunyai soalan aktif. Sila cuba semula selepas admin tambah soalan.</p>
-        <button type="button" className="secondary-button mx-auto mt-6" onClick={() => onNavigate("/")}>
-          Kembali
-        </button>
-      </section>
-    );
-  }
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[0.72fr_0.28fr]">
-      {result ? (
-        <section className="rounded-2xl border border-sun-200 bg-sun-50 p-8 shadow-soft lg:col-span-2">
-          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <h2 className="text-3xl font-black">Anda telah menyelesaikan versi percuma.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">Naik taraf ke Premium untuk membuka akses penuh, sejarah cubaan, XP, lencana dan Bahagian C.</p>
-            </div>
-            <div className="rounded-2xl bg-white px-5 py-4 text-center shadow-sm">
-              <p className="text-xs font-black uppercase text-slate-500">Skor ringkas</p>
-              <p className="mt-1 text-2xl font-black text-ocean-700">{result.percentage}%</p>
-            </div>
-          </div>
-          <p className="mt-2 text-lg font-black text-ocean-700">
-            {result.correct_answers}/{result.total_questions} betul. {skippedCount} soalan diskip.
-          </p>
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <button type="button" className="primary-button" onClick={onShowPaywall}>
-              Dapatkan Premium
-            </button>
-            <button type="button" className="secondary-button" onClick={() => onStartGuestPreview("A")}>
-              Cuba Semula
-            </button>
-          </div>
-        </section>
-      ) : (
-        <>
-          <section className="rounded-2xl bg-white p-6 shadow-soft">
-            <div className="mb-5 flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-xl bg-ocean-50 px-3 py-2 text-sm font-black text-ocean-700">
-                  Soalan {index + 1} / {orderedQuestions.length}
-                </span>
-                <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-600">
-                  Bahagian {current.section} {current.section === "A" ? "- Kecerdasan Insaniah" : "- Kecerdasan Intelek"}
-                </span>
-              </div>
-              <span className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>
-                <Clock3 size={17} aria-hidden="true" />
-                {formatTimer(remainingSeconds)}
-              </span>
-            </div>
-            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-sm font-bold text-slate-500">{current.category ?? current.topic ?? "Soalan Objektif"}</span>
-              <span className="text-sm font-black text-ocean-700">Preview percuma: Bahagian C dikunci</span>
-            </div>
-            <h1 className="text-2xl font-black leading-snug text-slate-950">{current.question_text}</h1>
-            {current.question_image_url ? <QuestionImage src={current.question_image_url} /> : null}
-            <div className="mt-6 grid gap-3">
-              {current.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onAnswer(current.id, option.id)}
-                  className={`rounded-2xl border p-4 text-left text-sm font-bold transition ${
-                    answers[current.id] === option.id ? "border-amber-400 bg-sun-50 text-slate-950" : "border-slate-200 bg-white hover:border-ocean-200"
-                  }`}
-                >
-                  <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
-                </button>
-              ))}
-            </div>
-            <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button type="button" className="secondary-button" disabled={index === 0} onClick={() => setIndex((currentIndex) => Math.max(0, currentIndex - 1))}>
-                  Sebelum
-                </button>
-                <button type="button" className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50" onClick={handleSkipPreview}>
-                  Skip Soalan Ini
-                </button>
-              </div>
-              <div className="flex flex-col items-stretch gap-2 sm:items-end">
-                {!currentReady ? <p className="text-sm font-black text-coral-600">Pilih jawapan atau tekan Skip Soalan Ini untuk teruskan.</p> : null}
-                {index === orderedQuestions.length - 1 && !allComplete ? <p className="text-sm font-black text-coral-600">Jawab atau skip semua soalan percuma sebelum hantar.</p> : null}
-                <button type="button" className="primary-button" disabled={busy || !currentReady || (index === orderedQuestions.length - 1 && !allComplete)} onClick={handleNextPreview}>
-                  {index < orderedQuestions.length - 1 ? "Seterusnya" : busy ? "Menyemak..." : "Hantar Preview"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <aside className="rounded-2xl bg-white p-6 shadow-soft">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-black">Kemajuan</h2>
-                <p className="mt-1 text-xs font-black uppercase text-ocean-700">Preview percuma</p>
-              </div>
-              <span className={`rounded-xl px-3 py-2 text-sm font-black ${timerTone}`}>{formatTimer(remainingSeconds)}</span>
-            </div>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.round((completed / Math.max(1, orderedQuestions.length)) * 100)}%` }} />
-            </div>
-            <div className="mt-3 grid gap-1 text-sm font-semibold text-slate-600">
-              <p>{completed} daripada {orderedQuestions.length} soalan percuma selesai.</p>
-              <p><span className="font-black text-amber-700">{answered}</span> dijawab, <span className="font-black text-coral-600">{skippedCount}</span> skip, <span className="font-black text-slate-500">{unanswered}</span> belum.</p>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-slate-600">
-              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sun-100 ring-1 ring-amber-300" /> Dijawab</span>
-              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-100 ring-1 ring-coral-500" /> Skip</span>
-              <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-slate-100" /> Belum</span>
-              <span className="inline-flex items-center gap-1"><LockKeyhole size={13} aria-hidden="true" /> Premium</span>
-            </div>
-            <div className="mt-5 space-y-5">
-              {renderPreviewGroup("Bahagian A", fullPreviewTotals.A, 1, sectionAQuestions)}
-              {renderPreviewGroup("Bahagian B", fullPreviewTotals.B, 31, sectionBQuestions)}
-              <div>
-                <div className="mb-2 flex items-center justify-between text-xs font-black uppercase text-slate-500">
-                  <span>Bahagian C</span>
-                  <span>Premium</span>
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  <button type="button" disabled className="grid h-10 cursor-not-allowed place-items-center rounded-xl bg-slate-50 text-slate-300" aria-label="Bahagian C dikunci dalam versi percuma">
-                    <LockKeyhole size={15} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </>
-      )}
-    </div>
   );
 }
 
@@ -8316,6 +7957,9 @@ function QuizPage({
   onNavigate,
   onStartEssay,
   onMessage,
+  isFreePreview = false,
+  onShowPaywall,
+  onRestartPreview,
 }: {
   payload: AttemptPayload | null;
   result: CompleteAttemptResult | null;
@@ -8326,6 +7970,9 @@ function QuizPage({
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
   onMessage: (message: string | null) => void;
+  isFreePreview?: boolean;
+  onShowPaywall?: () => void;
+  onRestartPreview?: () => void;
 }) {
   const [index, setIndex] = useState(0);
   const [answeringQuestionId, setAnsweringQuestionId] = useState<string | null>(null);
@@ -8363,7 +8010,16 @@ function QuizPage({
   }, [objectiveStartedAt, result]);
 
   if (result) {
-    return <ResultPanel result={result} onNavigate={onNavigate} onStartEssay={onStartEssay} />;
+    return (
+      <ResultPanel
+        result={result}
+        onNavigate={onNavigate}
+        onStartEssay={onStartEssay}
+        isFreePreview={isFreePreview}
+        onShowPaywall={onShowPaywall}
+        onRestartPreview={onRestartPreview}
+      />
+    );
   }
 
   if (!payload) {
@@ -8388,8 +8044,9 @@ function QuizPage({
   const nextLocked = Boolean(nextQuestion?.section === "B" && hasSectionA && !sectionAComplete);
   const currentSectionName = current.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
   const timerTone = remainingSeconds <= 300 ? "bg-coral-50 text-coral-600" : "bg-ocean-50 text-ocean-700";
-  const scoreGuide =
-    payload.attempt.mode === "full"
+  const scoreGuide = isFreePreview
+    ? `Preview percuma: ${sectionAQuestions.length} soalan A + ${sectionBQuestions.length} soalan B`
+    : payload.attempt.mode === "full"
       ? "Skor rasmi: Bahagian A 20% + Bahagian B 70%"
       : current.section === "A"
         ? "Skor rasmi Bahagian A: 20%"
@@ -8791,20 +8448,36 @@ function normalizeMalaysiaPhone(value: string): string {
   return digits;
 }
 
-function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAttemptResult; onNavigate: (route: AppRoute) => void; onStartEssay: () => void }) {
+function ResultPanel({
+  result,
+  onNavigate,
+  onStartEssay,
+  isFreePreview = false,
+  onShowPaywall,
+  onRestartPreview,
+}: {
+  result: CompleteAttemptResult;
+  onNavigate: (route: AppRoute) => void;
+  onStartEssay: () => void;
+  isFreePreview?: boolean;
+  onShowPaywall?: () => void;
+  onRestartPreview?: () => void;
+}) {
   const hasSectionA = result.section_a_score !== null && result.section_a_score !== undefined;
   const hasSectionB = result.section_b_score !== null && result.section_b_score !== undefined;
-  const isOfficialObjective = hasSectionA && hasSectionB;
+  const isOfficialObjective = !isFreePreview && hasSectionA && hasSectionB;
   const officialMaxScore = isOfficialObjective ? 90 : hasSectionA ? 20 : hasSectionB ? 70 : 100;
   const officialScore = result.score ?? result.percentage;
+  const resultTitle = isFreePreview ? "Keputusan Preview Disimpan" : "Keputusan Disimpan";
+  const scoreText = isFreePreview ? `Skor preview: ${Number(result.percentage).toFixed(2)}%` : `Skor rasmi: ${Number(officialScore).toFixed(2)} / ${officialMaxScore}%`;
 
   return (
     <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
       <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-sun-100 text-amber-700">
         <Trophy size={30} aria-hidden="true" />
       </div>
-      <h1 className="mt-5 text-3xl font-black">Keputusan Disimpan</h1>
-      <p className="mt-3 text-lg font-black text-slate-950">Skor rasmi: {Number(officialScore).toFixed(2)} / {officialMaxScore}%</p>
+      <h1 className="mt-5 text-3xl font-black">{resultTitle}</h1>
+      <p className="mt-3 text-lg font-black text-slate-950">{scoreText}</p>
       <p className="mt-2 text-sm font-semibold text-slate-600">{result.correct_answers} / {result.total_questions} betul. {result.skipped_answers ?? 0} soalan diskip.</p>
       {isOfficialObjective ? (
         <div className="mx-auto mt-5 grid max-w-lg gap-3 sm:grid-cols-2">
@@ -8812,19 +8485,38 @@ function ResultPanel({ result, onNavigate, onStartEssay }: { result: CompleteAtt
           <SummaryPanel title="Bahagian B" value={`${Number(result.section_b_weighted_score ?? 0).toFixed(2)} / 70%`} />
         </div>
       ) : null}
+      {isFreePreview ? (
+        <div className="mx-auto mt-5 grid max-w-lg gap-3 sm:grid-cols-2">
+          {hasSectionA ? <SummaryPanel title="Preview A" value={`${Number(result.section_a_score ?? 0).toFixed(2)}%`} /> : null}
+          {hasSectionB ? <SummaryPanel title="Preview B" value={`${Number(result.section_b_score ?? 0).toFixed(2)}%`} /> : null}
+        </div>
+      ) : null}
       <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        {isOfficialObjective ? (
+        {isFreePreview ? (
+          <>
+            <button type="button" className="primary-button" onClick={onShowPaywall ?? (() => onNavigate("/premium"))}>
+              Buka Semua Soalan Premium
+            </button>
+            <button type="button" className="secondary-button" onClick={onRestartPreview ?? (() => onNavigate("/"))}>
+              Cuba Preview Lagi
+            </button>
+          </>
+        ) : isOfficialObjective ? (
           <button type="button" className="primary-button" onClick={onStartEssay}>
             Teruskan Bahagian C
           </button>
         ) : null}
-        <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
-          Lihat Prestasi
-        </button>
-        <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
-          Sejarah Cubaan
-        </button>
+        {!isFreePreview ? (
+          <>
+            <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
+              Lihat Prestasi
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
+              Sejarah Cubaan
+            </button>
+          </>
+        ) : null}
       </div>
     </section>
   );
@@ -10254,11 +9946,17 @@ function objectiveRemainingSecondsFromStart(startedAtValue: string): number {
 
 function toMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  const normalizedMessage = message.toLowerCase();
+
+  if (normalizedMessage.includes("email rate limit") || normalizedMessage.includes("rate limit exceeded")) {
+    return "Had e-mel pengesahan Supabase telah tercapai. Email confirmation perlu dimatikan untuk akaun percuma, kemudian cuba daftar semula sebentar lagi.";
+  }
 
   if (
     message.includes("get_my_access_status") ||
     message.includes("record_last_login") ||
     message.includes("get_public_app_settings") ||
+    message.includes("start_free_preview_quiz") ||
     message.includes("get_guest_preview_questions") ||
     message.includes("score_guest_preview") ||
     message.includes("schema cache") ||

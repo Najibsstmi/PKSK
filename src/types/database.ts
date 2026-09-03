@@ -369,6 +369,10 @@ export type Database = {
         };
         Returns: string;
       };
+      start_free_preview_quiz: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
       get_attempt_payload: {
         Args: {
           p_attempt_id: string;

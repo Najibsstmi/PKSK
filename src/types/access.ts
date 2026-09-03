@@ -142,7 +142,7 @@ export type GuestPreviewResult = {
 
 export type GuestAnswerInput = {
   question_id: string;
-  selected_option_id: string;
+  selected_option_id: string | null;
 };
 
 export type JsonRecord = Record<string, Json>;

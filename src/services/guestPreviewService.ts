@@ -32,6 +32,18 @@ function mapGuestMessage(message: string): string {
   if (message.includes("INVALID_SECTION")) {
     return "Bahagian latihan tidak dapat dibuka.";
   }
+  if (message.includes("ANSWER_REQUIRED")) {
+    return "Pilih jawapan atau skip dahulu sebelum semak jawapan.";
+  }
+  if (message.includes("INVALID_ANSWER")) {
+    return "Jawapan tidak dapat disemak. Sila pilih semula jawapan.";
+  }
+  if (message.includes("QUESTION_NOT_AVAILABLE")) {
+    return "Jawapan untuk soalan preview ini belum tersedia.";
+  }
+  if (message.includes("CORRECT_OPTION_NOT_FOUND")) {
+    return "Jawapan betul belum ditetapkan untuk soalan ini.";
+  }
 
   return "Preview percuma belum tersedia. Sila cuba semula sebentar lagi.";
 }

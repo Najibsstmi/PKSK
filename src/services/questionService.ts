@@ -23,6 +23,17 @@ export async function generateQuiz(input: GenerateQuizInput): Promise<string> {
   return data;
 }
 
+export async function generateFreePreviewQuiz(): Promise<string> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc("start_free_preview_quiz");
+
+  if (error) {
+    throw new Error(mapSupabaseMessage(error.message));
+  }
+
+  return data;
+}
+
 export async function getAttemptPayload(attemptId: string): Promise<AttemptPayload> {
   const client = requireSupabase();
   const { data, error } = await client.rpc("get_attempt_payload", {
@@ -137,14 +148,26 @@ export function mapSupabaseMessage(message: string): string {
   if (message.includes("LOGIN_REQUIRED")) {
     return "Sila log masuk dahulu.";
   }
+  if (message.includes("PROFILE_NOT_FOUND")) {
+    return "Profil akaun belum lengkap. Sila log masuk semula atau kemas kini profil dahulu.";
+  }
   if (message.includes("PREMIUM_REQUIRED")) {
     return "Akses premium diperlukan untuk latihan penuh.";
+  }
+  if (message.includes("MARKETING_CONSENT_REQUIRED")) {
+    return "Sila setuju dengan Notis Privasi dan tips/promosi e-mel untuk membuka preview percuma.";
   }
   if (message.includes("ACCOUNT_BLOCKED")) {
     return "Akaun ini belum boleh menggunakan fungsi utama. Sila hubungi pentadbir.";
   }
   if (message.includes("EMPTY_QUESTION_BANK")) {
     return "Bank soalan belum tersedia. Sila maklumkan kepada pentadbir.";
+  }
+  if (message.includes("NOT_ENOUGH_FREE_PREVIEW_SECTION_A_QUESTIONS")) {
+    return "Bank soalan Bahagian A belum cukup 5 soalan aktif untuk preview percuma.";
+  }
+  if (message.includes("NOT_ENOUGH_FREE_PREVIEW_SECTION_B_QUESTIONS")) {
+    return "Bank soalan Bahagian B belum cukup 10 soalan aktif untuk preview percuma.";
   }
   if (message.includes("ATTEMPT_NOT_FINISHED")) {
     return "Jawab atau skip semua soalan dahulu sebelum hantar keputusan.";
