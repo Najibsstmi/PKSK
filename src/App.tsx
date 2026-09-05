@@ -193,7 +193,7 @@ const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabe
   { to: "/app/bonus", label: "Bonus", icon: Gift, authOnly: true, premiumOnly: true },
   { to: "/app/diamond", label: "Diamond", icon: Gem, authOnly: true, premiumOnly: true, diamondOnly: true },
   { to: "/app/sejarah", label: "Sejarah", shortLabel: "Rekod", icon: History, authOnly: true, premiumOnly: true },
-  { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true, premiumOnly: true },
+  { to: "/app/panduan", label: "Panduan", icon: BookOpen, authOnly: true },
   { to: "/admin", label: "Admin Panel", shortLabel: "Admin", icon: Users, authOnly: true, adminOnly: true },
 ];
 
@@ -212,7 +212,6 @@ const premiumRoutes = new Set<AppRoute>([
   "/app/lencana",
   "/app/bonus",
   "/app/diamond",
-  "/app/panduan",
 ]);
 const validRoutes = new Set<AppRoute>(
   navItems.map((item) => item.to).concat([
@@ -550,6 +549,7 @@ const oneMinuteMs = 60 * oneSecondMs;
 const oneHourMs = 60 * oneMinuteMs;
 const oneDayMs = 24 * oneHourMs;
 const urgentCountdownMs = 7 * oneDayMs;
+const bahagianCPreviewVideoSrc = "/assets/preview%20bahagian%20C.MP4";
 
 function accessStatusFromProfile(profile: ProfileRow | null): AccessStatus {
   const role = profile?.role ?? "user";
@@ -1492,6 +1492,7 @@ function App() {
           autoOpenPayment={autoOpenPayment}
           onAuth={openAuth}
           onNavigate={navigate}
+          onStartGuestPreview={handleStartGuestPreview}
           onAutoOpenPaymentHandled={handlePaymentDialogOpened}
           onPaymentSubmitted={handlePaymentSubmitted}
         />
@@ -1588,6 +1589,7 @@ function App() {
           autoOpenPayment={autoOpenPayment}
           onAuth={openAuth}
           onNavigate={navigate}
+          onStartGuestPreview={handleStartGuestPreview}
           onAutoOpenPaymentHandled={handlePaymentDialogOpened}
           onPaymentSubmitted={handlePaymentSubmitted}
         />
@@ -1674,7 +1676,7 @@ function App() {
     if (currentRoute === "/app/bonus") {
       return <BonusPage onNavigate={navigate} />;
     }
-    return <GuidePage />;
+    return <GuidePage onShowPaywall={openPaywall} />;
   })();
 
   return (
@@ -3531,7 +3533,54 @@ function FreePreviewSection({
           Lihat Premium
         </button>
       </article>
+      <BahagianCPreviewVideoCard className="lg:col-span-2" onShowPaywall={onShowPaywall} />
     </section>
+  );
+}
+
+function BahagianCPreviewVideoCard({
+  className = "",
+  compact = false,
+  onShowPaywall,
+}: {
+  className?: string;
+  compact?: boolean;
+  onShowPaywall?: () => void;
+}) {
+  return (
+    <article className={`relative overflow-hidden rounded-2xl border border-violet-100 bg-white p-5 text-left shadow-soft ${className}`}>
+      <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-violet-200/30 blur-3xl" aria-hidden="true" />
+      <div className="absolute -bottom-16 left-16 h-36 w-36 rounded-full bg-cyan-200/30 blur-3xl" aria-hidden="true" />
+      <div className={`relative grid gap-5 ${compact ? "" : "lg:grid-cols-[minmax(0,0.88fr)_minmax(280px,1.12fr)] lg:items-center"}`}>
+        <div className="min-w-0">
+          <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black uppercase text-violet-700 ring-1 ring-violet-100">
+            <Play size={14} fill="currentColor" aria-hidden="true" />
+            Video Preview
+          </span>
+          <h2 className="mt-3 text-2xl font-black text-slate-950">Preview Bahagian C</h2>
+          <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
+            Akaun percuma boleh tonton bagaimana Studio Penulisan Bahagian C beroperasi. Cubaan sebenar, timer dan autosave Bahagian C dibuka selepas Premium aktif.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-lg bg-slate-100 px-3 py-1 text-slate-600">Preview sahaja</span>
+            <span className="rounded-lg bg-violet-50 px-3 py-1 text-violet-700">Bahagian C Premium</span>
+            <span className="rounded-lg bg-ocean-50 px-3 py-1 text-ocean-700">Penulisan</span>
+          </div>
+          {onShowPaywall ? (
+            <button type="button" className="primary-button mt-5 bg-amber-500 text-slate-950 shadow-[0_16px_32px_rgba(245,158,11,0.24)] hover:bg-amber-400" onClick={onShowPaywall}>
+              <Crown size={17} aria-hidden="true" />
+              Buka Premium Bahagian C
+            </button>
+          ) : null}
+        </div>
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-2 shadow-[0_20px_48px_rgba(15,23,42,0.18)]">
+          <video className="aspect-video w-full rounded-xl bg-slate-950 object-contain" controls playsInline preload="metadata">
+            <source src={bahagianCPreviewVideoSrc} type="video/mp4" />
+            Pelayar anda tidak menyokong video preview Bahagian C.
+          </video>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -3590,6 +3639,7 @@ function PaywallPage({
   autoOpenPayment,
   onAuth,
   onNavigate,
+  onStartGuestPreview,
   onAutoOpenPaymentHandled,
   onPaymentSubmitted,
 }: {
@@ -3602,6 +3652,7 @@ function PaywallPage({
   autoOpenPayment: boolean;
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
+  onStartGuestPreview: (section: "A" | "B") => void;
   onAutoOpenPaymentHandled: () => void;
   onPaymentSubmitted: () => Promise<void>;
 }) {
@@ -3612,6 +3663,7 @@ function PaywallPage({
   const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
   const canUsePremium = access.canUsePremiumFeature();
   const primaryLabel = canUsePremium ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
+  const previewQuestionText = `${settings.free_preview_section_a_limit} soalan A + ${settings.free_preview_section_b_limit} soalan B`;
 
   useEffect(() => {
     if (!autoOpenPayment) {
@@ -3702,6 +3754,22 @@ function PaywallPage({
               </div>
               {accessNotice ? <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-sm font-bold leading-6 text-slate-700">{accessNotice}</p> : null}
             </div>
+            {!canUsePremium ? (
+              <div className="rounded-2xl border border-ocean-100 bg-ocean-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase text-ocean-700">Nak cuba dahulu?</p>
+                    <p className="mt-1 text-sm font-bold leading-6 text-slate-700">
+                      Preview percuma buka {previewQuestionText}. Bahagian C boleh ditonton melalui video preview.
+                    </p>
+                  </div>
+                  <button type="button" className="hero-free-cta shrink-0" onClick={() => onStartGuestPreview("A")}>
+                    <Play size={16} fill="currentColor" aria-hidden="true" />
+                    Cuba Preview Percuma
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-2 sm:grid-cols-2">
               {features.map((feature) => (
                 <div key={feature} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-black text-slate-700 ring-1 ring-slate-100">
@@ -8624,6 +8692,7 @@ function ResultPanel({
           {hasSectionB ? <SummaryPanel title="Preview B" value={`${Number(result.section_b_score ?? 0).toFixed(2)}%`} /> : null}
         </div>
       ) : null}
+      {isFreePreview ? <BahagianCPreviewVideoCard className="mx-auto mt-6 max-w-4xl" compact onShowPaywall={onShowPaywall ?? (() => onNavigate("/premium"))} /> : null}
       <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         {isFreePreview ? (
@@ -9465,7 +9534,7 @@ function PkskImportantTimeline({ items, now }: { items: Array<{ eventId: PkskInf
   );
 }
 
-function GuidePage() {
+function GuidePage({ onShowPaywall }: { onShowPaywall: () => void }) {
   return (
     <div className="space-y-6 pb-32 lg:pb-0">
       <PageHeader icon={BookOpen} title="Panduan" text="Kenali bahagian utama PKSK dan pilih simulasi yang sesuai." />
@@ -9485,6 +9554,7 @@ function GuidePage() {
           </article>
         ))}
       </section>
+      <BahagianCPreviewVideoCard onShowPaywall={onShowPaywall} />
       <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
