@@ -8042,6 +8042,8 @@ function QuizPage({
   const completed = answered + skipped;
   const unanswered = orderedQuestions.length - completed;
   const complete = unanswered === 0;
+  const isLastQuestion = index === orderedQuestions.length - 1;
+  const firstUnansweredIndex = orderedQuestions.findIndex((question) => getQuestionStatus(question) === "unanswered");
   const nextQuestion = orderedQuestions[index + 1];
   const nextLocked = Boolean(nextQuestion?.section === "B" && hasSectionA && !sectionAComplete);
   const currentSectionName = current.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
@@ -8071,7 +8073,16 @@ function QuizPage({
       }
       return;
     }
+    if (!complete) {
+      return;
+    }
     onComplete();
+  }
+
+  function handleGoToFirstUnanswered() {
+    if (firstUnansweredIndex >= 0) {
+      setIndex(firstUnansweredIndex);
+    }
   }
 
   async function handleSelectOption(optionId: string) {
@@ -8135,6 +8146,24 @@ function QuizPage({
             {formatTimer(remainingSeconds)}
           </span>
         </div>
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-black text-slate-900">
+              {completed} daripada {orderedQuestions.length} selesai
+            </p>
+            <span className={`w-fit rounded-xl px-3 py-1.5 text-xs font-black ${complete ? "bg-leaf-50 text-leaf-700" : "bg-coral-50 text-coral-600"}`}>
+              {complete ? "Sedia hantar" : `${unanswered} belum selesai`}
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+            <div className="h-full rounded-full bg-ocean-600" style={{ width: `${Math.round((completed / orderedQuestions.length) * 100)}%` }} />
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs font-black">
+            <span className="rounded-xl bg-sun-100 px-2 py-2 text-amber-800">{answered} dijawab</span>
+            <span className="rounded-xl bg-coral-100 px-2 py-2 text-coral-600">{skipped} skip</span>
+            <span className="rounded-xl bg-white px-2 py-2 text-slate-500">{unanswered} belum</span>
+          </div>
+        </div>
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-sm font-bold text-slate-500">{current.category ?? current.topic ?? "Soalan Objektif"}</span>
           <span className="text-sm font-black text-amber-700">{scoreGuide}</span>
@@ -8180,14 +8209,27 @@ function QuizPage({
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
             {!currentReady ? <p className="text-sm font-black text-coral-600">Pilih jawapan atau tekan Skip Soalan Ini untuk teruskan.</p> : null}
             {nextLocked ? <p className="text-sm font-black text-coral-600">Lengkapkan semua soalan Bahagian A dahulu.</p> : null}
-            {index === orderedQuestions.length - 1 && !complete ? <p className="text-sm font-black text-coral-600">Jawab atau skip semua soalan sebelum hantar.</p> : null}
+            {isLastQuestion && !complete ? (
+              <div className="w-full rounded-2xl border border-coral-100 bg-coral-50 p-4 text-left sm:max-w-sm">
+                <p className="text-sm font-black text-coral-700">Masih ada {unanswered} soalan belum selesai.</p>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-coral-700 shadow-sm ring-1 ring-coral-100 transition hover:ring-coral-300"
+                  onClick={handleGoToFirstUnanswered}
+                  disabled={firstUnansweredIndex < 0}
+                >
+                  Pergi ke Soalan Belum Selesai
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               className="primary-button"
               onClick={handleNext}
-              disabled={busy || nextLocked || !currentReady || (index === orderedQuestions.length - 1 && !complete)}
+              disabled={busy || nextLocked || !currentReady || (isLastQuestion && !complete)}
             >
-              {index < orderedQuestions.length - 1 ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
+              {!isLastQuestion ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
             </button>
           </div>
         </div>
