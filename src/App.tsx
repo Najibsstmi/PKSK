@@ -1240,12 +1240,13 @@ function App() {
     }
   }
 
-  async function handleAnswer(questionId: string, optionId: string) {
+  async function handleAnswer(questionId: string, optionId: string): Promise<boolean> {
     if (!activePayload) {
-      return;
+      return false;
     }
 
     const attemptId = activePayload.attempt.id;
+    const previousQuestion = activePayload.questions.find((question) => question.id === questionId) ?? null;
     setMessage(null);
     setActivePayload((currentPayload) =>
       currentPayload
@@ -1260,8 +1261,24 @@ function App() {
 
     try {
       await submitAnswer(attemptId, questionId, optionId);
+      return true;
     } catch (error) {
-      setMessage(`Jawapan ditanda pada skrin, tetapi belum dapat disimpan ke Supabase. ${toMessage(error)}`);
+      if (previousQuestion) {
+        setActivePayload((currentPayload) =>
+          currentPayload
+            ? {
+                ...currentPayload,
+                questions: currentPayload.questions.map((question) =>
+                  question.id === questionId
+                    ? { ...question, selected_option_id: previousQuestion.selected_option_id, answer_status: getQuestionStatus(previousQuestion) }
+                    : question,
+                ),
+              }
+            : currentPayload,
+        );
+      }
+      setMessage(`Jawapan belum disimpan. Sila pilih semula selepas sambungan stabil. ${toMessage(error)}`);
+      return false;
     }
   }
 
@@ -1271,6 +1288,7 @@ function App() {
     }
 
     const attemptId = activePayload.attempt.id;
+    const previousQuestion = activePayload.questions.find((question) => question.id === questionId) ?? null;
     setMessage(null);
     setActivePayload((currentPayload) =>
       currentPayload
@@ -1287,8 +1305,22 @@ function App() {
       await skipAnswer(attemptId, questionId);
       return true;
     } catch (error) {
-      setMessage(`Soalan sudah ditanda skip pada skrin, tetapi belum dapat disimpan ke Supabase. ${toMessage(error)}`);
-      return true;
+      if (previousQuestion) {
+        setActivePayload((currentPayload) =>
+          currentPayload
+            ? {
+                ...currentPayload,
+                questions: currentPayload.questions.map((question) =>
+                  question.id === questionId
+                    ? { ...question, selected_option_id: previousQuestion.selected_option_id, answer_status: getQuestionStatus(previousQuestion) }
+                    : question,
+                ),
+              }
+            : currentPayload,
+        );
+      }
+      setMessage(`Skip belum disimpan. Sila cuba semula selepas sambungan stabil. ${toMessage(error)}`);
+      return false;
     }
   }
 
@@ -1297,17 +1329,38 @@ function App() {
       return;
     }
 
+    const attemptId = activePayload.attempt.id;
+    let slowSubmitNoticeId: number | null = null;
     setBusy(true);
-    setMessage(null);
+    setMessage("Sedang menghantar keputusan...");
     try {
-      const completed = await completeAttempt(activePayload.attempt.id);
+      slowSubmitNoticeId = window.setTimeout(() => {
+        setMessage("Keputusan masih dihantar. Sambungan agak perlahan, jangan tutup halaman ini.");
+      }, 8000);
+      const completed = await completeAttempt(attemptId);
+      if (slowSubmitNoticeId !== null) {
+        window.clearTimeout(slowSubmitNoticeId);
+        slowSubmitNoticeId = null;
+      }
       setResult(completed);
       setActivePayload(null);
       window.localStorage.removeItem("pksk-active-attempt");
       await refreshData(session.user.id, { silent: true });
     } catch (error) {
-      setMessage(toMessage(error));
+      const friendlyMessage = toMessage(error);
+      setMessage(friendlyMessage);
+      if (friendlyMessage.includes("Jawab atau skip semua soalan")) {
+        try {
+          const latestPayload = await getAttemptPayload(attemptId);
+          setActivePayload(latestPayload);
+        } catch {
+          // Keep the current payload if the follow-up refresh also fails.
+        }
+      }
     } finally {
+      if (slowSubmitNoticeId !== null) {
+        window.clearTimeout(slowSubmitNoticeId);
+      }
       setBusy(false);
     }
   }
@@ -7966,9 +8019,9 @@ function QuizPage({
   payload: AttemptPayload | null;
   result: CompleteAttemptResult | null;
   busy: boolean;
-  onAnswer: (questionId: string, optionId: string) => Promise<void> | void;
+  onAnswer: (questionId: string, optionId: string) => Promise<boolean> | boolean;
   onSkip: (questionId: string) => Promise<boolean>;
-  onComplete: () => void;
+  onComplete: () => Promise<void> | void;
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
   onMessage: (message: string | null) => void;
@@ -7979,56 +8032,16 @@ function QuizPage({
   const [index, setIndex] = useState(0);
   const [answeringQuestionId, setAnsweringQuestionId] = useState<string | null>(null);
   const [skippingQuestionId, setSkippingQuestionId] = useState<string | null>(null);
+  const [submittingResult, setSubmittingResult] = useState(false);
   const [revealingQuestionId, setRevealingQuestionId] = useState<string | null>(null);
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, RevealedQuizAnswer>>({});
   const [remainingSeconds, setRemainingSeconds] = useState(() => objectiveRemainingSeconds(payload));
   const objectiveAttemptId = payload?.attempt.id ?? null;
   const objectiveStartedAt = payload?.attempt.started_at ?? null;
   const payloadRef = useRef(payload);
+  const timeoutNoticeAttemptRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    payloadRef.current = payload;
-  }, [payload]);
-
-  useEffect(() => {
-    setIndex(0);
-    setAnsweringQuestionId(null);
-    setSkippingQuestionId(null);
-    setRevealingQuestionId(null);
-    setRevealedAnswers(extractRevealedAnswers(payloadRef.current));
-    setRemainingSeconds(objectiveStartedAt ? objectiveRemainingSecondsFromStart(objectiveStartedAt) : 0);
-  }, [objectiveAttemptId, objectiveStartedAt]);
-
-  useEffect(() => {
-    if (!objectiveStartedAt || result) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setRemainingSeconds(objectiveRemainingSecondsFromStart(objectiveStartedAt));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [objectiveStartedAt, result]);
-
-  if (result) {
-    return (
-      <ResultPanel
-        result={result}
-        onNavigate={onNavigate}
-        onStartEssay={onStartEssay}
-        isFreePreview={isFreePreview}
-        onShowPaywall={onShowPaywall}
-        onRestartPreview={onRestartPreview}
-      />
-    );
-  }
-
-  if (!payload) {
-    return <EmptyState title="Tiada cubaan aktif" text="Mulakan simulasi baharu atau sambung cubaan yang belum selesai." onNavigate={onNavigate} />;
-  }
-
-  const orderedQuestions = [...payload.questions].sort((first, second) => {
+  const orderedQuestions = [...(payload?.questions ?? [])].sort((first, second) => {
     const sectionOrder = sectionSortOrder(first.section) - sectionSortOrder(second.section);
     return sectionOrder !== 0 ? sectionOrder : first.question_order - second.question_order;
   });
@@ -8046,24 +8059,100 @@ function QuizPage({
   const firstUnansweredIndex = orderedQuestions.findIndex((question) => getQuestionStatus(question) === "unanswered");
   const nextQuestion = orderedQuestions[index + 1];
   const nextLocked = Boolean(nextQuestion?.section === "B" && hasSectionA && !sectionAComplete);
-  const currentSectionName = current.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
+  const currentSectionName = current?.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
   const timerTone = remainingSeconds <= 300 ? "bg-coral-50 text-coral-600" : "bg-ocean-50 text-ocean-700";
   const scoreGuide = isFreePreview
     ? `Preview percuma: ${sectionAQuestions.length} soalan A + ${sectionBQuestions.length} soalan B`
-    : payload.attempt.mode === "full"
+    : payload?.attempt.mode === "full"
       ? "Skor rasmi: Bahagian A 20% + Bahagian B 70%"
-      : current.section === "A"
+      : current?.section === "A"
         ? "Skor rasmi Bahagian A: 20%"
         : "Skor rasmi Bahagian B: 70%";
-  const currentStatus = getQuestionStatus(current);
+  const currentStatus = current ? getQuestionStatus(current) : "unanswered";
   const currentReady = currentStatus !== "unanswered";
-  const currentReveal = revealedAnswers[current.id] ?? null;
+  const currentReveal = current ? (revealedAnswers[current.id] ?? null) : null;
   const answerRevealed = Boolean(currentReveal);
-  const answerBusy = answeringQuestionId === current.id;
-  const revealBusy = revealingQuestionId === current.id;
+  const answerBusy = current ? answeringQuestionId === current.id : false;
+  const revealBusy = current ? revealingQuestionId === current.id : false;
+  const submitBusy = busy || submittingResult;
+
+  const handleSubmitResult = useCallback(
+    async (message = "Menghantar keputusan...") => {
+      if (!complete || submitBusy) {
+        return;
+      }
+
+      setSubmittingResult(true);
+      onMessage(message);
+      try {
+        await onComplete();
+      } finally {
+        setSubmittingResult(false);
+      }
+    },
+    [complete, onComplete, onMessage, submitBusy],
+  );
+
+  useEffect(() => {
+    payloadRef.current = payload;
+  }, [payload]);
+
+  useEffect(() => {
+    setIndex(0);
+    setAnsweringQuestionId(null);
+    setSkippingQuestionId(null);
+    setSubmittingResult(false);
+    setRevealingQuestionId(null);
+    setRevealedAnswers(extractRevealedAnswers(payloadRef.current));
+    setRemainingSeconds(objectiveStartedAt ? objectiveRemainingSecondsFromStart(objectiveStartedAt) : 0);
+    timeoutNoticeAttemptRef.current = null;
+  }, [objectiveAttemptId, objectiveStartedAt]);
+
+  useEffect(() => {
+    if (!objectiveStartedAt || result) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setRemainingSeconds(objectiveRemainingSecondsFromStart(objectiveStartedAt));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [objectiveStartedAt, result]);
+
+  useEffect(() => {
+    if (!payload || result || remainingSeconds > 0 || timeoutNoticeAttemptRef.current === objectiveAttemptId) {
+      return;
+    }
+
+    timeoutNoticeAttemptRef.current = objectiveAttemptId;
+    if (complete) {
+      void handleSubmitResult("Masa tamat. Menghantar keputusan secara automatik...");
+      return;
+    }
+
+    onMessage(`Masa tamat. Masih ada ${unanswered} soalan belum selesai.`);
+  }, [payload, result, remainingSeconds, objectiveAttemptId, complete, unanswered, handleSubmitResult, onMessage]);
+
+  if (result) {
+    return (
+      <ResultPanel
+        result={result}
+        onNavigate={onNavigate}
+        onStartEssay={onStartEssay}
+        isFreePreview={isFreePreview}
+        onShowPaywall={onShowPaywall}
+        onRestartPreview={onRestartPreview}
+      />
+    );
+  }
+
+  if (!payload || !current) {
+    return <EmptyState title="Tiada cubaan aktif" text="Mulakan simulasi baharu atau sambung cubaan yang belum selesai." onNavigate={onNavigate} />;
+  }
 
   function handleNext() {
-    if (!currentReady) {
+    if (!currentReady || submitBusy) {
       return;
     }
 
@@ -8076,7 +8165,7 @@ function QuizPage({
     if (!complete) {
       return;
     }
-    onComplete();
+    void handleSubmitResult();
   }
 
   function handleGoToFirstUnanswered() {
@@ -8176,7 +8265,7 @@ function QuizPage({
               key={option.id}
               type="button"
               onClick={() => void handleSelectOption(option.id)}
-              disabled={busy || answerBusy || answerRevealed}
+              disabled={submitBusy || answerBusy || answerRevealed}
               className={`rounded-2xl border p-4 text-left text-sm font-bold transition disabled:cursor-not-allowed ${quizOptionClass(option.id, current.selected_option_id, currentReveal)}`}
             >
               <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
@@ -8186,7 +8275,7 @@ function QuizPage({
           ))}
         </div>
         <RevealAnswerButton
-          disabled={busy || !currentReady || Boolean(answeringQuestionId)}
+          disabled={submitBusy || !currentReady || Boolean(answeringQuestionId)}
           loading={revealBusy}
           revealedAnswer={currentReveal}
           answerLabel={currentReveal ? getOptionAnswerSummary(current, currentReveal.correct_option_id) : null}
@@ -8200,7 +8289,7 @@ function QuizPage({
             <button
               type="button"
               className="secondary-button border-coral-100 bg-coral-50 text-coral-600 hover:border-coral-500 hover:bg-coral-50"
-              disabled={busy || Boolean(skippingQuestionId) || answerRevealed}
+              disabled={submitBusy || Boolean(skippingQuestionId) || answerRevealed}
               onClick={handleSkipCurrent}
             >
               {skippingQuestionId === current.id ? "Menyimpan Skip..." : "Skip Soalan Ini"}
@@ -8227,9 +8316,9 @@ function QuizPage({
               type="button"
               className="primary-button"
               onClick={handleNext}
-              disabled={busy || nextLocked || !currentReady || (isLastQuestion && !complete)}
+              disabled={submitBusy || nextLocked || !currentReady || (isLastQuestion && !complete)}
             >
-              {!isLastQuestion ? "Seterusnya" : busy ? "Mengira..." : "Hantar Keputusan"}
+              {!isLastQuestion ? "Seterusnya" : submitBusy ? "Menghantar..." : "Hantar Keputusan"}
             </button>
           </div>
         </div>
@@ -9994,6 +10083,16 @@ function toMessage(error: unknown): string {
 
   if (normalizedMessage.includes("email rate limit") || normalizedMessage.includes("rate limit exceeded")) {
     return "Had e-mel pengesahan Supabase telah tercapai. Email confirmation perlu dimatikan untuk akaun percuma, kemudian cuba daftar semula sebentar lagi.";
+  }
+
+  if (
+    normalizedMessage.includes("load failed") ||
+    normalizedMessage.includes("failed to fetch") ||
+    normalizedMessage.includes("fetch failed") ||
+    normalizedMessage.includes("networkerror") ||
+    normalizedMessage.includes("network request failed")
+  ) {
+    return "Sambungan internet gagal semasa menyimpan. Pastikan line stabil dan cuba tekan semula.";
   }
 
   if (
