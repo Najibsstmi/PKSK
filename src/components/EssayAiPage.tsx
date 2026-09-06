@@ -237,6 +237,7 @@ export function EssayAiPage({ payload, result, busy, onAutosave, onSubmit, onNav
     try {
       setStage("Menilai berdasarkan rubrik...");
       const grading = await gradeWritingAnswer({
+        attemptId: shouldSaveToSupabase && payload ? payload.attempt.id : undefined,
         level: "Tahun 6",
         question: questionForGrading.question_text,
         instruction: "Artikulasi Penulisan Bahagian C PKSK. Beri maklum balas latihan yang membina untuk murid.",
@@ -252,15 +253,10 @@ export function EssayAiPage({ payload, result, busy, onAutosave, onSubmit, onNav
       if (shouldSaveToSupabase && payload) {
         setStage("Menyimpan jawapan...");
         const saved = await onSubmit(cleanAnswer);
-        setSubmittedResult(
-          saved ?? {
-            attempt_id: payload.attempt.id,
-            word_count: grading.wordCount,
-            duration_seconds: 0,
-            message: "Karangan berjaya dihantar.",
-            ai_note: AI_DISCLAIMER,
-          },
-        );
+        if (!saved) {
+          throw new Error("Karangan belum berjaya disimpan. Sila cuba hantar semula.");
+        }
+        setSubmittedResult(saved);
       } else {
         setSubmittedResult(
           finalSubmittedResult ?? {

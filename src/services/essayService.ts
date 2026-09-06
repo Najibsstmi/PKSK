@@ -1,4 +1,4 @@
-import { requireSupabase } from "../lib/supabase";
+import { requireSupabase, supabase } from "../lib/supabase";
 import type { EssayAttemptPayload, EssayFilePayload, EssayGradingRequest, EssayGradingResult, EssaySubmitResult, EssayTranscriptionResult } from "../types/essay";
 
 const SUPPORTED_WRITING_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -96,9 +96,13 @@ export async function transcribeWritingFiles(files: File[]): Promise<EssayTransc
 }
 
 export async function gradeWritingAnswer(request: EssayGradingRequest): Promise<EssayGradingResult> {
+  const session = request.attemptId ? await supabase?.auth.getSession().then(({ data }) => data.session).catch(() => null) : null;
   const response = await fetch("/api/grade-writing", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
     body: JSON.stringify(request),
   });
 

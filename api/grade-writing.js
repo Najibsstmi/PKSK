@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 import {
   AI_DISCLAIMER,
   callOpenAIChatCompletion,
@@ -30,10 +32,12 @@ export default async function handler(req, res) {
 
   try {
     const body = await readJsonBody(req);
+    const attemptId = sanitizeText(body?.attemptId);
+    const attemptContext = attemptId ? await resolveEssayAttemptContext(req, attemptId) : null;
     const level = sanitizeText(body?.level) || "Tahun 6";
-    const question = sanitizeText(body?.question);
+    const question = attemptContext?.questionText ?? sanitizeText(body?.question);
     const instruction = sanitizeText(body?.instruction);
-    const minimumWords = Number(body?.minimumWords) || 100;
+    const minimumWords = attemptContext?.minimumWords ?? (Number(body?.minimumWords) || 100);
     const studentAnswer = sanitizeText(body?.studentAnswer);
 
     if (!question) {
@@ -64,10 +68,140 @@ export default async function handler(req, res) {
     const output = extractChatCompletionText(data);
     const raw = parseJsonOutput(output);
     const result = normalizeGrading(raw, { minimumWords, studentAnswer });
+    if (attemptContext) {
+      await persistEssayGradingResult(attemptContext, studentAnswer, result);
+    }
     sendJson(res, 200, result);
   } catch (error) {
     handleApiError(res, error, "Semakan markah AI belum berjaya. Sila cuba semula, atau semak transkripsi dan hantar semula.");
   }
+}
+
+async function resolveEssayAttemptContext(req, attemptId) {
+  const token = getBearerToken(req);
+  if (!token) {
+    throw publicError(401, "Sesi log masuk diperlukan untuk menyimpan markah Bahagian C.");
+  }
+
+  const client = createSupabaseAdminClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await client.auth.getUser(token);
+
+  if (authError || !user) {
+    throw publicError(401, "Sesi log masuk tamat. Sila log masuk semula dan hantar jawapan sekali lagi.");
+  }
+
+  const { data: attempt, error: attemptError } = await client
+    .from("quiz_attempts")
+    .select("id,user_id,status,section,mode")
+    .eq("id", attemptId)
+    .maybeSingle();
+
+  if (attemptError) {
+    throwDatabaseError("load essay attempt", attemptError);
+  }
+  if (!attempt || attempt.user_id !== user.id || attempt.section !== "C" || attempt.mode !== "section") {
+    throw publicError(404, "Cubaan Bahagian C tidak ditemui untuk akaun ini.");
+  }
+
+  const { data: attemptQuestion, error: attemptQuestionError } = await client
+    .from("attempt_questions")
+    .select("question_id")
+    .eq("attempt_id", attemptId)
+    .limit(1)
+    .maybeSingle();
+
+  if (attemptQuestionError) {
+    throwDatabaseError("load essay attempt question", attemptQuestionError);
+  }
+  if (!attemptQuestion?.question_id) {
+    throw publicError(404, "Soalan Bahagian C tidak ditemui untuk cubaan ini.");
+  }
+
+  const { data: question, error: questionError } = await client
+    .from("questions")
+    .select("id,section,question_type,question_text,essay_min_words")
+    .eq("id", attemptQuestion.question_id)
+    .maybeSingle();
+
+  if (questionError) {
+    throwDatabaseError("load essay question", questionError);
+  }
+  if (!question || question.section !== "C" || question.question_type !== "essay") {
+    throw publicError(404, "Soalan Bahagian C tidak sah untuk cubaan ini.");
+  }
+
+  return {
+    client,
+    attemptId,
+    questionId: question.id,
+    userId: user.id,
+    questionText: question.question_text,
+    minimumWords: Number(question.essay_min_words) || 100,
+  };
+}
+
+async function persistEssayGradingResult(context, studentAnswer, result) {
+  const { error } = await context.client.from("essay_grading_results").upsert(
+    {
+      attempt_id: context.attemptId,
+      question_id: context.questionId,
+      user_id: context.userId,
+      answer_hash: hashEssayAnswer(studentAnswer),
+      total_score: result.totalScore,
+      pksk_estimated_score: result.pkskEstimatedScore,
+      grading_level: result.level,
+      word_count: result.wordCount,
+      grading_result: result,
+      graded_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "attempt_id" },
+  );
+
+  if (error) {
+    throwDatabaseError("save essay grading result", error);
+  }
+}
+
+function createSupabaseAdminClient() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw publicError(503, "Penyimpanan markah Bahagian C belum dikonfigurasi pada server.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function getBearerToken(req) {
+  const header = req.headers?.authorization || req.headers?.Authorization;
+  if (typeof header !== "string") {
+    return "";
+  }
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function hashEssayAnswer(answer) {
+  return createHash("md5").update(normalizeEssayAnswer(answer), "utf8").digest("hex");
+}
+
+function normalizeEssayAnswer(answer) {
+  return String(answer || "").trim().replace(/\s+/g, " ");
+}
+
+function throwDatabaseError(action, error) {
+  console.error(`Supabase ${action} error`, error?.message || error);
+  throw publicError(502, "Markah AI belum dapat disimpan. Sila cuba hantar semula sebentar lagi.");
 }
 
 function buildUserPrompt({ level, question, instruction, minimumWords, studentAnswer }) {

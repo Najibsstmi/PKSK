@@ -136,6 +136,15 @@ import {
   submitAnswer,
 } from "./services/questionService";
 import { fetchQuestionBankCounts } from "./services/questionStatsService";
+import {
+  emptyAcademyLeaderboardMap,
+  emptyPersonalPerformanceBreakdown,
+  fetchAcademyLeaderboards,
+  fetchPersonalPerformanceBreakdown,
+  type AcademyLeaderboardMap,
+  type AcademyLeaderboardRow,
+  type PersonalPerformanceBreakdown,
+} from "./services/performanceService";
 import type { AdminDiamondPartnerDetail, AdminDiamondPartnerRow, AgentCommissionSummary, AgentStatus, DiamondApplicationInput, DiamondDashboard, DiamondProfile } from "./types/agent";
 import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, QuestionBankCounts, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
@@ -8780,6 +8789,31 @@ function PerformancePage({
   isLoggedIn: boolean;
   onNavigate: (route: AppRoute) => void;
 }) {
+  const [personalBreakdown, setPersonalBreakdown] = useState<PersonalPerformanceBreakdown>(() => emptyPersonalPerformanceBreakdown());
+  const [academyLeaderboards, setAcademyLeaderboards] = useState<AcademyLeaderboardMap>(() => emptyAcademyLeaderboardMap());
+  const [performanceLoading, setPerformanceLoading] = useState(true);
+  const [performanceError, setPerformanceError] = useState<string | null>(null);
+
+  const loadPerformanceData = useCallback(async () => {
+    setPerformanceLoading(true);
+    setPerformanceError(null);
+    try {
+      const [nextPersonalBreakdown, nextAcademyLeaderboards] = await Promise.all([fetchPersonalPerformanceBreakdown(), fetchAcademyLeaderboards()]);
+      setPersonalBreakdown(nextPersonalBreakdown);
+      setAcademyLeaderboards(nextAcademyLeaderboards);
+    } catch (error) {
+      setPerformanceError(toMessage(error));
+    } finally {
+      setPerformanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      void loadPerformanceData();
+    }
+  }, [attempts, isLoggedIn, loadPerformanceData]);
+
   if (!isLoggedIn) {
     return <LockedState title="Prestasi peribadi dikunci" text="Log masuk untuk melihat sejarah markah dan mata simulasi." onNavigate={onNavigate} />;
   }
@@ -8787,14 +8821,25 @@ function PerformancePage({
   return (
     <div className="space-y-6">
       <PageHeader icon={Award} title="Prestasi Saya" text="Lihat perkembangan simulasi, markah terbaik dan lencana yang telah dibuka." />
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <PersonalPerformanceSection
+        stats={stats}
+        breakdown={personalBreakdown}
+        loading={performanceLoading}
+        error={performanceError}
+        onRetry={loadPerformanceData}
+      />
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard compact icon={ClipboardList} label="Simulasi" value={`${stats.totalAttempts}`} tone="bg-ocean-50 text-ocean-700" />
-        <StatCard compact icon={Star} label="Terbaik" value={`${stats.bestScore}%`} tone="bg-sun-50 text-amber-700" />
-        <StatCard compact icon={Target} label="Purata" value={`${stats.averageScore}%`} tone="bg-leaf-50 text-leaf-600" />
         <StatCard compact icon={Zap} label="Mata" value={`${stats.totalXp}`} tone="bg-coral-50 text-coral-600" />
         <StatCard compact icon={Rocket} label="Level" value={`${stats.level}`} tone="bg-ocean-50 text-ocean-700" />
         <StatCard compact icon={Trophy} label="Lencana" value={`${stats.badgeCount}`} tone="bg-sun-50 text-amber-700" />
       </section>
+      <AcademyLeaderboardSection
+        leaderboards={academyLeaderboards}
+        loading={performanceLoading}
+        error={performanceError}
+        onRetry={loadPerformanceData}
+      />
       <section className="rounded-2xl bg-white p-6 shadow-soft">
         <h2 className="text-xl font-black">Trend Cubaan</h2>
         <div className="mt-5 grid gap-3">
@@ -8810,6 +8855,291 @@ function PerformancePage({
           {attempts.length === 0 ? <p className="text-sm font-semibold text-slate-500">Belum ada cubaan selesai.</p> : null}
         </div>
       </section>
+    </div>
+  );
+}
+
+function PersonalPerformanceSection({
+  stats,
+  breakdown,
+  loading,
+  error,
+  onRetry,
+}: {
+  stats: ReturnType<typeof calculatePerformance>;
+  breakdown: PersonalPerformanceBreakdown;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const sectionItems: Array<{
+    section: PkskSectionCode;
+    title: string;
+    label: string;
+    icon: LucideIcon;
+    tone: string;
+    bar: string;
+    fallbackScore: number | null;
+  }> = [
+    {
+      section: "A",
+      title: "Bahagian A",
+      label: "Kecerdasan Insaniah",
+      icon: HeartHandshake,
+      tone: "bg-cyan-50 text-ocean-700 ring-cyan-100",
+      bar: "from-ocean-500 to-cyan-300",
+      fallbackScore: stats.bestSectionA,
+    },
+    {
+      section: "B",
+      title: "Bahagian B",
+      label: "Kecerdasan Intelek",
+      icon: Brain,
+      tone: "bg-emerald-50 text-leaf-600 ring-emerald-100",
+      bar: "from-leaf-500 to-emerald-300",
+      fallbackScore: stats.bestSectionB,
+    },
+    {
+      section: "C",
+      title: "Bahagian C",
+      label: "Artikulasi Penulisan",
+      icon: PenLine,
+      tone: "bg-amber-50 text-amber-700 ring-amber-100",
+      bar: "from-amber-500 to-yellow-300",
+      fallbackScore: stats.bestSectionC,
+    },
+  ];
+  const bestScores = sectionItems.map((item) => breakdown.sections[item.section].best_score ?? item.fallbackScore);
+  const completedSections = bestScores.filter((score) => score !== null).length;
+  const overallAverage =
+    breakdown.overall_average ??
+    (bestScores.every((score): score is number => score !== null) ? Math.round(bestScores.reduce((sum, score) => sum + score, 0) / bestScores.length) : null);
+  const missingSections = Math.max(0, 3 - completedSections);
+
+  return (
+    <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-ocean-900 to-cyan-700 p-5 text-white sm:p-6">
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_70%_20%,rgba(251,191,36,0.32),transparent_26%),radial-gradient(circle_at_38%_78%,rgba(45,212,191,0.34),transparent_30%)]" aria-hidden="true" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-black uppercase text-cyan-50 ring-1 ring-white/20">
+              <Award size={15} aria-hidden="true" />
+              Prestasi Individu
+            </p>
+            <h2 className="mt-3 text-2xl font-black leading-tight sm:text-3xl">Markah terbaik setiap bahagian</h2>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-cyan-50/82">
+              Peratus keseluruhan aktif selepas Bahagian A, B dan C mempunyai markah terbaik yang sah.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/18 bg-white/12 px-5 py-4 backdrop-blur">
+            <p className="text-xs font-black uppercase text-cyan-100">Purata terbaik A+B+C</p>
+            <p className="mt-1 text-4xl font-black leading-none text-white">{loading && overallAverage === null ? "..." : overallAverage === null ? "-" : `${formatScore(overallAverage)}%`}</p>
+            <p className="mt-2 text-xs font-bold text-cyan-50/78">
+              {overallAverage === null ? `Lengkapkan ${missingSections} bahagian lagi.` : "Dikira daripada markah terbaik A, B dan C."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 sm:p-6">
+        {error ? (
+          <div className="mb-5 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+            <span>{error}</span>
+            <button type="button" className="secondary-button min-h-10 px-4" onClick={onRetry}>
+              <RefreshCw size={16} aria-hidden="true" />
+              Cuba lagi
+            </button>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          {sectionItems.map((item) => {
+            const performance = breakdown.sections[item.section];
+            const score = performance.best_score ?? item.fallbackScore;
+            return (
+              <PersonalSectionScoreCard
+                key={item.section}
+                title={item.title}
+                label={item.label}
+                icon={item.icon}
+                tone={item.tone}
+                bar={item.bar}
+                score={score}
+                attempts={performance.attempts}
+                loading={loading}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PersonalSectionScoreCard({
+  title,
+  label,
+  icon: Icon,
+  tone,
+  bar,
+  score,
+  attempts,
+  loading,
+}: {
+  title: string;
+  label: string;
+  icon: LucideIcon;
+  tone: string;
+  bar: string;
+  score: number | null;
+  attempts: number;
+  loading: boolean;
+}) {
+  const progress = score ?? 0;
+  const value = loading && score === null ? "..." : score === null ? "Belum ada" : `${formatScore(score)}%`;
+
+  return (
+    <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ring-1 ${tone}`}>
+          <Icon size={22} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-black leading-tight text-slate-950">{title}</h3>
+          <p className="mt-1 text-xs font-bold leading-5 text-slate-500">{label}</p>
+        </div>
+        <p className="shrink-0 text-right text-2xl font-black leading-none text-slate-950">{value}</p>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
+        <div className={`h-full rounded-full bg-gradient-to-r ${bar}`} style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
+      </div>
+      <p className="mt-3 text-xs font-bold text-slate-500">{attempts > 0 ? `${attempts} cubaan rasmi direkod` : "Belum ada cubaan rasmi"}</p>
+    </article>
+  );
+}
+
+function AcademyLeaderboardSection({
+  leaderboards,
+  loading,
+  error,
+  onRetry,
+}: {
+  leaderboards: AcademyLeaderboardMap;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const sections: Array<{ section: PkskSectionCode; title: string; label: string; icon: LucideIcon; tone: string }> = [
+    { section: "A", title: "Bahagian A", label: "Top 5 Insaniah", icon: HeartHandshake, tone: "from-cyan-600 to-ocean-700" },
+    { section: "B", title: "Bahagian B", label: "Top 5 Intelek", icon: Brain, tone: "from-emerald-600 to-teal-700" },
+    { section: "C", title: "Bahagian C", label: "Top 5 Penulisan", icon: PenLine, tone: "from-amber-500 to-orange-600" },
+  ];
+
+  return (
+    <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-2 rounded-full bg-sun-50 px-3 py-1.5 text-xs font-black uppercase text-amber-700 ring-1 ring-sun-100">
+            <Trophy size={15} aria-hidden="true" />
+            Prestasi Akademi
+          </p>
+          <h2 className="mt-3 text-2xl font-black leading-tight text-slate-950">Scoreboard tertinggi</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">Nama murid dipaparkan apabila markah terbaik bahagian mencapai 60% ke atas.</p>
+        </div>
+        <button type="button" className="secondary-button min-h-10 px-4" onClick={onRetry} disabled={loading}>
+          <RefreshCw size={16} aria-hidden="true" />
+          {loading ? "Memuatkan..." : "Refresh"}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{error}</p>
+      ) : null}
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        {sections.map((section) => (
+          <LeaderboardBoard
+            key={section.section}
+            section={section.section}
+            title={section.title}
+            label={section.label}
+            icon={section.icon}
+            tone={section.tone}
+            rows={leaderboards[section.section]}
+            loading={loading}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LeaderboardBoard({
+  section,
+  title,
+  label,
+  icon: Icon,
+  tone,
+  rows,
+  loading,
+}: {
+  section: PkskSectionCode;
+  title: string;
+  label: string;
+  icon: LucideIcon;
+  tone: string;
+  rows: AcademyLeaderboardRow[];
+  loading: boolean;
+}) {
+  return (
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+      <div className={`bg-gradient-to-br ${tone} p-4 text-white`}>
+        <div className="flex items-center justify-between gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/16 ring-1 ring-white/24">
+            <Icon size={21} aria-hidden="true" />
+          </span>
+          <span className="rounded-full bg-white/16 px-3 py-1 text-xs font-black ring-1 ring-white/20">60%+</span>
+        </div>
+        <h3 className="mt-4 text-xl font-black leading-tight">{title}</h3>
+        <p className="mt-1 text-xs font-bold text-white/76">{label}</p>
+      </div>
+
+      <div className="grid gap-2 p-3">
+        {loading ? (
+          [1, 2, 3].map((item) => (
+            <div key={`${section}-loading-${item}`} className="flex items-center gap-3 rounded-xl bg-white px-3 py-3">
+              <span className="h-8 w-8 rounded-lg bg-slate-100" />
+              <span className="h-3 flex-1 rounded-full bg-slate-100" />
+              <span className="h-3 w-10 rounded-full bg-slate-100" />
+            </div>
+          ))
+        ) : rows.length > 0 ? (
+          rows.map((row) => <LeaderboardRow key={`${row.section}-${row.rank}-${row.display_name}`} row={row} />)
+        ) : (
+          <div className="rounded-xl bg-white px-4 py-5 text-center">
+            <p className="text-sm font-black text-slate-800">Belum ada murid layak.</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">Scoreboard akan muncul selepas ada markah 60% ke atas.</p>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function LeaderboardRow({ row }: { row: AcademyLeaderboardRow }) {
+  const isChampion = row.rank === 1;
+
+  return (
+    <div className={`flex items-center gap-3 rounded-xl px-3 py-3 ${row.is_current_user ? "bg-cyan-50 ring-1 ring-cyan-200" : "bg-white"}`}>
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm font-black ${isChampion ? "bg-sun-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+        {isChampion ? <Crown size={18} aria-hidden="true" /> : row.rank}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-black text-slate-950">{row.display_name}</p>
+        <p className="text-[11px] font-bold text-slate-500">{row.achieved_at ? formatShortDate(row.achieved_at) : "Tarikh belum direkod"}</p>
+      </div>
+      {row.is_current_user ? <span className="rounded-full bg-ocean-100 px-2 py-1 text-[10px] font-black text-ocean-700">Anda</span> : null}
+      <span className="shrink-0 text-base font-black text-slate-950">{formatScore(row.percentage)}%</span>
     </div>
   );
 }

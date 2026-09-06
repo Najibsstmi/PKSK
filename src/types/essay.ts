@@ -126,6 +126,7 @@ export type EssayGradingResult = {
 };
 
 export type EssayGradingRequest = {
+  attemptId?: string;
   level: string;
   question: string;
   instruction?: string;

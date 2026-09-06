@@ -96,4 +96,9 @@ export type PerformanceStats = {
   sectionA: number | null;
   sectionB: number | null;
   sectionC: number | null;
+  bestSectionA: number | null;
+  bestSectionB: number | null;
+  bestSectionC: number | null;
+  completedSections: number;
+  overallBestAverage: number | null;
 };

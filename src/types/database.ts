@@ -379,6 +379,21 @@ export type Database = {
         };
         Returns: Json;
       };
+      get_my_performance_breakdown: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      get_section_leaderboard: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          section: "A" | "B" | "C";
+          rank: number;
+          display_name: string;
+          percentage: number;
+          achieved_at: string | null;
+          is_current_user: boolean;
+        }>;
+      };
       generate_print_simulation_set: {
         Args: Record<string, never>;
         Returns: Json;

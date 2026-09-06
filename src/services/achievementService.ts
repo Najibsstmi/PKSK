@@ -27,12 +27,21 @@ export async function fetchBadgesWithProgress(profile: ProfileRow | null, attemp
 
 export function calculatePerformance(profile: ProfileRow | null, attempts: QuizAttemptRow[], badgeCount: number): PerformanceStats {
   const completed = attempts.filter((attempt) => attempt.status === "completed");
+  const scoredPracticeAttempts = completed.filter((attempt) => attempt.mode !== "quick");
   const totalAttempts = completed.length;
   const bestScore = completed.reduce((best, attempt) => Math.max(best, officialAttemptScore(attempt)), 0);
   const averageScore =
     totalAttempts === 0
       ? 0
       : Math.round(completed.reduce((sum, attempt) => sum + officialAttemptScore(attempt), 0) / totalAttempts);
+  const bestSectionA = bestSection(scoredPracticeAttempts, "section_a_score");
+  const bestSectionB = bestSection(scoredPracticeAttempts, "section_b_score");
+  const bestSectionC = bestSection(scoredPracticeAttempts, "section_c_score", { requirePositive: true });
+  const completedSections = [bestSectionA, bestSectionB, bestSectionC].filter((value) => value !== null).length;
+  const overallBestAverage =
+    bestSectionA !== null && bestSectionB !== null && bestSectionC !== null
+      ? Math.round((bestSectionA + bestSectionB + bestSectionC) / 3)
+      : null;
 
   return {
     totalAttempts,
@@ -41,9 +50,14 @@ export function calculatePerformance(profile: ProfileRow | null, attempts: QuizA
     totalXp: profile?.xp ?? 0,
     level: profile?.level ?? 1,
     badgeCount,
-    sectionA: averageSection(completed, "section_a_score"),
-    sectionB: averageSection(completed, "section_b_score"),
-    sectionC: averageSection(completed, "section_c_score"),
+    sectionA: averageSection(scoredPracticeAttempts, "section_a_score"),
+    sectionB: averageSection(scoredPracticeAttempts, "section_b_score"),
+    sectionC: averageSection(scoredPracticeAttempts, "section_c_score"),
+    bestSectionA,
+    bestSectionB,
+    bestSectionC,
+    completedSections,
+    overallBestAverage,
   };
 }
 
@@ -102,6 +116,21 @@ function averageSection(attempts: QuizAttemptRow[], key: "section_a_score" | "se
 
 function maxSection(attempts: QuizAttemptRow[], key: "section_a_score" | "section_b_score" | "section_c_score"): number {
   return attempts.reduce((best, attempt) => Math.max(best, Number(attempt[key] ?? 0)), 0);
+}
+
+function bestSection(
+  attempts: QuizAttemptRow[],
+  key: "section_a_score" | "section_b_score" | "section_c_score",
+  options: { requirePositive?: boolean } = {},
+): number | null {
+  const values = attempts
+    .map((attempt) => attempt[key])
+    .filter((value): value is number => value !== null && (!options.requirePositive || Number(value) > 0));
+  if (values.length === 0) {
+    return null;
+  }
+
+  return Math.max(...values.map(Number));
 }
 
 function officialAttemptScore(attempt: QuizAttemptRow): number {
