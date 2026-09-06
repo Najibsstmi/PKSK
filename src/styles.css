@@ -1094,6 +1094,30 @@ a {
     --badge-c: #7c3aed;
   }
 
+  .badge-showcase-card:nth-child(4n + 1) {
+    --badge-a: #06131f;
+    --badge-b: #0e7490;
+    --badge-c: #4338ca;
+  }
+
+  .badge-showcase-card:nth-child(4n + 2) {
+    --badge-a: #10231f;
+    --badge-b: #15803d;
+    --badge-c: #ca8a04;
+  }
+
+  .badge-showcase-card:nth-child(4n + 3) {
+    --badge-a: #201044;
+    --badge-b: #7c3aed;
+    --badge-c: #db2777;
+  }
+
+  .badge-showcase-card:nth-child(4n + 4) {
+    --badge-a: #111827;
+    --badge-b: #0f766e;
+    --badge-c: #0284c7;
+  }
+
   .badge-showcase-card--locked {
     filter: saturate(0.86);
   }
@@ -1131,6 +1155,45 @@ a {
     pointer-events: none;
   }
 
+  .badge-showcase-card__art::before,
+  .badge-showcase-card__art::after {
+    position: absolute;
+    content: "";
+    pointer-events: none;
+  }
+
+  .badge-showcase-card__art::before {
+    inset: 9%;
+    border-radius: 999px;
+    background:
+      conic-gradient(
+        from 18deg,
+        transparent 0deg 18deg,
+        rgba(255, 255, 255, 0.3) 18deg 25deg,
+        transparent 25deg 50deg,
+        var(--badge-accent-soft) 50deg 58deg,
+        transparent 58deg 92deg,
+        rgba(255, 255, 255, 0.22) 92deg 100deg,
+        transparent 100deg 136deg,
+        var(--badge-accent-soft) 136deg 144deg,
+        transparent 144deg 360deg
+      );
+    filter: drop-shadow(0 0 20px var(--badge-accent-soft));
+    opacity: 0.9;
+    animation: badge-prism 10s linear infinite;
+  }
+
+  .badge-showcase-card__art::after {
+    inset: -4%;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.95) 0 2px, transparent 2.5px),
+      radial-gradient(circle at 80% 32%, rgba(255, 255, 255, 0.8) 0 1.5px, transparent 2px),
+      radial-gradient(circle at 28% 78%, var(--badge-accent) 0 2px, transparent 2.5px),
+      radial-gradient(circle at 72% 84%, rgba(255, 255, 255, 0.72) 0 1.5px, transparent 2px);
+    opacity: 0.72;
+  }
+
   .badge-showcase-card__art-ring {
     position: absolute;
     border-radius: 999px;
@@ -1151,6 +1214,8 @@ a {
   }
 
   .badge-showcase-card__art-medal {
+    position: relative;
+    z-index: 2;
     display: grid;
     width: 76px;
     height: 76px;
@@ -1164,8 +1229,48 @@ a {
       0 24px 44px rgba(15, 23, 42, 0.3),
       0 0 34px var(--badge-accent-soft),
       inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    overflow: visible;
     backdrop-filter: blur(14px);
     animation: simulation-float 5.4s ease-in-out infinite;
+  }
+
+  .badge-showcase-card__art-medal::before,
+  .badge-showcase-card__art-medal::after {
+    position: absolute;
+    content: "";
+    pointer-events: none;
+  }
+
+  .badge-showcase-card__art-medal::before {
+    inset: 11px;
+    z-index: 0;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle, rgba(255, 255, 255, 0.55) 0 18%, transparent 19%),
+      conic-gradient(from 0deg, var(--badge-accent), rgba(255, 255, 255, 0.4), var(--badge-accent));
+    opacity: 0.42;
+    filter: blur(0.5px);
+  }
+
+  .badge-showcase-card__art-medal::after {
+    bottom: -13px;
+    left: 50%;
+    z-index: 1;
+    width: 54px;
+    height: 30px;
+    border-radius: 0 0 14px 14px;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.3), transparent 38%),
+      linear-gradient(135deg, var(--badge-accent), rgba(255, 255, 255, 0.16));
+    clip-path: polygon(0 0, 44% 0, 50% 100%, 57% 0, 100% 0, 82% 100%, 50% 74%, 18% 100%);
+    transform: translateX(-50%);
+    filter: drop-shadow(0 12px 16px rgba(15, 23, 42, 0.28));
+  }
+
+  .badge-showcase-card__art-medal svg {
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 6px 10px rgba(15, 23, 42, 0.28));
   }
 
   .badge-showcase-card__art-spark {
@@ -1485,6 +1590,16 @@ a {
     }
   }
 
+  @keyframes badge-prism {
+    from {
+      transform: rotate(0deg) scale(0.98);
+    }
+
+    to {
+      transform: rotate(360deg) scale(0.98);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .simulation-stage__beam,
     .simulation-stage__radar span,
@@ -1494,6 +1609,7 @@ a {
     .simulation-orbit__icon,
     .badge-showcase-card,
     .badge-showcase-card::after,
+    .badge-showcase-card__art::before,
     .badge-showcase-card__art-ring,
     .badge-showcase-card__art-medal,
     .badge-showcase-card__art-spark,
