@@ -22,6 +22,7 @@ export type QuizQuestion = {
   answer_status?: "unanswered" | "answered" | "skipped";
   answer_revealed_at?: string | null;
   correct_option_id?: string | null;
+  is_correct?: boolean | null;
   answer_explanation?: string | null;
 };
 

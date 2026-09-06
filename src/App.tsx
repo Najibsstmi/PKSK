@@ -647,6 +647,7 @@ function App() {
   const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
   const [diamondProfile, setDiamondProfile] = useState<DiamondProfile | null>(null);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
+  const [completedReviewPayload, setCompletedReviewPayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
   const [activeEssayPayload, setActiveEssayPayload] = useState<EssayAttemptPayload | null>(null);
   const [essayResult, setEssayResult] = useState<EssaySubmitResult | null>(null);
@@ -720,6 +721,8 @@ function App() {
         setPendingPayment(null);
         setDiamondProfile(null);
         setActivePayload(null);
+        setCompletedReviewPayload(null);
+        setResult(null);
         setActiveEssayPayload(null);
         setEssayResult(null);
         setPostAuthIntent(null);
@@ -1142,6 +1145,7 @@ function App() {
     setBusy(true);
     setMessage(null);
     setResult(null);
+    setCompletedReviewPayload(null);
     try {
       const attemptId = await generateQuiz({ mode, section, numberOfQuestions });
       const payload = await getAttemptPayload(attemptId);
@@ -1346,11 +1350,13 @@ function App() {
         setMessage("Keputusan masih dihantar. Sambungan agak perlahan, jangan tutup halaman ini.");
       }, 8000);
       const completed = await completeAttempt(attemptId);
+      const reviewPayload = await getAttemptPayload(attemptId).catch(() => null);
       if (slowSubmitNoticeId !== null) {
         window.clearTimeout(slowSubmitNoticeId);
         slowSubmitNoticeId = null;
       }
       setResult(completed);
+      setCompletedReviewPayload(reviewPayload);
       setActivePayload(null);
       window.localStorage.removeItem("pksk-active-attempt");
       await refreshData(session.user.id, { silent: true });
@@ -1403,6 +1409,7 @@ function App() {
   async function prepareGuestPreview(section: "A" | "B") {
     void section;
     setResult(null);
+    setCompletedReviewPayload(null);
     const attemptId = await generateFreePreviewQuiz();
     const payload = await getAttemptPayload(attemptId);
     setActivePayload(payload);
@@ -1474,6 +1481,7 @@ function App() {
       return (
         <QuizPage
           payload={activePayload}
+          reviewPayload={completedReviewPayload}
           result={result}
           busy={busy}
           onAnswer={handleAnswer}
@@ -1482,6 +1490,7 @@ function App() {
           onNavigate={navigate}
           onStartEssay={openPaywall}
           onMessage={setMessage}
+          canReviewAnswers={access.canUsePremiumFeature()}
           isFreePreview
           onShowPaywall={openPaywall}
           onRestartPreview={() => handleStartGuestPreview("A")}
@@ -1645,6 +1654,7 @@ function App() {
       return (
         <QuizPage
           payload={activePayload}
+          reviewPayload={completedReviewPayload}
           result={result}
           busy={busy}
           onAnswer={handleAnswer}
@@ -1653,6 +1663,7 @@ function App() {
           onNavigate={navigate}
           onStartEssay={handleStartEssay}
           onMessage={setMessage}
+          canReviewAnswers={access.canUsePremiumFeature()}
         />
       );
     }
@@ -8015,6 +8026,7 @@ function PrintSimulationPdfModal({ profile, onClose, onMessage }: { profile: Pro
 
 function QuizPage({
   payload,
+  reviewPayload,
   result,
   busy,
   onAnswer,
@@ -8023,11 +8035,13 @@ function QuizPage({
   onNavigate,
   onStartEssay,
   onMessage,
+  canReviewAnswers = false,
   isFreePreview = false,
   onShowPaywall,
   onRestartPreview,
 }: {
   payload: AttemptPayload | null;
+  reviewPayload: AttemptPayload | null;
   result: CompleteAttemptResult | null;
   busy: boolean;
   onAnswer: (questionId: string, optionId: string) => Promise<boolean> | boolean;
@@ -8036,6 +8050,7 @@ function QuizPage({
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
   onMessage: (message: string | null) => void;
+  canReviewAnswers?: boolean;
   isFreePreview?: boolean;
   onShowPaywall?: () => void;
   onRestartPreview?: () => void;
@@ -8149,8 +8164,11 @@ function QuizPage({
     return (
       <ResultPanel
         result={result}
+        reviewPayload={reviewPayload}
         onNavigate={onNavigate}
         onStartEssay={onStartEssay}
+        onMessage={onMessage}
+        canReviewAnswers={canReviewAnswers}
         isFreePreview={isFreePreview}
         onShowPaywall={onShowPaywall}
         onRestartPreview={onRestartPreview}
@@ -8594,19 +8612,28 @@ function normalizeMalaysiaPhone(value: string): string {
 
 function ResultPanel({
   result,
+  reviewPayload,
   onNavigate,
   onStartEssay,
+  onMessage,
+  canReviewAnswers = false,
   isFreePreview = false,
   onShowPaywall,
   onRestartPreview,
 }: {
   result: CompleteAttemptResult;
+  reviewPayload: AttemptPayload | null;
   onNavigate: (route: AppRoute) => void;
   onStartEssay: () => void;
+  onMessage: (message: string | null) => void;
+  canReviewAnswers?: boolean;
   isFreePreview?: boolean;
   onShowPaywall?: () => void;
   onRestartPreview?: () => void;
 }) {
+  const [revealingQuestionId, setRevealingQuestionId] = useState<string | null>(null);
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<string, RevealedQuizAnswer>>({});
+  const [selectedReviewQuestionId, setSelectedReviewQuestionId] = useState<string | null>(null);
   const hasSectionA = result.section_a_score !== null && result.section_a_score !== undefined;
   const hasSectionB = result.section_b_score !== null && result.section_b_score !== undefined;
   const isOfficialObjective = !isFreePreview && hasSectionA && hasSectionB;
@@ -8614,57 +8641,350 @@ function ResultPanel({
   const officialScore = result.score ?? result.percentage;
   const resultTitle = isFreePreview ? "Keputusan Preview Disimpan" : "Keputusan Disimpan";
   const scoreText = isFreePreview ? `Skor preview: ${Number(result.percentage).toFixed(2)}%` : `Skor rasmi: ${Number(officialScore).toFixed(2)} / ${officialMaxScore}%`;
+  const officialSectionPanels = getOfficialResultPanels(result, isFreePreview);
+  const reviewAttemptId = reviewPayload?.attempt.id ?? null;
+  const reviewQuestions = useMemo(() => sortQuizQuestions(reviewPayload?.questions ?? []), [reviewPayload]);
+  const reviewSummary = useMemo(() => buildAttemptReviewSummary(reviewQuestions), [reviewQuestions]);
+  const selectedReviewQuestion = selectedReviewQuestionId ? reviewQuestions.find((question) => question.id === selectedReviewQuestionId) ?? null : null;
+  const canShowReview = canReviewAnswers && !isFreePreview && reviewQuestions.length > 0;
+
+  useEffect(() => {
+    setRevealingQuestionId(null);
+    setSelectedReviewQuestionId(null);
+    setRevealedAnswers(extractRevealedAnswers(reviewPayload));
+  }, [reviewAttemptId, reviewPayload]);
+
+  async function handleSelectReviewQuestion(question: QuizQuestion) {
+    const status = getReviewQuestionStatus(question);
+    if (!canShowReview || !reviewPayload || !canRevealReviewStatus(status)) {
+      return;
+    }
+
+    setSelectedReviewQuestionId(question.id);
+    onMessage(null);
+    if (revealedAnswers[question.id] || question.correct_option_id) {
+      return;
+    }
+
+    setRevealingQuestionId(question.id);
+    try {
+      const revealed = await revealAnswer(reviewPayload.attempt.id, question.id);
+      setRevealedAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: revealed }));
+    } catch (error) {
+      onMessage(toMessage(error));
+    } finally {
+      setRevealingQuestionId(null);
+    }
+  }
 
   return (
-    <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
-      <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-sun-100 text-amber-700">
-        <Trophy size={30} aria-hidden="true" />
+    <div className="space-y-6">
+      <section className="rounded-2xl bg-white p-8 text-center shadow-soft">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-sun-100 text-amber-700">
+          <Trophy size={30} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-3xl font-black">{resultTitle}</h1>
+        <p className="mt-3 text-lg font-black text-slate-950">{scoreText}</p>
+        <p className="mt-2 text-sm font-semibold text-slate-600">{result.correct_answers} / {result.total_questions} betul. {result.skipped_answers ?? 0} soalan diskip.</p>
+        {officialSectionPanels.length > 0 ? (
+          <div className="mx-auto mt-5 grid max-w-3xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {officialSectionPanels.map((panel) => (
+              <SummaryPanel key={`${panel.title}-${panel.value}`} title={panel.title} value={panel.value} />
+            ))}
+          </div>
+        ) : null}
+        {isFreePreview ? <BahagianCPreviewVideoCard className="mx-auto mt-6 max-w-4xl" compact onShowPaywall={onShowPaywall ?? (() => onNavigate("/premium"))} /> : null}
+        <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+          {isFreePreview ? (
+            <>
+              <button type="button" className="primary-button" onClick={onShowPaywall ?? (() => onNavigate("/premium"))}>
+                Buka Semua Soalan Premium
+              </button>
+              <button type="button" className="secondary-button" onClick={onRestartPreview ?? (() => onNavigate("/"))}>
+                Cuba Preview Lagi
+              </button>
+            </>
+          ) : isOfficialObjective ? (
+            <button type="button" className="primary-button" onClick={onStartEssay}>
+              Teruskan Bahagian C
+            </button>
+          ) : null}
+          {!isFreePreview ? (
+            <>
+              <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
+                Lihat Prestasi
+              </button>
+              <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
+                Sejarah Cubaan
+              </button>
+            </>
+          ) : null}
+        </div>
+      </section>
+
+      {canShowReview ? (
+        <AttemptReviewPanel
+          questions={reviewQuestions}
+          summary={reviewSummary}
+          revealedAnswers={revealedAnswers}
+          selectedQuestion={selectedReviewQuestion}
+          revealingQuestionId={revealingQuestionId}
+          onSelectQuestion={handleSelectReviewQuestion}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type ResultSummaryPanel = {
+  title: string;
+  value: string;
+};
+
+type ReviewQuestionStatus = "correct" | "incorrect" | "skipped" | "unknown";
+
+type AttemptReviewSummary = {
+  correct: number;
+  incorrect: number;
+  skipped: number;
+  unknown: number;
+};
+
+function AttemptReviewPanel({
+  questions,
+  summary,
+  revealedAnswers,
+  selectedQuestion,
+  revealingQuestionId,
+  onSelectQuestion,
+}: {
+  questions: QuizQuestion[];
+  summary: AttemptReviewSummary;
+  revealedAnswers: Record<string, RevealedQuizAnswer>;
+  selectedQuestion: QuizQuestion | null;
+  revealingQuestionId: string | null;
+  onSelectQuestion: (question: QuizQuestion) => void;
+}) {
+  const sectionGroups = (["A", "B"] as const)
+    .map((section) => ({
+      section,
+      title: section === "A" ? "Bahagian A" : "Bahagian B",
+      questions: questions.filter((question) => question.section === section),
+    }))
+    .filter((group) => group.questions.length > 0);
+  const selectedReveal = selectedQuestion ? revealedAnswers[selectedQuestion.id] ?? null : null;
+
+  return (
+    <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-2 rounded-full bg-ocean-50 px-3 py-1.5 text-xs font-black uppercase text-ocean-700 ring-1 ring-ocean-100">
+            <Eye size={15} aria-hidden="true" />
+            Semakan Jawapan
+          </p>
+          <h2 className="mt-3 text-2xl font-black leading-tight text-slate-950">Tekan kotak merah untuk lihat jawapan sebenar</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">Kotak salah dan skip boleh dibuka satu demi satu supaya murid tahu bahagian yang perlu diulang kaji.</p>
+        </div>
+        <div className="grid min-w-0 grid-cols-3 gap-2 text-center text-xs font-black sm:min-w-[310px]">
+          <span className="rounded-xl bg-leaf-50 px-3 py-2 text-leaf-700">{summary.correct} betul</span>
+          <span className="rounded-xl bg-coral-50 px-3 py-2 text-coral-700">{summary.incorrect} salah</span>
+          <span className="rounded-xl bg-sun-50 px-3 py-2 text-amber-700">{summary.skipped} skip</span>
+        </div>
       </div>
-      <h1 className="mt-5 text-3xl font-black">{resultTitle}</h1>
-      <p className="mt-3 text-lg font-black text-slate-950">{scoreText}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-600">{result.correct_answers} / {result.total_questions} betul. {result.skipped_answers ?? 0} soalan diskip.</p>
-      {isOfficialObjective ? (
-        <div className="mx-auto mt-5 grid max-w-lg gap-3 sm:grid-cols-2">
-          <SummaryPanel title="Bahagian A" value={`${Number(result.section_a_weighted_score ?? 0).toFixed(2)} / 20%`} />
-          <SummaryPanel title="Bahagian B" value={`${Number(result.section_b_weighted_score ?? 0).toFixed(2)} / 70%`} />
+
+      <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-slate-600">
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-leaf-100 ring-1 ring-leaf-400" /> Betul</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-coral-500" /> Salah</span>
+        <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sun-100 ring-1 ring-amber-300" /> Skip</span>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-5">
+          {sectionGroups.map((group) => (
+            <div key={group.section} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center justify-between text-xs font-black uppercase text-slate-500">
+                <span>{group.title}</span>
+                <span>{group.questions.length} soalan</span>
+              </div>
+              <div className="grid grid-cols-5 gap-2 sm:grid-cols-7 lg:grid-cols-10 xl:grid-cols-5">
+                {group.questions.map((question) => {
+                  const questionIndex = questions.findIndex((item) => item.id === question.id);
+                  const status = getReviewQuestionStatus(question);
+                  const isSelected = selectedQuestion?.id === question.id;
+                  const canReveal = canRevealReviewStatus(status);
+                  const isLoading = revealingQuestionId === question.id;
+                  return (
+                    <button
+                      key={question.id}
+                      type="button"
+                      disabled={!canReveal || isLoading}
+                      onClick={() => onSelectQuestion(question)}
+                      className={`grid h-10 place-items-center rounded-xl text-sm font-black transition ${reviewQuestionStatusClass(status, isSelected, canReveal)}`}
+                      title={getReviewQuestionTitle(questionIndex, status)}
+                    >
+                      {isLoading ? <RefreshCw size={16} className="animate-spin" aria-hidden="true" /> : questionIndex + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
-      ) : null}
-      {isFreePreview ? (
-        <div className="mx-auto mt-5 grid max-w-lg gap-3 sm:grid-cols-2">
-          {hasSectionA ? <SummaryPanel title="Preview A" value={`${Number(result.section_a_score ?? 0).toFixed(2)}%`} /> : null}
-          {hasSectionB ? <SummaryPanel title="Preview B" value={`${Number(result.section_b_score ?? 0).toFixed(2)}%`} /> : null}
-        </div>
-      ) : null}
-      {isFreePreview ? <BahagianCPreviewVideoCard className="mx-auto mt-6 max-w-4xl" compact onShowPaywall={onShowPaywall ?? (() => onNavigate("/premium"))} /> : null}
-      <p className="mt-2 text-lg font-black text-ocean-700">+{result.xp_earned} mata</p>
-      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        {isFreePreview ? (
-          <>
-            <button type="button" className="primary-button" onClick={onShowPaywall ?? (() => onNavigate("/premium"))}>
-              Buka Semua Soalan Premium
-            </button>
-            <button type="button" className="secondary-button" onClick={onRestartPreview ?? (() => onNavigate("/"))}>
-              Cuba Preview Lagi
-            </button>
-          </>
-        ) : isOfficialObjective ? (
-          <button type="button" className="primary-button" onClick={onStartEssay}>
-            Teruskan Bahagian C
-          </button>
-        ) : null}
-        {!isFreePreview ? (
-          <>
-            <button type="button" className="primary-button" onClick={() => onNavigate("/app/pencapaian")}>
-              Lihat Prestasi
-            </button>
-            <button type="button" className="secondary-button" onClick={() => onNavigate("/app/sejarah")}>
-              Sejarah Cubaan
-            </button>
-          </>
-        ) : null}
+
+        <ReviewQuestionDetail question={selectedQuestion} revealedAnswer={selectedReveal} loading={Boolean(selectedQuestion && revealingQuestionId === selectedQuestion.id)} />
       </div>
     </section>
   );
+}
+
+function ReviewQuestionDetail({
+  question,
+  revealedAnswer,
+  loading,
+}: {
+  question: QuizQuestion | null;
+  revealedAnswer: RevealedQuizAnswer | null;
+  loading: boolean;
+}) {
+  if (!question) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6">
+        <p className="text-sm font-black text-slate-800">Pilih soalan yang salah.</p>
+        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Selepas tekan kotak merah, jawapan sebenar dan penerangan akan dipaparkan di sini.</p>
+      </div>
+    );
+  }
+
+  const selectedAnswer = question.selected_option_id ? getOptionAnswerSummary(question, question.selected_option_id) : "Soalan ini diskip.";
+  const correctAnswer = revealedAnswer ? getOptionAnswerSummary(question, revealedAnswer.correct_option_id) : null;
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-xl bg-ocean-50 px-3 py-2 text-xs font-black uppercase text-ocean-700">{question.section === "A" ? "Bahagian A" : "Bahagian B"}</span>
+        <span className={`rounded-xl px-3 py-2 text-xs font-black uppercase ${getReviewQuestionStatus(question) === "skipped" ? "bg-sun-50 text-amber-700" : "bg-coral-50 text-coral-700"}`}>
+          {getReviewQuestionStatus(question) === "skipped" ? "Skip" : "Salah"}
+        </span>
+      </div>
+      <h3 className="mt-4 text-xl font-black leading-snug text-slate-950">{question.question_text}</h3>
+      {question.question_image_url ? <QuestionImage src={question.question_image_url} /> : null}
+      <div className="mt-4 grid gap-3 text-sm font-semibold leading-6">
+        <p className="rounded-2xl bg-coral-50 p-4 text-coral-800">
+          <span className="block text-xs font-black uppercase">Jawapan murid</span>
+          {selectedAnswer}
+        </p>
+        <p className="rounded-2xl bg-leaf-50 p-4 text-leaf-800">
+          <span className="block text-xs font-black uppercase">Jawapan sebenar</span>
+          {loading ? "Sedang semak..." : correctAnswer ?? "Tekan semula kotak soalan untuk reveal jawapan."}
+        </p>
+      </div>
+      {revealedAnswer ? (
+        <div className="mt-4 grid gap-3">
+          {question.options.map((option) => (
+            <div key={option.id} className={`rounded-2xl border p-4 text-sm font-bold ${quizOptionClass(option.id, question.selected_option_id, revealedAnswer)}`}>
+              <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {revealedAnswer?.explanation ? <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">{revealedAnswer.explanation}</p> : null}
+    </article>
+  );
+}
+
+function getOfficialResultPanels(result: CompleteAttemptResult, isFreePreview: boolean): ResultSummaryPanel[] {
+  const panels: ResultSummaryPanel[] = [];
+  const sectionAScore = toNullableScore(result.section_a_score);
+  const sectionBScore = toNullableScore(result.section_b_score);
+
+  if (isFreePreview) {
+    if (sectionAScore !== null) {
+      panels.push({ title: "Preview A", value: `${formatScore(sectionAScore)}%` });
+    }
+    if (sectionBScore !== null) {
+      panels.push({ title: "Preview B", value: `${formatScore(sectionBScore)}%` });
+    }
+    return panels;
+  }
+
+  if (sectionAScore !== null) {
+    panels.push({ title: "Bahagian A", value: `${formatScore(sectionAScore)}%` });
+    panels.push({ title: "Markah rasmi A", value: `${formatScore(Number(result.section_a_weighted_score ?? 0))} / 20%` });
+  }
+  if (sectionBScore !== null) {
+    panels.push({ title: "Bahagian B", value: `${formatScore(sectionBScore)}%` });
+    panels.push({ title: "Markah rasmi B", value: `${formatScore(Number(result.section_b_weighted_score ?? 0))} / 70%` });
+  }
+
+  return panels;
+}
+
+function sortQuizQuestions(questions: QuizQuestion[]): QuizQuestion[] {
+  return [...questions].sort((first, second) => {
+    const sectionOrder = sectionSortOrder(first.section) - sectionSortOrder(second.section);
+    return sectionOrder !== 0 ? sectionOrder : first.question_order - second.question_order;
+  });
+}
+
+function buildAttemptReviewSummary(questions: QuizQuestion[]): AttemptReviewSummary {
+  return questions.reduce<AttemptReviewSummary>(
+    (summary, question) => {
+      const status = getReviewQuestionStatus(question);
+      summary[status] += 1;
+      return summary;
+    },
+    { correct: 0, incorrect: 0, skipped: 0, unknown: 0 },
+  );
+}
+
+function getReviewQuestionStatus(question: QuizQuestion): ReviewQuestionStatus {
+  if (getQuestionStatus(question) === "skipped") {
+    return "skipped";
+  }
+  if (question.is_correct === true) {
+    return "correct";
+  }
+  if (question.is_correct === false) {
+    return "incorrect";
+  }
+  return "unknown";
+}
+
+function canRevealReviewStatus(status: ReviewQuestionStatus): boolean {
+  return status === "incorrect" || status === "skipped";
+}
+
+function reviewQuestionStatusClass(status: ReviewQuestionStatus, active: boolean, canReveal: boolean): string {
+  const activeClass = active ? "ring-2 ring-ocean-600 ring-offset-2 " : "";
+  if (status === "correct") {
+    return `${activeClass}bg-leaf-100 text-leaf-800`;
+  }
+  if (status === "incorrect") {
+    return `${activeClass}bg-coral-600 text-white shadow-sm hover:bg-coral-700`;
+  }
+  if (status === "skipped") {
+    return `${activeClass}bg-sun-100 text-amber-800 ring-1 ring-amber-300 hover:bg-sun-200`;
+  }
+  return `${activeClass}${canReveal ? "bg-slate-100 text-slate-600 hover:bg-ocean-50" : "cursor-not-allowed bg-slate-100 text-slate-400"}`;
+}
+
+function getReviewQuestionTitle(questionIndex: number, status: ReviewQuestionStatus): string {
+  const number = questionIndex + 1;
+  if (status === "incorrect") {
+    return `Soalan ${number}: salah. Tekan untuk semak jawapan sebenar.`;
+  }
+  if (status === "skipped") {
+    return `Soalan ${number}: skip. Tekan untuk semak jawapan sebenar.`;
+  }
+  if (status === "correct") {
+    return `Soalan ${number}: betul.`;
+  }
+  return `Soalan ${number}: status belum tersedia.`;
+}
+
+function toNullableScore(value: number | null | undefined): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function ProfilePage({
