@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ms">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teacher Ieffa Facebook Cover</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #dce9ee;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .cover {
+        position: relative;
+        width: 1640px;
+        height: 624px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 22% 12%, rgba(255, 221, 117, 0.45), transparent 21%),
+          radial-gradient(circle at 58% 85%, rgba(20, 184, 166, 0.26), transparent 28%),
+          linear-gradient(120deg, #f8fcff 0%, #ebf9fb 47%, #cff3fb 100%);
+        color: #06213f;
+      }
+
+      .portrait {
+        position: absolute;
+        inset: 0 0 0 auto;
+        width: 650px;
+        height: 624px;
+        object-fit: cover;
+        object-position: 52% 34%;
+        filter: saturate(1.04) contrast(1.02);
+      }
+
+      .portrait-fade {
+        position: absolute;
+        inset: 0 0 0 auto;
+        width: 790px;
+        background: linear-gradient(90deg, #f8fcff 0%, rgba(248, 252, 255, 0.88) 22%, rgba(248, 252, 255, 0.1) 56%, rgba(248, 252, 255, 0) 100%);
+      }
+
+      .wave {
+        position: absolute;
+        left: -80px;
+        right: -80px;
+        bottom: -150px;
+        height: 280px;
+        border-radius: 50% 50% 0 0;
+        background: linear-gradient(90deg, #082a4f 0%, #0e7890 42%, #18b6aa 100%);
+        box-shadow: 0 -10px 0 rgba(245, 180, 42, 0.92);
+      }
+
+      .content {
+        position: absolute;
+        left: 112px;
+        top: 76px;
+        width: 960px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        height: 48px;
+        padding: 0 22px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(8, 120, 144, 0.18);
+        color: #087287;
+        font-size: 22px;
+        font-weight: 900;
+        letter-spacing: 0;
+        box-shadow: 0 16px 40px rgba(8, 54, 93, 0.08);
+      }
+
+      h1 {
+        margin: 28px 0 0;
+        font-size: 104px;
+        line-height: 0.92;
+        letter-spacing: 0;
+        font-weight: 950;
+        color: #061936;
+      }
+
+      h1 span {
+        color: #009c9b;
+      }
+
+      .tagline {
+        margin-top: 22px;
+        max-width: 830px;
+        color: #274665;
+        font-size: 32px;
+        line-height: 1.28;
+        font-weight: 700;
+      }
+
+      .services {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-top: 34px;
+        width: 940px;
+      }
+
+      .service {
+        min-height: 108px;
+        border-radius: 28px;
+        padding: 18px 16px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(8, 120, 144, 0.13);
+        box-shadow: 0 16px 42px rgba(6, 33, 63, 0.09);
+      }
+
+      .service-icon {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 16px;
+        margin-bottom: 9px;
+        background: linear-gradient(135deg, #0b82d8, #16c0aa);
+        color: #fff;
+        font-size: 24px;
+        box-shadow: 0 10px 22px rgba(10, 135, 170, 0.24);
+      }
+
+      .service:nth-child(2) .service-icon,
+      .service:nth-child(4) .service-icon {
+        background: linear-gradient(135deg, #f7c947, #df8b18);
+      }
+
+      .service-title {
+        color: #08213d;
+        font-size: 23px;
+        font-weight: 950;
+        line-height: 1.08;
+      }
+
+      .service-small {
+        margin-top: 5px;
+        color: #597089;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .profile-safe {
+        position: absolute;
+        left: 54px;
+        bottom: 34px;
+        width: 260px;
+        height: 260px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.86);
+        border: 13px solid rgba(0, 149, 152, 0.9);
+        box-shadow: 0 24px 52px rgba(6, 33, 63, 0.18);
+      }
+
+      .profile-safe::after {
+        content: "Ruang profile picture";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 150px;
+        color: rgba(8, 42, 79, 0.45);
+        font-size: 18px;
+        font-weight: 900;
+        line-height: 1.25;
+        text-align: center;
+      }
+
+      .bottom-note {
+        position: absolute;
+        left: 410px;
+        bottom: 44px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        color: #fff;
+        font-size: 24px;
+        font-weight: 900;
+      }
+
+      .bottom-note span {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+      }
+
+      .sparkle {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #f8c540;
+        box-shadow: 0 0 0 10px rgba(248, 197, 64, 0.18);
+      }
+
+      .sparkle.one {
+        left: 64px;
+        top: 74px;
+      }
+
+      .sparkle.two {
+        left: 938px;
+        top: 76px;
+        width: 13px;
+        height: 13px;
+      }
+
+      .sparkle.three {
+        right: 566px;
+        bottom: 190px;
+        width: 12px;
+        height: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="cover">
+      <img class="portrait" src="file:///C:/Users/User/AppData/Local/Temp/codex-clipboard-4f80f395-0abf-49d5-826f-1e98e1d7f81b.png" alt="" />
+      <div class="portrait-fade"></div>
+      <div class="wave"></div>
+      <div class="sparkle one"></div>
+      <div class="sparkle two"></div>
+      <div class="sparkle three"></div>
+
+      <section class="content" aria-label="Teacher Ieffa cover text">
+        <div class="eyebrow">Pendidikan Digital • Bimbingan Murid • Perkongsian Guru</div>
+        <h1>Teacher <span>Ieffa</span></h1>
+        <p class="tagline">Bimbingan, latihan & perkongsian pendidikan untuk murid, ibu bapa dan guru.</p>
+
+        <div class="services">
+          <article class="service">
+            <div class="service-icon">✓</div>
+            <div class="service-title">PKSK Simulation</div>
+            <div class="service-small">Latihan persediaan PKSK</div>
+          </article>
+          <article class="service">
+            <div class="service-icon">⌂</div>
+            <div class="service-title">Home Tuition</div>
+            <div class="service-small">Bimbingan lebih dekat</div>
+          </article>
+          <article class="service">
+            <div class="service-icon">▣</div>
+            <div class="service-title">Produk Digital Education</div>
+            <div class="service-small">Bahan belajar tersusun</div>
+          </article>
+          <article class="service">
+            <div class="service-icon">✦</div>
+            <div class="service-title">Teacher Sharing</div>
+            <div class="service-small">Idea & inspirasi guru</div>
+          </article>
+        </div>
+      </section>
+
+      <div class="profile-safe"></div>
+      <div class="bottom-note">
+        <span>Ilmu</span>
+        <span>•</span>
+        <span>Usaha</span>
+        <span>•</span>
+        <span>Masa Depan</span>
+      </div>
+    </main>
+  </body>
+</html>

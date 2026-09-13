@@ -27,7 +27,65 @@ export async function fetchAdminUsers(searchText: string, statusFilter: string):
     throw new Error(mapAdminMessage(error.message));
   }
 
-  return (data ?? []) as AdminUserRow[];
+  return sortAdminUsers((data ?? []) as AdminUserRow[]);
+}
+
+function sortAdminUsers(users: AdminUserRow[]): AdminUserRow[] {
+  const now = Date.now();
+  return [...users].sort((first, second) => {
+    const firstGroup = getAdminUserSortGroup(first, now);
+    const secondGroup = getAdminUserSortGroup(second, now);
+    if (firstGroup !== secondGroup) {
+      return firstGroup - secondGroup;
+    }
+
+    const firstSortTime = getAdminUserSortTime(first, now);
+    const secondSortTime = getAdminUserSortTime(second, now);
+    if (firstSortTime !== secondSortTime) {
+      return secondSortTime - firstSortTime;
+    }
+
+    const firstCreatedAt = toTime(first.created_at);
+    const secondCreatedAt = toTime(second.created_at);
+    if (firstCreatedAt !== secondCreatedAt) {
+      return secondCreatedAt - firstCreatedAt;
+    }
+
+    return first.email.localeCompare(second.email);
+  });
+}
+
+function getAdminUserSortGroup(user: AdminUserRow, now: number) {
+  if (isActivePremiumAdminUser(user, now)) {
+    return 0;
+  }
+
+  if (user.subscription_status === "free" && !user.is_blocked) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function getAdminUserSortTime(user: AdminUserRow, now: number) {
+  if (isActivePremiumAdminUser(user, now)) {
+    return toTime(user.subscription_started_at ?? user.created_at);
+  }
+
+  return toTime(user.created_at);
+}
+
+function isActivePremiumAdminUser(user: AdminUserRow, now: number) {
+  return user.subscription_status === "premium" && !user.is_blocked && (!user.subscription_ends_at || toTime(user.subscription_ends_at) > now);
+}
+
+function toTime(value: string | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : 0;
 }
 
 export async function fetchAdminQuestions(searchText: string, sectionFilter = "all", statusFilter = "all", sourceFilter = ""): Promise<AdminQuestionRow[]> {

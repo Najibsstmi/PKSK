@@ -4640,11 +4640,14 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
         </div>
       </section>
       <section className="overflow-hidden rounded-2xl bg-white shadow-soft">
+        <div className="border-b border-slate-100 px-4 py-3 text-xs font-bold text-slate-500">
+          Susunan: Premium terbaru dahulu, kemudian Free terbaru mengikut tarikh daftar.
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
               <tr>
-                {["Name", "Email", "Email Status", "School", "State", "Role", "Subscription", "Plan", "Ends", "Last Login", "Actions"].map((header) => (
+                {["Name", "Email", "Email Status", "School", "State", "Role", "Subscription", "Plan", "Registered", "Premium Since", "Ends", "Last Login", "Actions"].map((header) => (
                   <th key={header} className="px-4 py-3">
                     {header}
                   </th>
@@ -4664,6 +4667,8 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
                   <td className="px-4 py-3 text-slate-600">{roleLabel(user.role)}</td>
                   <td className="px-4 py-3 text-slate-600">{subscriptionLabel(user.subscription_status)}</td>
                   <td className="px-4 py-3 text-slate-600">{user.subscription_plan ?? "-"}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(user.created_at)}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDate(user.subscription_started_at)}</td>
                   <td className="px-4 py-3 text-slate-600">{formatShortDate(user.subscription_ends_at)}</td>
                   <td className="px-4 py-3 text-slate-600">{formatShortDate(user.last_login_at)}</td>
                   <td className="px-4 py-3">
@@ -4675,7 +4680,7 @@ function AdminUsersPage({ isSuperAdmin, onMessage }: { isSuperAdmin: boolean; on
               ))}
               {users.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={11}>
+                  <td className="px-4 py-6 text-center text-sm font-semibold text-slate-500" colSpan={13}>
                     Tiada pengguna ditemui.
                   </td>
                 </tr>
