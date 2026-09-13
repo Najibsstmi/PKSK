@@ -39,7 +39,6 @@
   Save,
   Search,
   ShieldCheck,
-  Share2,
   Sparkles,
   Star,
   Smartphone,
@@ -192,6 +191,61 @@ type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
+
+const installPromptDismissedAtKey = "pksk_install_prompt_dismissed_at";
+const installPromptHideDurationMs = 7 * 24 * 60 * 60 * 1000;
+
+function isStandaloneDisplayMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+}
+
+function isIosInstallSurface() {
+  const navigatorWithTouch = window.navigator as Navigator & { maxTouchPoints?: number };
+  return /iPad|iPhone|iPod/i.test(window.navigator.userAgent) || (window.navigator.platform === "MacIntel" && Number(navigatorWithTouch.maxTouchPoints) > 1);
+}
+
+function isSafariInstallBrowser() {
+  const userAgent = window.navigator.userAgent;
+  return /Safari/i.test(userAgent) && !/(CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android)/i.test(userAgent);
+}
+
+function detectMobileInstallSurface() {
+  return window.matchMedia("(max-width: 767px)").matches || /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent) || isIosInstallSurface();
+}
+
+function hasActiveInstallPromptDismissal() {
+  try {
+    const dismissedAt = Number(window.localStorage.getItem(installPromptDismissedAtKey));
+    if (!Number.isFinite(dismissedAt) || dismissedAt <= 0) {
+      return false;
+    }
+
+    if (Date.now() - dismissedAt >= installPromptHideDurationMs) {
+      window.localStorage.removeItem(installPromptDismissedAtKey);
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rememberInstallPromptDismissal() {
+  try {
+    window.localStorage.setItem(installPromptDismissedAtKey, Date.now().toString());
+  } catch {
+    // localStorage can be unavailable in strict/private browser modes.
+  }
+}
+
+function clearInstallPromptDismissal() {
+  try {
+    window.localStorage.removeItem(installPromptDismissedAtKey);
+  } catch {
+    // localStorage can be unavailable in strict/private browser modes.
+  }
+}
 
 const navItems: Array<{ to: AppRoute; label: string; icon: LucideIcon; shortLabel?: string; authOnly?: boolean; premiumOnly?: boolean; adminOnly?: boolean; diamondOnly?: boolean }> = [
   { to: "/app", label: "Dashboard", shortLabel: "Utama", icon: LayoutDashboard, authOnly: true, premiumOnly: true },
@@ -654,6 +708,8 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isInstalledApp, setIsInstalledApp] = useState(false);
+  const [isMobileInstallSurface, setIsMobileInstallSurface] = useState(() => detectMobileInstallSurface());
+  const [isInstallPromptDismissed, setIsInstallPromptDismissed] = useState(() => hasActiveInstallPromptDismissal());
   const [autoOpenPayment, setAutoOpenPayment] = useState(false);
   const [marketingConsentPromptBusy, setMarketingConsentPromptBusy] = useState(false);
   const [pendingConsentPreviewSection, setPendingConsentPreviewSection] = useState<"A" | "B" | null>(null);
@@ -675,7 +731,7 @@ function App() {
   const isAuthRoute = currentRoute === "/login" || currentRoute === "/register";
   const isSimulationChoiceRoute = currentRoute === "/app/simulasi";
   const shouldShowFloatingHelpers = !isAuthRoute && !isSimulationChoiceRoute;
-  const shouldShowInstallAppButton = shouldShowFloatingHelpers && !publicRoutes.has(currentRoute);
+  const shouldShowInstallAppButton = shouldShowFloatingHelpers && isMobileInstallSurface && !isInstalledApp && !isInstallPromptDismissed;
 
   useEffect(() => {
     const urlReferralCode = new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? null;
@@ -737,21 +793,37 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
-    setIsInstalledApp(standalone);
+    const standaloneMedia = window.matchMedia("(display-mode: standalone)");
+
+    function syncInstallEnvironment() {
+      setIsInstalledApp(isStandaloneDisplayMode());
+      setIsMobileInstallSurface(detectMobileInstallSurface());
+      setIsInstallPromptDismissed(hasActiveInstallPromptDismissal());
+    }
+
+    syncInstallEnvironment();
 
     function handleBeforeInstallPrompt(event: Event) {
       event.preventDefault();
       setInstallPrompt(event as BeforeInstallPromptEvent);
+      syncInstallEnvironment();
     }
 
     function handleInstalled() {
       setInstallPrompt(null);
       setIsInstalledApp(true);
       setShowInstallHelp(false);
+      clearInstallPromptDismissal();
+      setIsInstallPromptDismissed(false);
       setMessage("PKSK Academy berjaya dipasang.");
     }
 
+    if (typeof standaloneMedia.addEventListener === "function") {
+      standaloneMedia.addEventListener("change", syncInstallEnvironment);
+    } else {
+      standaloneMedia.addListener(syncInstallEnvironment);
+    }
+    window.addEventListener("resize", syncInstallEnvironment);
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("appinstalled", handleInstalled);
 
@@ -760,6 +832,12 @@ function App() {
     }
 
     return () => {
+      if (typeof standaloneMedia.removeEventListener === "function") {
+        standaloneMedia.removeEventListener("change", syncInstallEnvironment);
+      } else {
+        standaloneMedia.removeListener(syncInstallEnvironment);
+      }
+      window.removeEventListener("resize", syncInstallEnvironment);
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleInstalled);
     };
@@ -895,19 +973,38 @@ function App() {
       return;
     }
 
-    if (!installPrompt) {
+    if (isIosInstallSurface()) {
       setShowInstallHelp(true);
       return;
     }
 
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    setInstallPrompt(null);
-    if (choice.outcome === "accepted") {
-      setMessage("PKSK Academy sedang dipasang.");
-    } else {
-      setShowInstallHelp(true);
+    if (!installPrompt) {
+      setMessage("Pilihan pasang app belum tersedia pada browser ini. Jika ada, buka menu browser dan pilih Install app atau Add to Home screen.");
+      return;
     }
+
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      setInstallPrompt(null);
+      if (choice.outcome === "accepted") {
+        clearInstallPromptDismissal();
+        setIsInstallPromptDismissed(false);
+        setIsInstalledApp(true);
+        setShowInstallHelp(false);
+        setMessage("PKSK Academy sedang dipasang.");
+      } else {
+        setMessage("Pemasangan dibatalkan. Butang pasang app masih boleh digunakan bila-bila masa.");
+      }
+    } catch {
+      setMessage("Prompt pemasangan belum tersedia. Cuba guna menu browser untuk Add to Home screen.");
+    }
+  }
+
+  function handleDismissInstallAppButton() {
+    rememberInstallPromptDismissal();
+    setIsInstallPromptDismissed(true);
+    setShowInstallHelp(false);
   }
 
   async function handleSignOut() {
@@ -1727,6 +1824,7 @@ function App() {
           showHelp={showInstallHelp}
           isInstalled={isInstalledApp}
           onInstall={handleInstallApp}
+          onDismiss={handleDismissInstallAppButton}
           onCloseHelp={() => setShowInstallHelp(false)}
         />
       ) : null}
@@ -2088,66 +2186,72 @@ function InstallAppButton({
   showHelp,
   isInstalled,
   onInstall,
+  onDismiss,
   onCloseHelp,
 }: {
   showHelp: boolean;
   isInstalled: boolean;
   onInstall: () => void;
+  onDismiss: () => void;
   onCloseHelp: () => void;
 }) {
   if (isInstalled) {
     return null;
   }
 
+  const showSafariNote = isIosInstallSurface() && !isSafariInstallBrowser();
+
   return (
     <>
-      <button
-        type="button"
-        className="fixed bottom-24 right-4 z-40 inline-flex min-h-12 items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-ocean-700 lg:bottom-6 lg:right-6"
-        onClick={onInstall}
-      >
-        <Download size={18} aria-hidden="true" />
-        Install PKSK Academy
-      </button>
+      <div className="fixed right-3 z-40 sm:hidden" style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}>
+        <div className="flex max-w-[calc(100vw-1.5rem)] items-center gap-1 rounded-full border border-white/60 bg-slate-950/95 p-1.5 pl-3 text-white shadow-[0_18px_40px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/10 backdrop-blur">
+          <button type="button" className="inline-flex min-h-10 items-center gap-2 rounded-full py-2 pr-2 text-[13px] font-black leading-none" onClick={onInstall}>
+            <span aria-hidden="true">📲</span>
+            <span>Pasang PKSK Academy</span>
+          </button>
+          <button
+            type="button"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/70"
+            onClick={onDismiss}
+            aria-label="Tutup cadangan pasang PKSK Academy selama 7 hari"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
 
       {showHelp ? (
-        <div className="fixed inset-0 z-50 grid place-items-end bg-slate-950/40 p-4 sm:place-items-center" role="dialog" aria-modal="true">
-          <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 grid place-items-end bg-slate-950/40 p-4 backdrop-blur-sm sm:place-items-center" role="dialog" aria-modal="true" aria-labelledby="ios-install-guide-title">
+          <section className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-ocean-50 text-ocean-700">
                   <Smartphone size={24} aria-hidden="true" />
                 </div>
-                <h2 className="mt-4 text-2xl font-black">Install PKSK Academy</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Jika butang install automatik tidak muncul, ikut langkah di bawah mengikut peranti.
-                </p>
+                <h2 id="ios-install-guide-title" className="mt-4 text-2xl font-black">
+                  Pasang PKSK Academy di iPhone
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Tambah PKSK Academy ke Home Screen supaya lebih mudah dibuka seperti app biasa.</p>
               </div>
               <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" onClick={onCloseHelp} aria-label="Tutup panduan install">
                 <X size={18} aria-hidden="true" />
               </button>
             </div>
 
-            <div className="mt-5 grid gap-4">
-              <article className="rounded-2xl bg-slate-50 p-4">
-                <div className="flex items-center gap-3">
-                  <Share2 size={18} className="text-ocean-700" aria-hidden="true" />
-                  <h3 className="font-black">iPhone / iPad</h3>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Buka laman ini dalam Safari, tekan butang Share, pilih Add to Home Screen, kemudian tekan Add.
-                </p>
-              </article>
-              <article className="rounded-2xl bg-slate-50 p-4">
-                <div className="flex items-center gap-3">
-                  <Download size={18} className="text-ocean-700" aria-hidden="true" />
-                  <h3 className="font-black">Android / Chrome</h3>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Buka menu browser dan pilih Install app atau Add to Home screen jika prompt automatik belum keluar.
-                </p>
-              </article>
-            </div>
+            {showSafariNote ? <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">Buka laman ini dalam Safari untuk menambah PKSK Academy ke Home Screen.</p> : null}
+
+            <ol className="mt-5 grid gap-3 text-sm font-semibold text-slate-700">
+              {["Buka PKSK Academy menggunakan Safari.", "Tekan ikon Share.", 'Pilih "Add to Home Screen".', 'Tekan "Add".'].map((step, index) => (
+                <li key={step} className="flex gap-3 rounded-2xl bg-slate-50 p-3">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ocean-100 text-xs font-black text-ocean-800">{index + 1}</span>
+                  <span className="leading-7">{step}</span>
+                </li>
+              ))}
+            </ol>
+
+            <button type="button" className="mt-5 min-h-12 w-full rounded-2xl bg-ocean-700 px-5 py-3 text-sm font-black text-white shadow-lg shadow-ocean-900/10 transition hover:bg-ocean-800" onClick={onCloseHelp}>
+              Tutup
+            </button>
           </section>
         </div>
       ) : null}
