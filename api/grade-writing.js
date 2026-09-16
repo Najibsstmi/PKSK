@@ -96,58 +96,36 @@ async function resolveEssayAttemptContext(req, attemptId) {
     throw publicError(401, "Sesi log masuk diperlukan untuk menyimpan markah Bahagian C.");
   }
 
-  const client = createSupabaseAdminClient();
+  const adminClient = createSupabaseAdminClient();
   const {
     data: { user },
     error: authError,
-  } = await client.auth.getUser(token);
+  } = await adminClient.auth.getUser(token);
 
   if (authError || !user) {
     throw publicError(401, "Sesi log masuk tamat. Sila log masuk semula dan hantar jawapan sekali lagi.");
   }
 
-  const { data: attempt, error: attemptError } = await client
-    .from("quiz_attempts")
-    .select("id,user_id,status,section,mode")
-    .eq("id", attemptId)
-    .maybeSingle();
+  const userClient = createSupabaseUserClient(token);
+  const { data: payload, error: payloadError } = await userClient.rpc("get_essay_attempt_payload", {
+    p_attempt_id: attemptId,
+  });
 
-  if (attemptError) {
-    throwDatabaseError("load essay attempt", attemptError);
+  if (payloadError) {
+    throwDatabaseError("load essay attempt payload", payloadError);
   }
-  if (!attempt || attempt.user_id !== user.id || attempt.section !== "C" || attempt.mode !== "section") {
+
+  const attempt = payload?.attempt;
+  const question = payload?.question;
+  if (!attempt || attempt.id !== attemptId || attempt.section !== "C" || attempt.mode !== "section") {
     throw publicError(404, "Cubaan Bahagian C tidak ditemui untuk akaun ini.");
   }
-
-  const { data: attemptQuestion, error: attemptQuestionError } = await client
-    .from("attempt_questions")
-    .select("question_id")
-    .eq("attempt_id", attemptId)
-    .limit(1)
-    .maybeSingle();
-
-  if (attemptQuestionError) {
-    throwDatabaseError("load essay attempt question", attemptQuestionError);
-  }
-  if (!attemptQuestion?.question_id) {
-    throw publicError(404, "Soalan Bahagian C tidak ditemui untuk cubaan ini.");
-  }
-
-  const { data: question, error: questionError } = await client
-    .from("questions")
-    .select("id,section,question_type,question_text,essay_min_words")
-    .eq("id", attemptQuestion.question_id)
-    .maybeSingle();
-
-  if (questionError) {
-    throwDatabaseError("load essay question", questionError);
-  }
-  if (!question || question.section !== "C" || question.question_type !== "essay") {
+  if (!question?.id || question.section !== "C") {
     throw publicError(404, "Soalan Bahagian C tidak sah untuk cubaan ini.");
   }
 
   return {
-    client,
+    client: adminClient,
     attemptId,
     questionId: question.id,
     userId: user.id,
@@ -190,6 +168,27 @@ function createSupabaseAdminClient() {
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function createSupabaseUserClient(token) {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw publicError(503, "Konfigurasi sesi Bahagian C belum lengkap pada server.");
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
