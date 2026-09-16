@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   try {
     const body = await readJsonBody(req);
     const attemptId = sanitizeText(body?.attemptId);
-    const attemptContext = attemptId ? await resolveEssayAttemptContext(req, attemptId) : null;
+    const attemptContext = attemptId ? await maybeResolveEssayAttemptContext(req, attemptId) : null;
     const level = sanitizeText(body?.level) || "Tahun 6";
     const question = attemptContext?.questionText ?? sanitizeText(body?.question);
     const instruction = sanitizeText(body?.instruction);
@@ -74,6 +74,19 @@ export default async function handler(req, res) {
     sendJson(res, 200, result);
   } catch (error) {
     handleApiError(res, error, "Semakan markah AI belum berjaya. Sila cuba semula, atau semak transkripsi dan hantar semula.");
+  }
+}
+
+async function maybeResolveEssayAttemptContext(req, attemptId) {
+  try {
+    return await resolveEssayAttemptContext(req, attemptId);
+  } catch (error) {
+    if (error?.code === "ESSAY_STORAGE_NOT_CONFIGURED") {
+      console.warn("Bahagian C grading storage is not configured; returning AI feedback without server-side mark persistence.");
+      return null;
+    }
+
+    throw error;
   }
 }
 
@@ -171,7 +184,9 @@ function createSupabaseAdminClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
-    throw publicError(503, "Penyimpanan markah Bahagian C belum dikonfigurasi pada server.");
+    const error = publicError(503, "Penyimpanan markah Bahagian C belum dikonfigurasi pada server.");
+    error.code = "ESSAY_STORAGE_NOT_CONFIGURED";
+    throw error;
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
