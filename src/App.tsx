@@ -109,8 +109,9 @@ import {
   rememberStoredReferralAttribution,
   ToyyibPayService,
 } from "./services/paymentService";
+import { fetchGuestPreview, scoreGuestPreview } from "./services/guestPreviewService";
 import { fetchProfile, saveMarketingConsentDecision, saveProfile, type ProfileInput } from "./services/profileService";
-import { trackPremiumPurchase } from "./utils/metaPixel";
+import { trackMetaEvent, trackPremiumPurchase } from "./utils/metaPixel";
 import {
   createCsvQuestionImport,
   createPdfQuestionImport,
@@ -145,7 +146,7 @@ import {
   type PersonalPerformanceBreakdown,
 } from "./services/performanceService";
 import type { AdminDiamondPartnerDetail, AdminDiamondPartnerRow, AgentCommissionSummary, AgentStatus, DiamondApplicationInput, DiamondDashboard, DiamondProfile } from "./types/agent";
-import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, QuestionBankCounts, SubscriptionPlan } from "./types/access";
+import type { AccessStatus, AdminKpis, AdminQuestionDetail, AdminQuestionRow, AdminUserRow, AppSettings, GuestAnswerInput, GuestPreviewPayload, GuestPreviewResult, QuestionBankCounts, SubscriptionPlan } from "./types/access";
 import type { BadgeWithProgress } from "./types/achievement";
 import type { ProfileRow, QuizAttemptRow } from "./types/database";
 import type { EssayAttemptPayload, EssaySubmitResult } from "./types/essay";
@@ -701,6 +702,8 @@ function App() {
   const [badges, setBadges] = useState<BadgeWithProgress[]>([]);
   const [pendingPayment, setPendingPayment] = useState<PaymentRequest | null>(null);
   const [diamondProfile, setDiamondProfile] = useState<DiamondProfile | null>(null);
+  const [guestPreviewPayload, setGuestPreviewPayload] = useState<GuestPreviewPayload | null>(null);
+  const [guestPreviewResult, setGuestPreviewResult] = useState<GuestPreviewResult | null>(null);
   const [activePayload, setActivePayload] = useState<AttemptPayload | null>(null);
   const [completedReviewPayload, setCompletedReviewPayload] = useState<AttemptPayload | null>(null);
   const [result, setResult] = useState<CompleteAttemptResult | null>(null);
@@ -944,7 +947,7 @@ function App() {
     setPostAuthIntent("free_preview");
     setPendingConsentPreviewSection(null);
     navigate("/register");
-    setMessage("Daftar akaun percuma dahulu untuk membuka preview PKSK.");
+    setMessage("Daftar akaun percuma untuk simpan rekod latihan dan teruskan persediaan PKSK.");
   }
 
   const openPaywall = useCallback(() => {
@@ -1049,6 +1052,9 @@ function App() {
           throw new Error(error.message);
         }
         if (data.user && data.session) {
+          trackMetaEvent("CompleteRegistration", {
+            contentName: shouldOpenFreePreview ? "Free Preview Registration" : "PKSK Academy Registration",
+          });
           const nextProfile = await saveProfile({
             id: data.user.id,
             full_name: displayName,
@@ -1069,6 +1075,9 @@ function App() {
             navigate("/premium");
           }
         } else {
+          trackMetaEvent("CompleteRegistration", {
+            contentName: shouldOpenFreePreview ? "Free Preview Registration" : "PKSK Academy Registration",
+          });
           setPostAuthIntent(shouldOpenFreePreview ? "free_preview" : null);
           setMessage("Akaun berjaya didaftarkan. Sila log masuk untuk mula menggunakan PKSK Academy.");
           setAuthMode("login");
@@ -1479,7 +1488,16 @@ function App() {
 
   async function handleStartGuestPreview(section: "A" | "B") {
     if (!isLoggedIn) {
-      openFreePreviewSignup();
+      setBusy(true);
+      setMessage(null);
+      try {
+        await preparePublicGuestPreview(section);
+      } catch (error) {
+        setMessage(toMessage(error));
+        openFreePreviewSignup();
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     if (access.isBlocked) {
@@ -1508,10 +1526,27 @@ function App() {
     void section;
     setResult(null);
     setCompletedReviewPayload(null);
+    setGuestPreviewPayload(null);
+    setGuestPreviewResult(null);
     const attemptId = await generateFreePreviewQuiz();
     const payload = await getAttemptPayload(attemptId);
     setActivePayload(payload);
     window.localStorage.setItem("pksk-active-attempt", attemptId);
+    navigate("/preview");
+  }
+
+  async function preparePublicGuestPreview(section: "A" | "B") {
+    const limit = section === "A" ? appSettings.free_preview_section_a_limit : appSettings.free_preview_section_b_limit;
+    const payload = await fetchGuestPreview(section, limit);
+    setGuestPreviewPayload(payload);
+    setGuestPreviewResult(null);
+    setResult(null);
+    setCompletedReviewPayload(null);
+    setActivePayload(null);
+    trackMetaEvent("Lead", {
+      contentName: `Free Preview Bahagian ${section}`,
+      eventId: `pksk-free-preview-${section}-${Date.now()}`,
+    });
     navigate("/preview");
   }
 
@@ -1561,6 +1596,30 @@ function App() {
     }
     if (currentRoute === "/preview") {
       if (!isLoggedIn) {
+        if (guestPreviewPayload) {
+          return (
+            <PublicGuestPreviewPage
+              payload={guestPreviewPayload}
+              result={guestPreviewResult}
+              busy={busy}
+              onScore={async (answers) => {
+                setBusy(true);
+                setMessage(null);
+                try {
+                  const nextResult = await scoreGuestPreview(answers);
+                  setGuestPreviewResult(nextResult);
+                } catch (error) {
+                  setMessage(toMessage(error));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              onRestart={() => handleStartGuestPreview(guestPreviewPayload.section)}
+              onRegister={() => openFreePreviewSignup()}
+              onShowPaywall={openPaywall}
+            />
+          );
+        }
         return (
           <AuthPage
             mode={postAuthIntent === "free_preview" ? authMode : "register"}
@@ -2055,7 +2114,7 @@ function TopBar({
               {currentRoute !== "/register" ? (
                 <button type="button" onClick={onStartFreePreview} className="topbar-free-button">
                   <Sparkles size={17} aria-hidden="true" />
-                  Daftar Percuma
+                  Cuba Percuma
                 </button>
               ) : null}
               {currentRoute !== "/login" ? (
@@ -2107,7 +2166,7 @@ function TopBar({
                 {currentRoute !== "/register" ? (
                   <button type="button" onClick={onStartFreePreview} className="topbar-free-button min-h-12 w-full">
                     <Sparkles size={17} aria-hidden="true" />
-                    Daftar Percuma
+                    Cuba Percuma
                   </button>
                 ) : null}
                 {currentRoute !== "/login" ? (
@@ -2699,6 +2758,140 @@ function PrivacyBulletList({ items }: { items: string[] }) {
   );
 }
 
+function PublicGuestPreviewPage({
+  payload,
+  result,
+  busy,
+  onScore,
+  onRestart,
+  onRegister,
+  onShowPaywall,
+}: {
+  payload: GuestPreviewPayload;
+  result: GuestPreviewResult | null;
+  busy: boolean;
+  onScore: (answers: GuestAnswerInput[]) => Promise<void>;
+  onRestart: () => void;
+  onRegister: () => void;
+  onShowPaywall: () => void;
+}) {
+  const questions = useMemo(() => sortQuizQuestions(payload.questions), [payload.questions]);
+  const [answers, setAnswers] = useState<Record<string, string | null>>({});
+  const answeredCount = questions.filter((question) => answers[question.id]).length;
+  const sectionLabel = payload.section === "A" ? "Bahagian A - Kecerdasan Insaniah" : "Bahagian B - Kecerdasan Intelek";
+  const canSubmit = answeredCount === questions.length && questions.length > 0;
+
+  useEffect(() => {
+    setAnswers({});
+  }, [payload]);
+
+  function handleSubmit() {
+    if (!canSubmit || busy) {
+      return;
+    }
+
+    void onScore(
+      questions.map((question) => ({
+        question_id: question.id,
+        selected_option_id: answers[question.id] ?? null,
+      })),
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl bg-white p-5 shadow-soft sm:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="inline-flex items-center gap-2 rounded-full bg-ocean-50 px-3 py-1.5 text-xs font-black uppercase text-ocean-700 ring-1 ring-ocean-100">
+              <Play size={15} fill="currentColor" aria-hidden="true" />
+              Preview percuma tanpa daftar
+            </p>
+            <h1 className="mt-4 text-3xl font-black leading-tight text-slate-950 sm:text-4xl">Cuba dulu suasana soalan PKSK</h1>
+            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
+              Jawab {questions.length} soalan {sectionLabel}. Selepas lihat skor, pilih sama ada mahu teruskan latihan penuh Premium RM29 atau daftar akaun percuma.
+            </p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm font-black text-slate-700 ring-1 ring-slate-100">
+            <p>{answeredCount}/{questions.length} dijawab</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Tiada akaun diperlukan untuk preview ini.</p>
+          </div>
+        </div>
+      </section>
+
+      {result ? (
+        <section className="rounded-2xl bg-white p-6 text-center shadow-soft">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-sun-100 text-amber-700">
+            <Trophy size={26} aria-hidden="true" />
+          </div>
+          <h2 className="mt-4 text-3xl font-black text-slate-950">Skor preview: {Number(result.percentage).toFixed(0)}%</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+            {result.correct_answers} daripada {result.total_questions} betul. Untuk latihan penuh Bahagian A, B dan Studio Penulisan Bahagian C, aktifkan Premium 21 hari.
+          </p>
+          <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
+            <button type="button" className="hero-premium-cta" onClick={onShowPaywall}>
+              <Crown size={18} aria-hidden="true" />
+              Aktifkan Premium RM29
+            </button>
+            <button type="button" className="secondary-button" onClick={onRegister}>
+              <UserRound size={17} aria-hidden="true" />
+              Daftar akaun percuma
+            </button>
+            <button type="button" className="secondary-button" onClick={onRestart}>
+              <RefreshCw size={17} aria-hidden="true" />
+              Cuba set lain
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="grid gap-4">
+        {questions.map((question, questionIndex) => (
+          <article key={question.id} className="rounded-2xl bg-white p-5 shadow-soft">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ocean-50 text-sm font-black text-ocean-700">{questionIndex + 1}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black uppercase text-slate-500">{question.section === "A" ? "Bahagian A" : "Bahagian B"}</p>
+                <h2 className="mt-2 text-lg font-black leading-7 text-slate-950">{question.question_text}</h2>
+                {question.question_image_url ? <QuestionImage src={question.question_image_url} /> : null}
+                <div className="mt-4 grid gap-3">
+                  {[...question.options].sort((first, second) => first.option_order - second.option_order).map((option, optionIndex) => {
+                    const selected = answers[question.id] === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold leading-6 transition ${
+                          selected ? "border-ocean-400 bg-ocean-50 text-ocean-900 ring-2 ring-ocean-100" : "border-slate-200 bg-white text-slate-700 hover:border-ocean-200"
+                        }`}
+                        onClick={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))}
+                        disabled={busy || Boolean(result)}
+                      >
+                        <span className="font-black">{optionLabels[optionIndex] ?? optionIndex + 1}.</span> <OptionContent text={option.option_text} imageUrl={option.option_image_url ?? null} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      {!result ? (
+        <section className="sticky bottom-20 z-20 rounded-2xl border border-ocean-100 bg-white/95 p-4 shadow-soft backdrop-blur lg:bottom-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-bold text-slate-600">Jawab semua soalan untuk lihat skor preview.</p>
+            <button type="button" className="primary-button" onClick={handleSubmit} disabled={!canSubmit || busy}>
+              {busy ? "Menyemak..." : "Semak Skor Preview"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function LandingPage({
   questionBankCounts,
   onStartGuestPreview,
@@ -2714,12 +2907,12 @@ function LandingPage({
   const originalPremiumPriceLabel = formatCurrency(originalPremiumPrice, currentOffer.currency);
   const premiumDiscountPercent = Math.max(0, Math.round(((originalPremiumPrice - currentOffer.price) / originalPremiumPrice) * 100));
   const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
-    { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Simulasi seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
-    { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
-    { icon: Target, title: "Analisis Prestasi", text: "Jejak kelemahan dan kekuatan murid.", tone: "bg-leaf-50 text-leaf-600" },
-    { icon: Trophy, title: "Lencana & XP", text: "Kumpul XP dan buka pencapaian.", tone: "bg-sun-100 text-amber-700" },
-    { icon: ClipboardList, title: "Persediaan Berstruktur", text: "Fokus Bahagian A, B dan C.", tone: "bg-sky-50 text-sky-700" },
-    { icon: PenLine, title: "Studio Penulisan", text: "Editor moden untuk karangan Bahagian C.", tone: "bg-coral-50 text-coral-600" },
+    { icon: ShieldCheck, title: "Tahu format awal", text: "Anak biasakan diri dengan suasana soalan PKSK.", tone: "bg-ocean-50 text-ocean-700" },
+    { icon: Brain, title: "Latih cara fikir", text: "Soalan rawak bantu anak tidak bergantung pada hafalan.", tone: "bg-violet-50 text-violet-700" },
+    { icon: Target, title: "Nampak kelemahan", text: "Ibu bapa boleh lihat bahagian yang perlu diulang.", tone: "bg-leaf-50 text-leaf-600" },
+    { icon: Clock3, title: "Biasa dengan masa", text: "Latihan bertimer bantu anak menjawab lebih tenang.", tone: "bg-sun-100 text-amber-700" },
+    { icon: ClipboardList, title: "Bahagian A, B dan C", text: "Latihan disusun mengikut komponen utama PKSK.", tone: "bg-sky-50 text-sky-700" },
+    { icon: PenLine, title: "Penulisan lebih tersusun", text: "Studio Bahagian C bantu anak bina idea dengan jelas.", tone: "bg-coral-50 text-coral-600" },
   ];
   const confidencePoints: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
     { icon: Target, title: "Fokus pada kelemahan", text: "Kenal pasti bahagian yang perlu dilatih semula.", tone: "bg-ocean-50 text-ocean-700" },
@@ -2734,20 +2927,20 @@ function LandingPage({
         <div className="landing-hero-copy">
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-ocean-100 bg-white/80 px-3 py-2 text-xs font-black uppercase text-ocean-700 shadow-sm">
             <GraduationCap size={15} aria-hidden="true" />
-            Simulasi PKSK sebenar
+            PKSK Tingkatan 1 bermula 12 Oktober 2026
           </div>
           <div className="max-w-2xl space-y-4">
             <h1 className="text-4xl font-black leading-[1.03] text-slate-950 sm:text-5xl lg:text-6xl">
-              Persediaan PKSK bermula di sini.
+              Anak Tahun 6 bakal duduki PKSK?
             </h1>
             <p className="max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-              Daftar akaun percuma, cuba soalan PKSK pilihan dan terima tips persediaan melalui e-mel sebelum naik taraf ke Premium.
+              Biasakan anak dengan simulasi Bahagian A, B dan C sebelum hari sebenar. Cuba preview tanpa daftar, kemudian aktifkan Premium RM29 untuk latihan penuh 21 hari.
             </p>
           </div>
           <div className="landing-hero-actions">
             <button type="button" className="hero-free-cta" onClick={() => onStartGuestPreview("A")}>
               <Play size={16} fill="currentColor" aria-hidden="true" />
-              Daftar Percuma & Cuba Simulasi
+              Cuba Simulasi Percuma
             </button>
             <div className="hero-premium-deal">
               {premiumDiscountPercent > 0 ? (
@@ -2771,7 +2964,7 @@ function LandingPage({
           </div>
           <div className="landing-trust-line">
             <Users size={17} aria-hidden="true" />
-            <span>Direka untuk calon Tahun 6, ibu bapa dan guru yang mahu persediaan lebih tersusun.</span>
+            <span>Direka oleh CikguSTEM khusus untuk calon Tahun 6 dan ibu bapa.</span>
           </div>
         </div>
 
@@ -3745,6 +3938,11 @@ function PaywallPage({
       return;
     }
     setPaymentError(null);
+    trackMetaEvent("InitiateCheckout", {
+      contentName: "PKSK Academy Premium",
+      value: currentOffer.price,
+      currency: currentOffer.currency,
+    });
     setPaymentMethodOpen(true);
   };
   const handleToyyibPay = async (customer?: ToyyibPayCustomerInput) => {
@@ -3767,15 +3965,14 @@ function PaywallPage({
         ? "Bayaran anda sedang disemak oleh Admin. Premium akan aktif selepas pembayaran disahkan."
         : "";
   const features = [
-    "Simulasi tanpa had",
-    "Semua bahagian",
+    "Anak biasa dengan format A, B dan C",
+    "Latihan bertimer sebelum hari sebenar",
     "Bank soalan penuh",
-    "Soalan rawak",
-    "Rekod prestasi",
-    "XP & Level",
-    "Sistem Lencana",
-    "Bahagian C",
-    "Unlimited Practice",
+    "Set berbeza pada setiap cubaan",
+    "Rekod prestasi anak",
+    "Kenal pasti bahagian yang perlu diulang",
+    "Studio Penulisan Bahagian C",
+    "Bonus bahan ulang kaji",
   ];
 
   return (
@@ -3793,7 +3990,7 @@ function PaywallPage({
             <div>
               <h1 className="text-4xl font-black leading-tight text-slate-950 sm:text-5xl">{currentOffer.displayName}</h1>
               <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-                Persediaan lengkap untuk calon PKSK yang lebih yakin, berprestasi dan bersedia.
+                Latihan penuh 21 hari untuk anak Tahun 6 membiasakan diri dengan format PKSK sebelum 12 Oktober 2026.
               </p>
             </div>
             <div className="relative overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-5 shadow-[0_18px_42px_rgba(180,83,9,0.14)]">
@@ -3893,10 +4090,13 @@ function PaywallPage({
 
       <section className="rounded-2xl bg-white p-6 shadow-soft">
         <p className="text-sm font-black uppercase text-ocean-700">FAQ</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <FaqItem title="Perlu daftar untuk cuba percuma?" text="Ya. Daftar akaun percuma dahulu, setuju dengan Notis Privasi dan terima tips/promosi e-mel untuk membuka preview." />
-          <FaqItem title="Bagaimana bayaran dibuat?" text="Pilih Bayaran Online untuk pengaktifan automatik, atau QR DuitNow jika mahu pengesahan manual melalui WhatsApp." />
-          <FaqItem title="Bagaimana Premium diaktifkan?" text="Bayaran online mengaktifkan Premium secara automatik selepas bayaran sah. QR manual masih disahkan oleh Admin." />
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FaqItem title="Perlu daftar untuk cuba percuma?" text="Tidak. Preview ringkas boleh dicuba tanpa akaun. Daftar percuma hanya diperlukan untuk menyimpan rekod dan meneruskan pengalaman latihan akaun." />
+          <FaqItem title="Apa yang dibuka dalam Premium?" text="Latihan penuh Bahagian A dan B, Studio Penulisan Bahagian C, soalan rawak, pemasa dan rekod prestasi anak." />
+          <FaqItem title="Bila Premium diaktifkan?" text="Bayaran online mengaktifkan Premium secara automatik selepas bayaran berjaya. Bayaran QR disemak oleh Admin." />
+          <FaqItem title="Boleh digunakan di telefon?" text="Ya. PKSK Academy boleh digunakan melalui telefon, tablet atau komputer dengan sambungan internet." />
+          <FaqItem title="Adakah ini laman rasmi KPM?" text="Tidak. PKSK Academy ialah platform latihan persediaan bebas oleh CikguSTEM. Sila rujuk KPM untuk maklumat rasmi PKSK." />
+          <FaqItem title="Bayaran berjaya tetapi akses belum aktif?" text="Hubungi sokongan WhatsApp dan sertakan e-mel serta bukti bayaran untuk semakan segera." />
         </div>
       </section>
       {paymentMethodOpen ? (
@@ -4006,10 +4206,10 @@ function PaymentMethodDialog({
             </div>
             <div>
               <p className="text-xs font-black uppercase text-ocean-700">{offer.displayName} {priceLabel}</p>
-              <h2 className="text-2xl font-black text-slate-950">Pilih Kaedah Pembayaran</h2>
+              <h2 className="text-2xl font-black text-slate-950">Aktifkan Premium {priceLabel}</h2>
             </div>
           </div>
-          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose}>
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100" onClick={onClose} aria-label="Tutup pilihan pembayaran">
             <X size={18} aria-hidden="true" />
           </button>
         </div>
@@ -4026,7 +4226,7 @@ function PaymentMethodDialog({
               <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
                 {isLoggedIn
                   ? "Bayaran akan dipautkan kepada akaun ini selepas bayaran online berjaya."
-                  : "Isi maklumat ini sekali sahaja. Akaun Premium akan disediakan selepas bayaran online berjaya."}
+                  : "Maklumat ini digunakan untuk menyediakan akses Premium. Akaun akan dipautkan kepada e-mel ini selepas bayaran berjaya."}
               </p>
             </div>
           </div>
@@ -4079,7 +4279,7 @@ function PaymentMethodDialog({
                   />
                 </Label>
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
-                  Jika e-mel ini sudah pernah didaftarkan, bayaran akan dipautkan kepada akaun tersebut dan kata laluan sedia ada tidak ditukar.
+                  Kata laluan ini digunakan untuk log masuk selepas bayaran. Jika e-mel sudah berdaftar, kata laluan sedia ada tidak akan ditukar.
                 </p>
                 <div className="mt-3 rounded-2xl border border-ocean-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600">
                   <label className="flex items-start gap-3">
@@ -4119,7 +4319,7 @@ function PaymentMethodDialog({
             </div>
             <h3 className="mt-5 text-xl font-black text-slate-950">Bayaran Online</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-              Bayar {priceLabel} melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
+              Anda akan dibawa ke ToyyibPay untuk membayar {priceLabel} melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
             </p>
             <button type="button" className="primary-button mt-5 w-full" onClick={handleToyyibPayClick} disabled={toyyibPayBusy}>
               <CreditCard size={18} aria-hidden="true" />
@@ -10104,6 +10304,7 @@ function PkskCountdownSection({
 }) {
   const now = useMalaysiaClock();
   const compact = variant === "dashboard";
+  const heading = compact ? "Countdown PKSK Oktober 2026" : `Countdown PKSK ${pkskInfoConfig.sessionYear}`;
   const countdownItems = pkskInfoConfig.countdownEventIds.map((eventId) => ({ eventId, event: pkskInfoConfig.events[eventId] }));
   const timelineItems = pkskInfoConfig.timelineEventIds.map((eventId) => ({ eventId, event: pkskInfoConfig.events[eventId] }));
 
@@ -10122,7 +10323,7 @@ function PkskCountdownSection({
           <div className="min-w-0">
             <p className={`text-sm font-black uppercase ${compact ? "text-ocean-700" : "text-cyan-100"}`}>Countdown</p>
             <h2 className={`${compact ? "text-2xl text-slate-950 sm:text-3xl" : "text-3xl text-white sm:text-4xl"} mt-2 font-black leading-tight`}>
-              Countdown PKSK {pkskInfoConfig.sessionYear}
+              {heading}
             </h2>
             <p className={`mt-2 text-sm leading-6 ${compact ? "text-slate-600" : "font-semibold text-cyan-50"}`}>Berapa lama lagi sebelum PKSK bermula?</p>
           </div>

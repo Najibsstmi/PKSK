@@ -16,6 +16,30 @@ declare global {
 const purchaseStoragePrefix = "pksk-meta-purchase-";
 const trackedPurchaseKeys = new Set<string>();
 
+type MetaStandardEvent = "Lead" | "CompleteRegistration" | "InitiateCheckout" | "ViewContent";
+
+type MetaEventOptions = {
+  contentName?: string;
+  value?: number;
+  currency?: string;
+  eventId?: string;
+};
+
+export function trackMetaEvent(eventName: MetaStandardEvent, options: MetaEventOptions = {}): void {
+  if (typeof window === "undefined" || typeof window.fbq !== "function") {
+    return;
+  }
+
+  const payload = {
+    content_category: "pksk_academy",
+    content_name: options.contentName ?? "PKSK Academy",
+    ...(typeof options.value === "number" ? { value: options.value, currency: options.currency ?? "MYR" } : {}),
+  };
+  const eventOptions = options.eventId ? { eventID: options.eventId } : undefined;
+
+  window.fbq("track", eventName, payload, eventOptions);
+}
+
 export function trackPremiumPurchase(purchase: MetaPurchase): void {
   if (typeof window === "undefined" || typeof window.fbq !== "function") {
     return;
