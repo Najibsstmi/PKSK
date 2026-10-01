@@ -1,9 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders, json, requireEnv } from "../_shared/cors.ts";
+import { getCurrentPremiumOffer } from "../_shared/premiumOffer.ts";
 
-const PREMIUM_AMOUNT_RM = 49;
-const PREMIUM_AMOUNT_CENTS = 4900;
 const RETURN_URL = "https://pksk.cikgustem.com/payment-result";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -71,6 +70,7 @@ serve(async (request) => {
       ? await resolveAuthenticatedCheckoutUser(serviceClient, authenticatedUser, requestPayload.customer)
       : await resolveGuestCheckoutUser(serviceClient, requestPayload.customer);
     const referralAttribution = await resolveReferralAttribution(serviceClient, checkoutUser.id, requestPayload.referralCode);
+    const offer = getCurrentPremiumOffer();
 
     const externalReference = `PKSK-${checkoutUser.id}-${Date.now()}`;
     const callbackUrl = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/toyyibpay-callback`;
@@ -80,7 +80,7 @@ serve(async (request) => {
       .insert({
         user_id: checkoutUser.id,
         email: checkoutUser.email,
-        amount: PREMIUM_AMOUNT_RM,
+        amount: offer.priceRm,
         currency: "MYR",
         status: "pending",
         provider: "toyyibpay",
@@ -88,7 +88,7 @@ serve(async (request) => {
         external_reference: externalReference,
         referral_code: referralAttribution.referralCode,
         referral_agent_id: referralAttribution.agentId,
-        notes: authenticatedUser ? "ToyyibPay online banking" : "ToyyibPay checkout with customer signup",
+        notes: `${offer.planCode} | ${authenticatedUser ? "ToyyibPay online banking" : "ToyyibPay checkout with customer signup"}`,
       })
       .select("id")
       .single();
@@ -102,11 +102,11 @@ serve(async (request) => {
     const billPayload = new URLSearchParams({
       userSecretKey: secretKey,
       categoryCode,
-      billName: "PKSK Academy Premium",
-      billDescription: "PKSK Academy Premium",
+      billName: offer.displayName,
+      billDescription: offer.durationDays ? `${offer.displayName} - Premium ${offer.durationDays} hari` : "PKSK Academy Premium Lifetime",
       billPriceSetting: "1",
       billPayorInfo: "1",
-      billAmount: String(PREMIUM_AMOUNT_CENTS),
+      billAmount: String(offer.amountCents),
       billReturnUrl: returnUrl,
       billCallbackUrl: callbackUrl,
       billExternalReferenceNo: externalReference,
@@ -114,7 +114,7 @@ serve(async (request) => {
       billEmail: checkoutUser.email,
       billPhone: checkoutUser.phone,
       billPaymentChannel: "0",
-      billContentEmail: "Terima kasih kerana melanggan PKSK Academy Premium.",
+      billContentEmail: `Terima kasih kerana melanggan ${offer.displayName}.`,
     });
 
     const toyEndpoint = buildCreateBillEndpoint(baseUrl);
@@ -167,6 +167,11 @@ serve(async (request) => {
       paymentUrl: `${baseUrl}/${billCode}`,
       callbackUrl,
       returnUrl,
+      offer: {
+        planCode: offer.planCode,
+        amount: offer.priceRm,
+        durationDays: offer.durationDays,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ToyyibPay bill could not be created.";

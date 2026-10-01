@@ -153,6 +153,7 @@ import type { DraftOption, DraftReviewStatus, ImportedQuestionDraft, ManualQuest
 import type { AdminPaymentRequestRow, PaymentRequest, ToyyibPayCustomerInput } from "./types/payment";
 import type { AttemptPayload, CompleteAttemptResult, PkskSectionCode, QuizMode, QuizQuestion, RevealedQuizAnswer } from "./types/quiz";
 import { getLevelProgress } from "./utils/levelSystem";
+import { getCurrentPremiumOffer, type PremiumOffer } from "./utils/premiumOffer";
 
 type AppRoute =
   | "/"
@@ -1552,7 +1553,6 @@ function App() {
     if (currentRoute === "/") {
       return (
         <LandingPage
-          settings={appSettings}
           questionBankCounts={questionBankCounts}
           onStartGuestPreview={handleStartGuestPreview}
           onShowPaywall={openPaywall}
@@ -1620,6 +1620,7 @@ function App() {
         <PaymentResultPage
           isLoggedIn={isLoggedIn}
           access={access}
+          accessStatus={accessStatus}
           onAuth={openAuth}
           onNavigate={navigate}
           onRefreshStatus={refreshCurrentUserData}
@@ -2699,20 +2700,19 @@ function PrivacyBulletList({ items }: { items: string[] }) {
 }
 
 function LandingPage({
-  settings,
   questionBankCounts,
   onStartGuestPreview,
   onShowPaywall,
 }: {
-  settings: AppSettings;
   questionBankCounts: QuestionBankCounts | null;
   onStartGuestPreview: (section: "A" | "B") => void;
   onShowPaywall: () => void;
 }) {
-  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const currentOffer = getCurrentPremiumOffer();
+  const priceLabel = formatCurrency(currentOffer.price, currentOffer.currency);
   const originalPremiumPrice = 199;
-  const originalPremiumPriceLabel = formatCurrency(originalPremiumPrice, settings.payment_currency);
-  const premiumDiscountPercent = Math.max(0, Math.round(((originalPremiumPrice - settings.payment_price) / originalPremiumPrice) * 100));
+  const originalPremiumPriceLabel = formatCurrency(originalPremiumPrice, currentOffer.currency);
+  const premiumDiscountPercent = Math.max(0, Math.round(((originalPremiumPrice - currentOffer.price) / originalPremiumPrice) * 100));
   const featureHighlights: Array<{ icon: LucideIcon; title: string; text: string; tone: string }> = [
     { icon: ShieldCheck, title: "Simulasi Sebenar", text: "Simulasi seperti peperiksaan sebenar PKSK.", tone: "bg-ocean-50 text-ocean-700" },
     { icon: Brain, title: "Soalan Rawak", text: "Setiap simulasi berbeza setiap kali.", tone: "bg-violet-50 text-violet-700" },
@@ -2763,7 +2763,7 @@ function LandingPage({
                 </span>
                 <span className="hero-premium-deal-copy">
                   <span>Premium {priceLabel}</span>
-                  <small>Sekali bayar</small>
+                  <small>{currentOffer.isPromotion ? "21 hari" : "Sekali bayar"}</small>
                 </span>
                 <ChevronRight size={17} aria-hidden="true" />
               </button>
@@ -3718,9 +3718,10 @@ function PaywallPage({
   const [manualPaymentOpen, setManualPaymentOpen] = useState(false);
   const [toyyibPayBusy, setToyyibPayBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const currentOffer = getCurrentPremiumOffer();
+  const priceLabel = formatCurrency(currentOffer.price, currentOffer.currency);
   const canUsePremium = access.canUsePremiumFeature();
-  const primaryLabel = canUsePremium ? "Buka PKSK Academy" : `Dapatkan Premium ${priceLabel}`;
+  const primaryLabel = canUsePremium ? "Buka PKSK Academy" : currentOffer.ctaLabel;
   const previewQuestionText = `${settings.free_preview_section_a_limit} soalan A + ${settings.free_preview_section_b_limit} soalan B`;
 
   useEffect(() => {
@@ -3787,27 +3788,32 @@ function PaywallPage({
           <div className="flex flex-col justify-center gap-6 bg-gradient-to-br from-white via-white to-amber-50/45 p-6 sm:p-8 lg:p-12">
             <div className="inline-flex w-fit items-center gap-2 rounded-xl bg-sun-100 px-3 py-2 text-sm font-black text-amber-700">
               <Crown size={17} aria-hidden="true" />
-              Premium PKSK Academy
+              {currentOffer.headline}
             </div>
             <div>
-              <h1 className="text-4xl font-black leading-tight text-slate-950 sm:text-5xl">PKSK Academy Premium</h1>
+              <h1 className="text-4xl font-black leading-tight text-slate-950 sm:text-5xl">{currentOffer.displayName}</h1>
               <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
                 Persediaan lengkap untuk calon PKSK yang lebih yakin, berprestasi dan bersedia.
               </p>
             </div>
             <div className="relative overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-sun-50 p-5 shadow-[0_18px_42px_rgba(180,83,9,0.14)]">
               <div className="mb-4 flex justify-end">
-                <span className="rounded-full bg-rose-500 px-4 py-1 text-xs font-black uppercase text-white shadow-lg">Jimat RM150</span>
+                <span className="rounded-full bg-rose-500 px-4 py-1 text-xs font-black uppercase text-white shadow-lg">
+                  {currentOffer.isPromotion ? "Promosi terhad" : "Jimat RM150"}
+                </span>
               </div>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-sm font-black text-slate-500">Harga Asal</p>
-                  <p className="text-2xl font-black text-slate-500 line-through decoration-rose-500 decoration-4">RM199</p>
+                  <p className="text-sm font-black text-slate-500">{currentOffer.isPromotion ? "Harga biasa" : "Harga Asal"}</p>
+                  <p className="text-2xl font-black text-slate-500 line-through decoration-rose-500 decoration-4">{currentOffer.isPromotion ? "RM49" : "RM199"}</p>
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-6xl font-black leading-none text-ocean-700">{priceLabel}</p>
-                  <p className="mt-2 inline-flex rounded-full bg-amber-100 px-4 py-1 text-sm font-black uppercase text-amber-700">Bayaran sekali sahaja</p>
-                  <p className="mt-2 text-sm font-bold text-slate-600">Akses seumur hidup</p>
+                  <p className="mt-2 inline-flex rounded-full bg-amber-100 px-4 py-1 text-sm font-black uppercase text-amber-700">
+                    {currentOffer.isPromotion ? "Promosi Khas PKSK 2026" : "Bayaran sekali sahaja"}
+                  </p>
+                  <p className="mt-2 text-sm font-bold text-slate-600">{currentOffer.accessText}</p>
+                  {currentOffer.deadlineText ? <p className="mt-1 text-sm font-bold text-rose-600">{currentOffer.deadlineText}</p> : null}
                 </div>
               </div>
               {accessNotice ? <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-sm font-bold leading-6 text-slate-700">{accessNotice}</p> : null}
@@ -3895,7 +3901,6 @@ function PaywallPage({
       </section>
       {paymentMethodOpen ? (
         <PaymentMethodDialog
-          settings={settings}
           isLoggedIn={isLoggedIn}
           userEmail={userEmail}
           initialCustomerName={profileName}
@@ -3904,6 +3909,7 @@ function PaywallPage({
           onClose={() => setPaymentMethodOpen(false)}
           onToyyibPay={handleToyyibPay}
           onNavigate={onNavigate}
+          offer={currentOffer}
           onManualQr={() => {
             setPaymentMethodOpen(false);
             setManualPaymentOpen(true);
@@ -3913,6 +3919,7 @@ function PaywallPage({
       {manualPaymentOpen ? (
         <ManualPaymentDialog
           settings={settings}
+          offer={currentOffer}
           userEmail={userEmail}
           onClose={() => setManualPaymentOpen(false)}
           onPaymentSubmitted={async () => {
@@ -3926,7 +3933,6 @@ function PaywallPage({
 }
 
 function PaymentMethodDialog({
-  settings,
   isLoggedIn,
   userEmail,
   initialCustomerName,
@@ -3935,9 +3941,9 @@ function PaymentMethodDialog({
   onClose,
   onToyyibPay,
   onNavigate,
+  offer,
   onManualQr,
 }: {
-  settings: AppSettings;
   isLoggedIn: boolean;
   userEmail: string;
   initialCustomerName: string;
@@ -3946,9 +3952,10 @@ function PaymentMethodDialog({
   onClose: () => void;
   onToyyibPay: (customer?: ToyyibPayCustomerInput) => Promise<void>;
   onNavigate: (route: AppRoute) => void;
+  offer: PremiumOffer;
   onManualQr: () => void;
 }) {
-  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const priceLabel = formatCurrency(offer.price, offer.currency);
   const [customerName, setCustomerName] = useState(initialCustomerName);
   const [customerEmail, setCustomerEmail] = useState(userEmail);
   const [customerPhone, setCustomerPhone] = useState("");
@@ -3998,7 +4005,7 @@ function PaymentMethodDialog({
               <CreditCard size={23} aria-hidden="true" />
             </div>
             <div>
-              <p className="text-xs font-black uppercase text-ocean-700">Premium {priceLabel}</p>
+              <p className="text-xs font-black uppercase text-ocean-700">{offer.displayName} {priceLabel}</p>
               <h2 className="text-2xl font-black text-slate-950">Pilih Kaedah Pembayaran</h2>
             </div>
           </div>
@@ -4112,11 +4119,11 @@ function PaymentMethodDialog({
             </div>
             <h3 className="mt-5 text-xl font-black text-slate-950">Bayaran Online</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-              Bayar melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
+              Bayar {priceLabel} melalui perbankan dalam talian. Premium diaktifkan secara automatik selepas bayaran berjaya.
             </p>
             <button type="button" className="primary-button mt-5 w-full" onClick={handleToyyibPayClick} disabled={toyyibPayBusy}>
               <CreditCard size={18} aria-hidden="true" />
-              {toyyibPayBusy ? "Menyediakan bayaran..." : "Bayar Secara Online"}
+              {toyyibPayBusy ? "Menyediakan bayaran..." : offer.ctaLabel}
             </button>
           </article>
 
@@ -4142,24 +4149,30 @@ function PaymentMethodDialog({
 
 function ManualPaymentDialog({
   settings,
+  offer,
   userEmail,
   onClose,
   onPaymentSubmitted,
 }: {
   settings: AppSettings;
+  offer: PremiumOffer;
   userEmail: string;
   onClose: () => void;
   onPaymentSubmitted: () => Promise<void>;
 }) {
   const [email, setEmail] = useState(userEmail);
   const [busy, setBusy] = useState(false);
-  const priceLabel = formatCurrency(settings.payment_price, settings.payment_currency);
+  const priceLabel = formatCurrency(offer.price, offer.currency);
 
   async function handlePaid() {
     setBusy(true);
     try {
       await ManualPaymentService.createRequest(email || null);
-      const whatsappUrl = ManualPaymentService.buildConfirmationUrl(settings);
+      const whatsappUrl = ManualPaymentService.buildConfirmationUrl({
+        ...settings,
+        payment_price: offer.price,
+        payment_currency: offer.currency,
+      });
       const opened = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
       if (!opened) {
         window.location.href = whatsappUrl;
@@ -4191,7 +4204,8 @@ function ManualPaymentDialog({
         <div className="mt-5 rounded-2xl border border-ocean-100 bg-ocean-50 p-5 text-center">
           <p className="text-sm font-black uppercase text-ocean-700">Harga Premium</p>
           <p className="mt-1 text-5xl font-black text-slate-950">{priceLabel}</p>
-          <p className="mt-2 text-sm font-bold text-slate-600">Bayaran sekali sahaja. Tiada caj bulanan.</p>
+          <p className="mt-2 text-sm font-bold text-slate-600">{offer.accessText}</p>
+          {offer.deadlineText ? <p className="mt-1 text-sm font-bold text-rose-600">{offer.deadlineText}</p> : null}
         </div>
 
         <p className="mt-5 text-center text-sm font-semibold leading-6 text-slate-600">
@@ -4296,12 +4310,14 @@ function CheckoutPage({
 function PaymentResultPage({
   isLoggedIn,
   access,
+  accessStatus,
   onAuth,
   onNavigate,
   onRefreshStatus,
 }: {
   isLoggedIn: boolean;
   access: ReturnType<typeof useAccess>;
+  accessStatus: AccessStatus | null;
   onAuth: (mode: AuthMode) => void;
   onNavigate: (route: AppRoute) => void;
   onRefreshStatus: () => Promise<void>;
@@ -4321,7 +4337,7 @@ function PaymentResultPage({
           const verification = await ToyyibPayService.verifyPayment(returnTarget);
           if (verification.status === "paid" || verification.status === "approved" || verification.premiumActivated) {
             trackPremiumPurchase({
-              amount: 49,
+              amount: verification.amount ?? 49,
               currency: "MYR",
               externalReference: returnTarget.externalReference ?? null,
               paymentId: verification.paymentId,
@@ -4334,7 +4350,7 @@ function PaymentResultPage({
               id: verification.paymentId,
               user_id: null,
               email: null,
-              amount: 49,
+              amount: verification.amount ?? 49,
               currency: "MYR",
               status: verification.status,
               provider: "toyyibpay",
@@ -4417,13 +4433,17 @@ function PaymentResultPage({
   }
 
   if (access.canUsePremiumFeature()) {
+    const premiumUntilText = accessStatus?.subscription_ends_at
+      ? `Akses Premium anda aktif sehingga ${formatFullDate(accessStatus.subscription_ends_at)}.`
+      : "Premium telah diaktifkan untuk akaun ini.";
+
     return (
       <section className="mx-auto max-w-2xl rounded-2xl bg-white p-8 text-center shadow-soft">
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-leaf-50 text-leaf-600">
           <CheckCircle2 size={28} aria-hidden="true" />
         </div>
         <h1 className="mt-5 text-3xl font-black text-slate-950">Pembayaran berjaya.</h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">Premium telah diaktifkan untuk akaun ini.</p>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">{premiumUntilText}</p>
         <button type="button" className="primary-button mx-auto mt-6" onClick={() => onNavigate("/app")}>
           Buka PKSK Academy
         </button>
@@ -5232,7 +5252,7 @@ function AdminPaymentRequestsPage({
                           type="button"
                           className="rounded-lg bg-leaf-50 px-3 py-2 text-xs font-black text-leaf-600"
                           disabled={busyAction === request.id}
-                          onClick={() => runAction(request.id, () => approvePaymentRequest(request.id), "Bayaran diluluskan. Premium lifetime telah diaktifkan.")}
+                          onClick={() => runAction(request.id, () => approvePaymentRequest(request.id), "Bayaran diluluskan. Premium telah diaktifkan mengikut pelan bayaran.")}
                         >
                           Approve
                         </button>
@@ -10725,6 +10745,14 @@ function formatShortDate(value: string | null): string {
   return new Intl.DateTimeFormat("ms-MY", {
     day: "numeric",
     month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatFullDate(value: string): string {
+  return new Intl.DateTimeFormat("ms-MY", {
+    day: "numeric",
+    month: "long",
     year: "numeric",
   }).format(new Date(value));
 }

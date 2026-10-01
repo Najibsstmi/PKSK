@@ -4,7 +4,7 @@ import type { QuizQuestion } from "./quiz";
 
 export type UserRole = "user" | "admin" | "super_admin";
 export type SubscriptionStatus = "free" | "premium" | "expired" | "blocked";
-export type SubscriptionPlan = "monthly" | "6_months" | "yearly" | "lifetime";
+export type SubscriptionPlan = "monthly" | "6_months" | "yearly" | "lifetime" | "pksk_promo_2026_21d";
 
 export type AccessStatus = {
   is_guest: boolean;

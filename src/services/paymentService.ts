@@ -39,6 +39,7 @@ export const ManualPaymentService: PaymentProvider = {
       "Assalamualaikum CikguSTEM.",
       "",
       "Saya sudah membuat pembayaran Premium PKSK Academy.",
+      `Jumlah bayaran: RM${Number(config.payment_price).toFixed(0)}`,
       "",
       "Email langganan saya ialah:",
       "",
@@ -92,6 +93,7 @@ export const ToyyibPayService = {
       billCode: String(payload.billCode ?? ""),
       paymentUrl: String(payload.paymentUrl),
       callbackUrl: String(payload.callbackUrl ?? ""),
+      offer: payload.offer,
     };
   },
 
@@ -118,6 +120,8 @@ export const ToyyibPayService = {
       paymentId: String(payload?.paymentId ?? target.paymentId ?? ""),
       providerReference: payload?.providerReference ? String(payload.providerReference) : null,
       premiumActivated: Boolean(payload?.premiumActivated),
+      amount: typeof payload?.amount === "number" ? payload.amount : null,
+      subscriptionEndsAt: payload?.subscriptionEndsAt ? String(payload.subscriptionEndsAt) : null,
     };
   },
 };

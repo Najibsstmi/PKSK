@@ -59,6 +59,11 @@ export type ToyyibPayBillResult = {
   billCode: string;
   paymentUrl: string;
   callbackUrl: string;
+  offer?: {
+    planCode: string;
+    amount: number;
+    durationDays: number | null;
+  };
 };
 
 export type ToyyibPayVerifyTarget = {
@@ -73,6 +78,8 @@ export type ToyyibPayVerifyResult = {
   paymentId: string;
   providerReference: string | null;
   premiumActivated: boolean;
+  amount: number | null;
+  subscriptionEndsAt: string | null;
 };
 
 export type ToyyibPayCustomerInput = {

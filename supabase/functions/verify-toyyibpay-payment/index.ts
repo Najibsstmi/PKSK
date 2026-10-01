@@ -1,9 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders, json, requireEnv } from "../_shared/cors.ts";
-
-const PREMIUM_AMOUNT_RM = 49;
-const PREMIUM_AMOUNT_CENTS = 4900;
+import { getOfferForAmount } from "../_shared/premiumOffer.ts";
 
 type VerifyPayload = {
   paymentId?: string;
@@ -60,6 +58,11 @@ serve(async (request) => {
       return json(request, { error: "INVALID_PAYMENT_METHOD" }, 400);
     }
 
+    const expectedOffer = getOfferForAmount(payment.amount);
+    if (!expectedOffer) {
+      return json(request, { error: "INVALID_PAYMENT_AMOUNT" }, 400);
+    }
+
     if (payment.status === "paid" || payment.status === "approved") {
       return json(request, {
         ok: true,
@@ -67,6 +70,8 @@ serve(async (request) => {
         status: payment.status,
         paymentId: payment.id,
         premiumActivated: true,
+        amount: expectedOffer.priceRm,
+        subscriptionEndsAt: expectedOffer.durationDays ? await fetchSubscriptionEndsAt(serviceClient, payment.user_id) : null,
       });
     }
 
@@ -88,14 +93,14 @@ serve(async (request) => {
     });
 
     if (verificationStatus === "paid") {
-      if (amountCents !== null && amountCents !== PREMIUM_AMOUNT_CENTS) {
+      if (amountCents !== null && amountCents !== expectedOffer.amountCents) {
         await serviceClient
           .from("payment_requests")
           .update({
             status: "failed",
             provider_reference: providerReference || payment.provider_reference,
             provider_response: providerResponse,
-            notes: `ToyyibPay amount mismatch. Expected RM${PREMIUM_AMOUNT_RM}.`,
+            notes: `ToyyibPay amount mismatch. Expected RM${expectedOffer.priceRm}.`,
           })
           .eq("id", payment.id);
 
@@ -119,6 +124,8 @@ serve(async (request) => {
         paymentId: payment.id,
         providerReference,
         premiumActivated: true,
+        amount: expectedOffer.priceRm,
+        subscriptionEndsAt: readActivationString(activation, "subscription_ends_at"),
         activation,
       });
     }
@@ -284,6 +291,20 @@ async function assertCanVerifyPayment(serviceClient: ReturnType<typeof createCli
   throw new Error("PAYMENT_ACCESS_DENIED");
 }
 
+async function fetchSubscriptionEndsAt(serviceClient: ReturnType<typeof createClient>, userId: string | null): Promise<string | null> {
+  if (!userId) {
+    return null;
+  }
+
+  const { data, error } = await serviceClient.from("profiles").select("subscription_ends_at").eq("id", userId).maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const value = (data as { subscription_ends_at?: unknown } | null)?.subscription_ends_at;
+  return typeof value === "string" ? value : null;
+}
+
 async function fetchToyyibPayTransactions(baseUrl: string, secretKey: string, billCode: string): Promise<unknown> {
   const endpoint = buildTransactionsEndpoint(baseUrl);
   const body = new URLSearchParams({
@@ -432,4 +453,13 @@ function parseToyyibPayResponse(text: string): unknown {
 
 function toJsonObject(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : { raw: payload };
+}
+
+function readActivationString(payload: unknown, key: string): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
 }

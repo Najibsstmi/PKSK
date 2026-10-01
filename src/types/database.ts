@@ -12,7 +12,7 @@ export type ProfileRow = {
   level: number;
   role: "user" | "admin" | "super_admin";
   subscription_status: "free" | "premium" | "expired" | "blocked";
-  subscription_plan: "monthly" | "6_months" | "yearly" | "lifetime" | null;
+  subscription_plan: "monthly" | "6_months" | "yearly" | "lifetime" | "pksk_promo_2026_21d" | null;
   subscription_started_at: string | null;
   subscription_ends_at: string | null;
   access_granted_at: string | null;
@@ -143,7 +143,7 @@ export type XpHistoryRow = {
 
 export type SubscriptionPlanRow = {
   id: string;
-  code: "monthly" | "6_months" | "yearly" | "lifetime";
+  code: "monthly" | "6_months" | "yearly" | "lifetime" | "pksk_promo_2026_21d";
   name: string;
   description: string | null;
   duration_days: number | null;
@@ -245,7 +245,7 @@ export type Database = {
           level?: number;
           role?: "user" | "admin" | "super_admin";
           subscription_status?: "free" | "premium" | "expired" | "blocked";
-          subscription_plan?: "monthly" | "6_months" | "yearly" | "lifetime" | null;
+          subscription_plan?: "monthly" | "6_months" | "yearly" | "lifetime" | "pksk_promo_2026_21d" | null;
           subscription_started_at?: string | null;
           subscription_ends_at?: string | null;
           access_granted_at?: string | null;

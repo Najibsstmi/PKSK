@@ -2,9 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { Md5 } from "https://deno.land/std@0.160.0/hash/md5.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders, json, requireEnv } from "../_shared/cors.ts";
-
-const PREMIUM_AMOUNT_RM = 49;
-const PREMIUM_AMOUNT_CENTS = 4900;
+import { getOfferForAmount } from "../_shared/premiumOffer.ts";
 
 type CallbackPayload = Record<string, string>;
 
@@ -51,15 +49,20 @@ serve(async (request) => {
       return json(request, { error: "PAYMENT_REQUEST_NOT_FOUND" }, 404);
     }
 
+    const expectedOffer = getOfferForAmount(payment.amount);
+    if (!expectedOffer) {
+      return json(request, { error: "INVALID_PAYMENT_AMOUNT" }, 400);
+    }
+
     const amountCents = normalizeAmountToCents(payload.amount);
-    if (amountCents !== null && amountCents !== PREMIUM_AMOUNT_CENTS) {
+    if (amountCents !== null && amountCents !== expectedOffer.amountCents) {
       await serviceClient
         .from("payment_requests")
         .update({
           status: "failed",
           provider_reference: refno || null,
           provider_response: payload,
-          notes: `ToyyibPay amount mismatch. Expected RM${PREMIUM_AMOUNT_RM}.`,
+          notes: `ToyyibPay amount mismatch. Expected RM${expectedOffer.priceRm}.`,
         })
         .eq("id", payment.id);
 
