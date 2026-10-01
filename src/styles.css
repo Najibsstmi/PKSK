@@ -1947,16 +1947,19 @@ a {
   .hero-free-cta {
     position: relative;
     display: inline-flex;
-    min-height: 58px;
+    width: 100%;
+    min-height: 56px;
     align-items: center;
     justify-content: center;
     gap: 10px;
     border-radius: 16px;
     background: linear-gradient(135deg, #0f66d0 0%, #0497b8 48%, #14b8a6 100%);
-    padding: 0 28px;
+    padding: 0 20px;
     color: #ffffff;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 950;
+    line-height: 1.25;
+    text-align: center;
     box-shadow:
       0 18px 34px rgba(8, 145, 178, 0.26),
       0 8px 16px rgba(15, 102, 208, 0.18);
@@ -1974,12 +1977,21 @@ a {
     transform: translateY(-2px) scale(1.01);
   }
 
+  .landing-hero-actions {
+    display: grid;
+    width: min(100%, 680px);
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    align-items: end;
+    gap: 14px;
+  }
+
   .hero-premium-deal {
     position: relative;
     display: inline-flex;
+    width: 100%;
     flex-direction: column;
     align-items: stretch;
-    padding-top: 15px;
+    padding-top: 18px;
   }
 
   .hero-discount-ribbon {
@@ -1988,7 +2000,7 @@ a {
     top: 0;
     z-index: 2;
     display: inline-flex;
-    min-height: 24px;
+    min-height: 26px;
     max-width: calc(100% - 16px);
     align-items: center;
     justify-content: center;
@@ -1998,7 +2010,7 @@ a {
     background: linear-gradient(135deg, #111827 0%, #292114 48%, #171717 100%);
     padding: 0 10px;
     color: #fde68a;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 950;
     line-height: 1;
     text-align: center;
@@ -2023,7 +2035,8 @@ a {
     position: relative;
     isolation: isolate;
     display: inline-flex;
-    min-height: 58px;
+    width: 100%;
+    min-height: 72px;
     align-items: center;
     justify-content: center;
     gap: 9px;
@@ -2034,9 +2047,9 @@ a {
       radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.9), transparent 20%),
       radial-gradient(circle at 86% 18%, rgba(254, 249, 195, 0.95), transparent 24%),
       linear-gradient(135deg, #fde68a 0%, #fbbf24 38%, #f59e0b 70%, #facc15 100%);
-    padding: 0 18px;
+    padding: 0 24px;
     color: #171005;
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 950;
     text-align: left;
     white-space: nowrap;
@@ -2111,8 +2124,8 @@ a {
 
   .hero-premium-deal-icon {
     display: grid;
-    width: 34px;
-    height: 34px;
+    width: 42px;
+    height: 42px;
     flex: 0 0 auto;
     place-items: center;
     border-radius: 12px;
@@ -2138,7 +2151,7 @@ a {
 
   .hero-premium-deal-copy small {
     color: rgba(23, 16, 5, 0.68);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 900;
   }
 
@@ -2266,6 +2279,12 @@ a {
   }
 
   @media (max-width: 640px) {
+    .landing-hero-actions {
+      width: 100%;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
     .hero-free-cta,
     .hero-premium-cta,
     .hero-preview-cta {

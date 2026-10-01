@@ -2744,7 +2744,7 @@ function LandingPage({
               Daftar akaun percuma, cuba soalan PKSK pilihan dan terima tips persediaan melalui e-mel sebelum naik taraf ke Premium.
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="landing-hero-actions">
             <button type="button" className="hero-free-cta" onClick={() => onStartGuestPreview("A")}>
               <Play size={16} fill="currentColor" aria-hidden="true" />
               Daftar Percuma & Cuba Simulasi
