@@ -9815,16 +9815,18 @@ function LeaderboardRow({ row }: { row: AcademyLeaderboardRow }) {
   const isChampion = row.rank === 1;
 
   return (
-    <div className={`flex items-center gap-3 rounded-xl px-3 py-3 ${row.is_current_user ? "bg-cyan-50 ring-1 ring-cyan-200" : "bg-white"}`}>
+    <div className={`grid grid-cols-[2.25rem_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-xl px-3 py-3 ${row.is_current_user ? "bg-cyan-50 ring-1 ring-cyan-200" : "bg-white"}`}>
       <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm font-black ${isChampion ? "bg-sun-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
         {isChampion ? <Crown size={18} aria-hidden="true" /> : row.rank}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-black text-slate-950">{row.display_name}</p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="min-w-0 truncate text-sm font-black text-slate-950" title={row.display_name}>{row.display_name}</p>
+          {row.is_current_user ? <span className="shrink-0 rounded-full bg-ocean-100 px-2 py-1 text-[10px] font-black text-ocean-700">Anda</span> : null}
+        </div>
         <p className="text-[11px] font-bold text-slate-500">{row.achieved_at ? formatShortDate(row.achieved_at) : "Tarikh belum direkod"}</p>
       </div>
-      {row.is_current_user ? <span className="rounded-full bg-ocean-100 px-2 py-1 text-[10px] font-black text-ocean-700">Anda</span> : null}
-      <span className="shrink-0 text-base font-black text-slate-950">{formatScore(row.percentage)}%</span>
+      <span className="w-14 shrink-0 text-right text-base font-black text-slate-950">{formatScore(row.percentage)}%</span>
     </div>
   );
 }
