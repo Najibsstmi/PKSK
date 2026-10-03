@@ -3,6 +3,7 @@
   BookOpen,
   Brain,
   CalendarCheck,
+  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Clock3,
@@ -9679,9 +9680,9 @@ function AcademyLeaderboardSection({
   onRetry: () => void;
 }) {
   const sections: Array<{ section: PkskSectionCode; title: string; label: string; icon: LucideIcon; tone: string }> = [
-    { section: "A", title: "Bahagian A", label: "Top 5 Insaniah", icon: HeartHandshake, tone: "from-cyan-600 to-ocean-700" },
-    { section: "B", title: "Bahagian B", label: "Top 5 Intelek", icon: Brain, tone: "from-emerald-600 to-teal-700" },
-    { section: "C", title: "Bahagian C", label: "Top 5 Penulisan", icon: PenLine, tone: "from-amber-500 to-orange-600" },
+    { section: "A", title: "Bahagian A", label: "Top 20 Insaniah", icon: HeartHandshake, tone: "from-cyan-600 to-ocean-700" },
+    { section: "B", title: "Bahagian B", label: "Top 20 Intelek", icon: Brain, tone: "from-emerald-600 to-teal-700" },
+    { section: "C", title: "Bahagian C", label: "Top 20 Penulisan", icon: PenLine, tone: "from-amber-500 to-orange-600" },
   ];
 
   return (
@@ -9740,6 +9741,13 @@ function LeaderboardBoard({
   rows: AcademyLeaderboardRow[];
   loading: boolean;
 }) {
+  const rowsPerPage = 5;
+  const leaderboardRows = rows.slice(0, 20);
+  const pageCount = Math.max(1, Math.ceil(leaderboardRows.length / rowsPerPage));
+  const [page, setPage] = useState(0);
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleRows = leaderboardRows.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage);
+
   return (
     <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
       <div className={`bg-gradient-to-br ${tone} p-4 text-white`}>
@@ -9762,8 +9770,8 @@ function LeaderboardBoard({
               <span className="h-3 w-10 rounded-full bg-slate-100" />
             </div>
           ))
-        ) : rows.length > 0 ? (
-          rows.map((row) => <LeaderboardRow key={`${row.section}-${row.rank}-${row.display_name}`} row={row} />)
+        ) : visibleRows.length > 0 ? (
+          visibleRows.map((row) => <LeaderboardRow key={`${row.section}-${row.rank}-${row.display_name}`} row={row} />)
         ) : (
           <div className="rounded-xl bg-white px-4 py-5 text-center">
             <p className="text-sm font-black text-slate-800">Belum ada murid layak.</p>
@@ -9771,6 +9779,34 @@ function LeaderboardBoard({
           </div>
         )}
       </div>
+
+      {!loading && leaderboardRows.length > rowsPerPage ? (
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-3 py-3">
+          <button
+            type="button"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-ocean-300 hover:bg-ocean-50 hover:text-ocean-700 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => setPage(Math.max(0, currentPage - 1))}
+            disabled={currentPage === 0}
+            aria-label={`Halaman sebelumnya untuk ${title}`}
+            title="Halaman sebelumnya"
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+          <p className="text-center text-xs font-black text-slate-600" aria-live="polite">
+            Halaman {currentPage + 1} daripada {pageCount}
+          </p>
+          <button
+            type="button"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-ocean-300 hover:bg-ocean-50 hover:text-ocean-700 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
+            disabled={currentPage === pageCount - 1}
+            aria-label={`Halaman seterusnya untuk ${title}`}
+            title="Halaman seterusnya"
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }
